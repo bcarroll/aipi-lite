@@ -1,1 +1,4 @@
 esp-env
+settings.json
+.vscode/
+.DS_Store
