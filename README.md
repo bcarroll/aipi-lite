@@ -6,7 +6,10 @@
 
 
 ## Micropython packages
-https://github.com/boochow/MicroPython-ST7735.git
+
+### Display
+
+https://github.com/alastairhm/micropython-st7735
 
 
 ## Config hints for AiPI-Lite
