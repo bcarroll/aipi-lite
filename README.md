@@ -58,7 +58,7 @@ See [tools/README.md](tools/README.md) for lower-level setup tooling.
 ## MicroPython Application Skeleton
 
 The MicroPython source under `src/` now provides the first safe application
-skeleton and the first GPIO probe:
+skeleton, GPIO probe, and display status probe:
 
 - `src/boot.py`
 - `src/main.py`
@@ -66,13 +66,17 @@ skeleton and the first GPIO probe:
 - `src/status_led.py`
 - `src/button.py`
 - `src/io_probe.py`
+- `src/display.py`
+- `src/display_probe.py`
 - `src/aipi_lite_config.py`
 - `src/lib/st7735/`
 
 `boot.py` emits serial-visible safe startup status without constructing GPIO
 pins or touching GPIO10 board-power control. `main.py` prints the bring-up
-sequence and retains the imported TFT display demo as a best-effort baseline.
-`pins.py` centralizes the documented pin map for later hardware probe branches.
+sequence and renders a best-effort boot status screen through the reusable
+display wrapper. `pins.py` centralizes the documented pin map for later hardware
+probe branches. `aipi_lite_config.py` remains as a compatibility shim for the
+imported display baseline.
 
 The GPIO status/input probe remains opt-in so normal boot stays recoverable. To
 cycle the GPIO46 WS2812/NeoPixel status LED states and print debounced GPIO42
@@ -85,6 +89,16 @@ mpremote connect /dev/cu.usbmodem31101 exec "import io_probe; io_probe.run_probe
 The probe does not start Wi-Fi, initialize audio, initialize the display, or
 touch GPIO10 board-power control.
 
+The display probe is also opt-in. To cycle the 128 x 128 LCD through boot,
+Wi-Fi, ready, recording, processing, speaking, and error screens, run:
+
+```bash
+mpremote connect /dev/cu.usbmodem31101 exec "import display_probe; display_probe.run_probe(cycles=2)"
+```
+
+The display probe initializes only the ST7735-compatible LCD and GPIO3
+backlight. It does not start Wi-Fi, audio, or GPIO10 board-power control.
+
 See [src/README.md](src/README.md) for firmware image selection, upload, serial
 log, and safety notes for the MicroPython application tree.
 
@@ -96,6 +110,6 @@ Run the host-side regression tests from the repository root:
 python3 -m unittest discover -s tests -v
 ```
 
-These tests use local stubs for MicroPython-only modules so they can validate the
-implemented display baseline and setup tooling without an attached AIPI-Lite
+These tests use local stubs for MicroPython-only modules so they can validate
+display layout, GPIO logic, and setup tooling without an attached AIPI-Lite
 device.

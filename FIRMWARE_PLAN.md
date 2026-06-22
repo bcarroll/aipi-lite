@@ -253,9 +253,9 @@ baseline:
 | Plan component | Imported status | Evidence |
 | --- | --- | --- |
 | Flashing support | Implemented for backup/recovery milestone | `install.sh`, `RECOVERY.md`, `tools/setup_micropython_tools.sh`, `tools/README.md`, and `README.md` document and automate stock backup, MicroPython install, source upload, and stock restore using ignored local artifacts. |
-| MicroPython source skeleton | Partially implemented | `src/main.py` runs a display demo and `src/aipi_lite_config.py` centralizes display pin setup. |
-| Pin mapping | Partially implemented | `src/aipi_lite_config.py` uses GPIO3 backlight, GPIO15 CS, GPIO7 D/C, GPIO18 reset, GPIO16 SCLK, and GPIO17 MOSI, matching the LCD pins in `SPEC.md`. |
-| Display bring-up | Partially implemented | `src/lib/st7735/` contains an ST7735 driver and font; `src/main.py` renders sample text to the 128 x 128 TFT. |
+| MicroPython source skeleton | Partially implemented | `src/main.py` renders a boot status screen through the reusable display wrapper. |
+| Pin mapping | Partially implemented | `src/display.py` uses GPIO3 backlight, GPIO15 CS, GPIO7 D/C, GPIO18 reset, GPIO16 SCLK, and GPIO17 MOSI, matching the LCD pins in `SPEC.md`. |
+| Display bring-up | Implemented, hardware validation pending | `src/display.py` wraps ST7735 setup, PWM backlight control, text layout, and named status screens; `src/display_probe.py` cycles boot, Wi-Fi, ready, recording, processing, speaking, and error screens. |
 | GPIO status LED and side button | Not implemented | No GPIO46 WS2812 or GPIO42 button handling has been imported. |
 | Wi-Fi and local-only service policy | Not implemented | No local endpoint validation, Wi-Fi configuration, or LAN service client has been imported. |
 | ES8311 audio control and I2S audio | Not implemented | No codec initialization, microphone capture, speaker playback, or GPIO9 speaker-enable logic has been imported. |
