@@ -57,7 +57,7 @@ tooling directories.
 
 | Branch / component | Status after import | Evidence | Remaining work |
 | --- | --- | --- | --- |
-| `feat/01-backup-recovery` | Partial | `install.sh`, `tools/setup_micropython_tools.sh`, `tools/README.md`, and `README.md` document bootloader mode and tools-based MicroPython firmware download/flash commands. | Add stock firmware backup, restore, and safety checklist docs. |
+| `feat/01-backup-recovery` | Partial | `install.sh` prompts for bootloader readiness, stores answers in `.conf`, backs up stock flash to ignored tooling storage, and performs tools-based MicroPython firmware download/flash commands. | Add restore procedure and safety checklist docs. |
 | `feat/02-micropython-skeleton` | Partial | `src/main.py` and `src/aipi_lite_config.py` form a small MicroPython app baseline. | Expand the `src/` layout with boot defaults, pin constants, and host tests. |
 | `feat/04-display-bringup` | Partial | `src/lib/st7735/`, `src/aipi_lite_config.py`, and `src/main.py` initialize the ST7735 TFT and display text. | Convert demo into reusable display probe/status renderer and document orientation/color assumptions. |
 | LCD pin constants | Implemented for display only | `src/aipi_lite_config.py` uses GPIO3, GPIO7, GPIO15, GPIO16, GPIO17, and GPIO18. | Add pin constants for button, LED, ES8311, speaker enable, charge input, and board power. |

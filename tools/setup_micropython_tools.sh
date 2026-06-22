@@ -115,8 +115,20 @@ download_file() {
     curl --fail --location --show-error --output "${output_path}" "${url}"
   elif command -v wget >/dev/null 2>&1; then
     wget --output-document="${output_path}" "${url}"
+  elif command -v python3 >/dev/null 2>&1; then
+    python3 - "${url}" "${output_path}" <<'PY'
+import sys
+from pathlib import Path
+from urllib.request import urlopen
+
+url = sys.argv[1]
+output_path = Path(sys.argv[2])
+
+with urlopen(url, timeout=60) as response:
+    output_path.write_bytes(response.read())
+PY
   else
-    echo "error: curl or wget is required to download firmware" >&2
+    echo "error: python3, curl, or wget is required to download firmware" >&2
     exit 1
   fi
 }

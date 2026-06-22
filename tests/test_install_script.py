@@ -6,6 +6,7 @@ import unittest
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 INSTALL_SCRIPT = REPO_ROOT / "install.sh"
+GITIGNORE = REPO_ROOT / ".gitignore"
 
 
 class InstallScriptTests(unittest.TestCase):
@@ -25,11 +26,25 @@ class InstallScriptTests(unittest.TestCase):
         self.assertIn("/resources/firmware/", self.script_text)
 
     def test_prompts_before_downloading_missing_components(self):
-        """Missing prerequisite downloads should require explicit approval."""
+        """Missing prerequisite downloads should require config-backed approval."""
         self.assertIn("collect_missing_prerequisites", self.script_text)
         self.assertIn("Download missing components and continue", self.script_text)
+        self.assertIn('confirm_from_config "AIPI_DOWNLOAD_PREREQUISITES"', self.script_text)
         self.assertIn("bash \"${SETUP_SCRIPT}\"", self.script_text)
         self.assertIn("-y|--yes", self.script_text)
+
+    def test_answers_are_persisted_in_conf(self):
+        """The installer should read and write task answers from .conf."""
+        gitignore_text = GITIGNORE.read_text(encoding="utf-8")
+
+        self.assertIn('CONF_FILE="${AIPI_INSTALL_CONF:-${SCRIPT_DIR}/.conf}"', self.script_text)
+        self.assertIn("config_get()", self.script_text)
+        self.assertIn("config_set()", self.script_text)
+        self.assertIn("confirm_from_config()", self.script_text)
+        self.assertIn("AIPI_SERIAL_PORT", self.script_text)
+        self.assertIn("AIPI_BOOTLOADER_CONFIRMED", self.script_text)
+        self.assertIn("AIPI_CONFIRM_FLASH", self.script_text)
+        self.assertIn(".conf", gitignore_text)
 
     def test_flashes_firmware_at_offset_zero(self):
         """The installer should use the ESP32-S3 MicroPython offset-zero flow."""
@@ -39,6 +54,19 @@ class InstallScriptTests(unittest.TestCase):
         self.assertNotIn("bootloader.bin", self.script_text)
         self.assertNotIn("partition-table.bin", self.script_text)
 
+    def test_backs_up_stock_firmware_before_flashing(self):
+        """The installer should read the stock flash before erase/write operations."""
+        main_text = self.script_text[self.script_text.index("main()") :]
+        backup_index = main_text.index('backup_stock_firmware "${esptool_py}"')
+        erase_index = main_text.index("erase_flash")
+        write_index = main_text.index("write_flash 0")
+
+        self.assertIn('BACKUP_DIR="${TOOLS_ROOT}/backups"', self.script_text)
+        self.assertIn("AIPI_STOCK_BACKUP_PATH", self.script_text)
+        self.assertIn('read_flash 0 "${FLASH_SIZE}"', self.script_text)
+        self.assertLess(backup_index, erase_index)
+        self.assertLess(backup_index, write_index)
+
     def test_uploads_current_application_baseline(self):
         """The installer should copy the current app source when no app dir exists."""
         self.assertIn('${SCRIPT_DIR}/src', self.script_text)
@@ -47,6 +75,16 @@ class InstallScriptTests(unittest.TestCase):
         self.assertNotIn('${SCRIPT_DIR}/aipi_lite_config.py', self.script_text)
         self.assertNotIn('${SCRIPT_DIR}/lib', self.script_text)
         self.assertIn("lib/drivers", self.script_text)
+
+    def test_resets_device_after_upload(self):
+        """The installer should reset the device after copying source by default."""
+        main_text = self.script_text[self.script_text.index("main()") :]
+        upload_index = main_text.index('upload_application "${mpremote_bin}"')
+        reset_index = main_text.index('reset_device "${mpremote_bin}"')
+
+        self.assertIn("AIPI_RESET_AFTER_UPLOAD", self.script_text)
+        self.assertIn('"${mpremote_bin}" connect "${connect_target}" reset', self.script_text)
+        self.assertLess(upload_index, reset_index)
 
 
 if __name__ == "__main__":

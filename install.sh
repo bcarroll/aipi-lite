@@ -7,15 +7,20 @@ SETUP_SCRIPT="${TOOLS_DIR}/setup_micropython_tools.sh"
 TOOLS_ROOT="${TOOLS_DIR}/.local"
 VENV_DIR="${TOOLS_ROOT}/micropython-venv"
 DOWNLOAD_DIR="${TOOLS_ROOT}/downloads/firmware"
+BACKUP_DIR="${TOOLS_ROOT}/backups"
 LIB_ROOT="${TOOLS_ROOT}/micropython-libs"
 LIB_DIR="${LIB_ROOT}/lib"
 MICROPYTHON_BOARD_URL="https://micropython.org/download/ESP32_GENERIC_S3/"
 MICROPYTHON_BASE_URL="https://micropython.org"
 
 PORT="${AIPI_SERIAL_PORT:-}"
-APP_DIR=""
-FIRMWARE_URL="${AIPI_MICROPYTHON_FIRMWARE_URL:-latest}"
-BAUD="460800"
+APP_DIR="${AIPI_APP_DIR:-}"
+FIRMWARE_URL="${AIPI_MICROPYTHON_FIRMWARE_URL:-}"
+BAUD="${AIPI_FLASH_BAUD:-}"
+FLASH_SIZE="${AIPI_FLASH_SIZE:-}"
+BACKUP_PATH="${AIPI_STOCK_BACKUP_PATH:-}"
+RESET_AFTER_UPLOAD="${AIPI_RESET_AFTER_UPLOAD:-}"
+CONF_FILE="${AIPI_INSTALL_CONF:-${SCRIPT_DIR}/.conf}"
 ASSUME_YES=0
 SKIP_ERASE=0
 
@@ -29,16 +34,26 @@ source over USB-C with mpremote.
 Options:
   --port PORT             Serial port, for example /dev/cu.usbmodem31101.
   --app-dir DIR           Application directory to upload instead of src/.
+  --backup-path FILE      Stock firmware backup path. Defaults to tools/.local.
+  --conf FILE             Answer/config file. Default: ./.conf.
   --firmware-url URL      MicroPython firmware .bin URL. Defaults to latest
                           stable ESP32_GENERIC_S3 from micropython.org.
+  --flash-size SIZE       Stock firmware backup size. Default: 0x1000000.
   --baud RATE             Flash baud rate. Default: 460800.
+  --no-reset              Do not reset the device after uploading source.
   --skip-erase            Write firmware without first erasing flash.
   -y, --yes               Approve prerequisite setup and flashing prompts.
   -h, --help              Show this help.
 
 Environment overrides:
   AIPI_SERIAL_PORT
+  AIPI_APP_DIR
   AIPI_MICROPYTHON_FIRMWARE_URL
+  AIPI_FLASH_BAUD
+  AIPI_FLASH_SIZE
+  AIPI_STOCK_BACKUP_PATH
+  AIPI_RESET_AFTER_UPLOAD
+  AIPI_INSTALL_CONF
 USAGE
 }
 
@@ -52,13 +67,29 @@ while [[ $# -gt 0 ]]; do
       APP_DIR="${2:?--app-dir requires a value}"
       shift 2
       ;;
+    --backup-path)
+      BACKUP_PATH="${2:?--backup-path requires a value}"
+      shift 2
+      ;;
+    --conf)
+      CONF_FILE="${2:?--conf requires a value}"
+      shift 2
+      ;;
     --firmware-url)
       FIRMWARE_URL="${2:?--firmware-url requires a value}"
+      shift 2
+      ;;
+    --flash-size)
+      FLASH_SIZE="${2:?--flash-size requires a value}"
       shift 2
       ;;
     --baud)
       BAUD="${2:?--baud requires a value}"
       shift 2
+      ;;
+    --no-reset)
+      RESET_AFTER_UPLOAD="no"
+      shift
       ;;
     --skip-erase)
       SKIP_ERASE=1
@@ -80,23 +111,187 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-confirm() {
-  local prompt="$1"
-  local answer
+config_get() {
+  local key="$1"
+  local line
 
-  if [[ "${ASSUME_YES}" -eq 1 ]]; then
-    return 0
+  [[ -f "${CONF_FILE}" ]] || return 1
+
+  while IFS= read -r line || [[ -n "${line}" ]]; do
+    case "${line}" in
+      ''|\#*)
+        continue
+        ;;
+      "${key}="*)
+        printf '%s\n' "${line#*=}"
+        return 0
+        ;;
+    esac
+  done <"${CONF_FILE}"
+
+  return 1
+}
+
+config_has_key() {
+  config_get "$1" >/dev/null
+}
+
+config_set() {
+  local key="$1"
+  local value="$2"
+  local tmp_path="${CONF_FILE}.tmp.$$"
+  local line
+  local found=0
+
+  mkdir -p "$(dirname "${CONF_FILE}")"
+  touch "${CONF_FILE}"
+  chmod 600 "${CONF_FILE}"
+
+  : >"${tmp_path}"
+  while IFS= read -r line || [[ -n "${line}" ]]; do
+    case "${line}" in
+      "${key}="*)
+        printf '%s=%s\n' "${key}" "${value}" >>"${tmp_path}"
+        found=1
+        ;;
+      *)
+        printf '%s\n' "${line}" >>"${tmp_path}"
+        ;;
+    esac
+  done <"${CONF_FILE}"
+
+  if [[ "${found}" -eq 0 ]]; then
+    printf '%s=%s\n' "${key}" "${value}" >>"${tmp_path}"
   fi
 
-  read -r -p "${prompt} [y/N] " answer
-  case "${answer}" in
-    y|Y|yes|YES)
+  mv "${tmp_path}" "${CONF_FILE}"
+  chmod 600 "${CONF_FILE}"
+}
+
+is_yes() {
+  case "$1" in
+    y|Y|yes|YES|true|TRUE|1)
       return 0
       ;;
     *)
       return 1
       ;;
   esac
+}
+
+is_no() {
+  case "$1" in
+    n|N|no|NO|false|FALSE|0)
+      return 0
+      ;;
+    *)
+      return 1
+      ;;
+  esac
+}
+
+confirm_from_config() {
+  local key="$1"
+  local prompt="$2"
+  local default_answer="${3:-no}"
+  local answer
+
+  if [[ "${ASSUME_YES}" -eq 1 ]]; then
+    config_set "${key}" "yes"
+    return 0
+  fi
+
+  if answer="$(config_get "${key}")"; then
+    if is_yes "${answer}"; then
+      return 0
+    fi
+    if is_no "${answer}"; then
+      return 1
+    fi
+  fi
+
+  read -r -p "${prompt} [${default_answer}] " answer
+  answer="${answer:-${default_answer}}"
+  if is_yes "${answer}"; then
+    config_set "${key}" "yes"
+    return 0
+  fi
+
+  config_set "${key}" "no"
+  return 1
+}
+
+prompt_serial_port() {
+  local answer
+
+  if [[ -n "${PORT}" ]]; then
+    config_set "AIPI_SERIAL_PORT" "${PORT}"
+    return
+  fi
+
+  if config_has_key "AIPI_SERIAL_PORT"; then
+    config_set "AIPI_SERIAL_PORT" "auto"
+    return
+  fi
+
+  if [[ "${ASSUME_YES}" -eq 1 ]]; then
+    config_set "AIPI_SERIAL_PORT" "auto"
+    return
+  fi
+
+  read -r -p "Serial port, or blank for auto-detect [auto] " answer
+  PORT="${answer}"
+  config_set "AIPI_SERIAL_PORT" "${PORT:-auto}"
+}
+
+apply_config_defaults() {
+  local configured_value
+
+  if [[ -z "${PORT}" ]] && configured_value="$(config_get "AIPI_SERIAL_PORT")"; then
+    PORT="${configured_value}"
+  fi
+  if [[ "${PORT}" == "auto" ]]; then
+    PORT=""
+  fi
+
+  if [[ -z "${APP_DIR}" ]] && configured_value="$(config_get "AIPI_APP_DIR")"; then
+    APP_DIR="${configured_value}"
+  fi
+
+  if [[ -z "${FIRMWARE_URL}" ]] && configured_value="$(config_get "AIPI_MICROPYTHON_FIRMWARE_URL")"; then
+    FIRMWARE_URL="${configured_value}"
+  fi
+  FIRMWARE_URL="${FIRMWARE_URL:-latest}"
+
+  if [[ -z "${BAUD}" ]] && configured_value="$(config_get "AIPI_FLASH_BAUD")"; then
+    BAUD="${configured_value}"
+  fi
+  BAUD="${BAUD:-460800}"
+
+  if [[ -z "${FLASH_SIZE}" ]] && configured_value="$(config_get "AIPI_FLASH_SIZE")"; then
+    FLASH_SIZE="${configured_value}"
+  fi
+  FLASH_SIZE="${FLASH_SIZE:-0x1000000}"
+
+  if [[ -z "${BACKUP_PATH}" ]] && configured_value="$(config_get "AIPI_STOCK_BACKUP_PATH")"; then
+    BACKUP_PATH="${configured_value}"
+  fi
+
+  if [[ -z "${RESET_AFTER_UPLOAD}" ]] && configured_value="$(config_get "AIPI_RESET_AFTER_UPLOAD")"; then
+    RESET_AFTER_UPLOAD="${configured_value}"
+  fi
+  RESET_AFTER_UPLOAD="${RESET_AFTER_UPLOAD:-yes}"
+}
+
+persist_config_defaults() {
+  config_set "AIPI_SERIAL_PORT" "${PORT:-auto}"
+  if [[ -n "${APP_DIR}" ]]; then
+    config_set "AIPI_APP_DIR" "${APP_DIR}"
+  fi
+  config_set "AIPI_MICROPYTHON_FIRMWARE_URL" "${FIRMWARE_URL}"
+  config_set "AIPI_FLASH_BAUD" "${BAUD}"
+  config_set "AIPI_FLASH_SIZE" "${FLASH_SIZE}"
+  config_set "AIPI_RESET_AFTER_UPLOAD" "${RESET_AFTER_UPLOAD}"
 }
 
 require_command() {
@@ -115,8 +310,16 @@ download_to_stdout() {
     curl --fail --location --silent --show-error "${url}"
   elif command -v wget >/dev/null 2>&1; then
     wget --quiet --output-document=- "${url}"
+  elif command -v python3 >/dev/null 2>&1; then
+    python3 - "${url}" <<'PY'
+import sys
+from urllib.request import urlopen
+
+with urlopen(sys.argv[1], timeout=60) as response:
+    sys.stdout.write(response.read().decode("utf-8"))
+PY
   else
-    echo "error: curl or wget is required to resolve the latest firmware" >&2
+    echo "error: python3, curl, or wget is required to resolve the latest firmware" >&2
     exit 1
   fi
 }
@@ -210,7 +413,7 @@ ${missing}
 These components will be installed or downloaded under tools/.local/.
 EOF
 
-  if ! confirm "Download missing components and continue"; then
+  if ! confirm_from_config "AIPI_DOWNLOAD_PREREQUISITES" "Download missing components and continue" "no"; then
     echo "aborted: prerequisites are missing" >&2
     exit 1
   fi
@@ -223,6 +426,53 @@ EOF
   setup_args+=(--app-dir "${setup_app_dir}")
 
   bash "${SETUP_SCRIPT}" "${setup_args[@]}"
+}
+
+print_bootloader_instructions() {
+  cat <<'EOF'
+
+Before flashing:
+  1. Remove the four back screws from the AIPI-Lite.
+  2. Hold the BOOT button under the display.
+  3. Plug the device into USB-C while holding BOOT.
+  4. Confirm the screen stays black and the USB serial device is visible.
+EOF
+}
+
+ensure_bootloader_ready() {
+  print_bootloader_instructions
+  if ! confirm_from_config "AIPI_BOOTLOADER_CONFIRMED" "Confirm the device is in bootloader mode and connected" "no"; then
+    echo "aborted: device bootloader confirmation is required" >&2
+    exit 1
+  fi
+}
+
+default_backup_path() {
+  local timestamp
+
+  timestamp="$(date +%Y%m%d-%H%M%S)"
+  printf '%s/aipi-lite-stock-%s.bin\n' "${BACKUP_DIR}" "${timestamp}"
+}
+
+backup_stock_firmware() {
+  local esptool_py="$1"
+  shift
+  local port_args=("$@")
+
+  if [[ -z "${BACKUP_PATH}" ]]; then
+    BACKUP_PATH="$(default_backup_path)"
+  fi
+
+  config_set "AIPI_STOCK_BACKUP_PATH" "${BACKUP_PATH}"
+
+  if [[ -s "${BACKUP_PATH}" ]]; then
+    echo "Using existing stock firmware backup: ${BACKUP_PATH}"
+    return
+  fi
+
+  mkdir -p "$(dirname "${BACKUP_PATH}")"
+  echo "Backing up stock firmware to ${BACKUP_PATH}"
+  "${esptool_py}" -m esptool --chip esp32s3 "${port_args[@]}" read_flash 0 "${FLASH_SIZE}" "${BACKUP_PATH}"
 }
 
 remote_mkdir() {
@@ -307,6 +557,21 @@ upload_application() {
   exit 1
 }
 
+reset_device() {
+  local mpremote_bin="$1"
+  local connect_target="$2"
+
+  if is_no "${RESET_AFTER_UPLOAD}"; then
+    echo "Device reset skipped by AIPI_RESET_AFTER_UPLOAD=${RESET_AFTER_UPLOAD}."
+    return
+  fi
+
+  echo "Resetting device..."
+  if ! "${mpremote_bin}" connect "${connect_target}" reset; then
+    echo "warning: automatic reset failed; reset or power-cycle the device manually." >&2
+  fi
+}
+
 main() {
   local firmware_url
   local firmware_name
@@ -322,6 +587,10 @@ main() {
     exit 1
   }
 
+  apply_config_defaults
+  prompt_serial_port
+  persist_config_defaults
+
   firmware_url="$(resolve_firmware_url)"
   firmware_name="$(firmware_filename "${firmware_url}")"
   firmware_path="${DOWNLOAD_DIR}/${firmware_name}"
@@ -336,15 +605,19 @@ main() {
     connect_target="${PORT}"
   fi
 
+  ensure_bootloader_ready
+  backup_stock_firmware "${esptool_py}" "${port_args[@]}"
+
   cat <<EOF
 
 Ready to install:
   Firmware: ${firmware_path}
+  Stock backup: ${BACKUP_PATH}
   Port: ${connect_target}
   Baud: ${BAUD}
 EOF
 
-  if ! confirm "Erase/write flash and upload application source"; then
+  if ! confirm_from_config "AIPI_CONFIRM_FLASH" "Erase/write flash and upload application source" "no"; then
     echo "aborted: install was not confirmed" >&2
     exit 1
   fi
@@ -364,6 +637,7 @@ EOF
   fi
 
   upload_application "${mpremote_bin}" "${connect_target}"
+  reset_device "${mpremote_bin}" "${connect_target}"
 
   echo "Install complete."
 }

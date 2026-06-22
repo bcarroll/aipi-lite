@@ -13,8 +13,9 @@ The preferred full install path is the repository root installer:
 ```
 
 It resolves the latest stable ESP32-S3 MicroPython firmware, prompts before
-downloading missing local prerequisites, flashes the connected device, and
-copies application source with `mpremote`.
+downloading missing local prerequisites, stores answers in the ignored root
+`.conf` file, backs up stock firmware, flashes the connected device, copies
+application source with `mpremote`, and resets the device when possible.
 
 Use the setup script directly when you only want to stage tools, firmware, and
 libraries without flashing:

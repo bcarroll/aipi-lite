@@ -37,6 +37,11 @@ class SetupMicropythonToolsTests(unittest.TestCase):
         self.assertIn("ESP32_GENERIC_S3-20260406-v1.28.0.bin", self.script_text)
         self.assertIn("https://micropython.org/resources/firmware/", self.script_text)
 
+    def test_downloads_have_python_fallback(self):
+        """The setup script should download with Python if curl and wget are unavailable."""
+        self.assertIn("from urllib.request import urlopen", self.script_text)
+        self.assertIn("output_path.write_bytes(response.read())", self.script_text)
+
     def test_legacy_checked_in_binary_flow_is_not_used(self):
         """The setup script should avoid the removed checked-in firmware image flow."""
         self.assertNotIn("bootloader.bin", self.script_text)
