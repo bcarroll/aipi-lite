@@ -37,7 +37,12 @@ keep each branch focused, and merge only after its acceptance criteria pass.
 11. `feat/11-reliability-power-errors`
 12. `feat/12-mvp-release`
 
-Conditional fallback branch:
+Optional on-device inference branches:
+
+13. `spike/13-on-device-inference-feasibility`
+14. `feat/14-on-device-inference`
+
+Conditional runtime fallback branch:
 
 - `fallback/esp-idf-audio-runtime`
 
@@ -461,6 +466,98 @@ Acceptance criteria:
 - No secrets or binary firmware dumps are committed.
 - Host tests and hardware checklist pass.
 
+### `spike/13-on-device-inference-feasibility`
+
+Purpose: determine whether useful on-device inference can run locally on the
+AIPI-Lite without breaking the proven user I/O and audio path.
+
+Expected commits:
+
+- `docs: define on-device inference scope`
+  - Define candidate use cases: intent routing, constrained local responses,
+    wake-word assistance, or partial assistant logic.
+  - Define latency, memory, flash, power, and responsiveness success criteria.
+  - Define how the device falls back to the LAN service.
+
+- `docs: inventory candidate runtimes and models`
+  - Record candidate runtime options for MicroPython and ESP-IDF.
+  - Record model artifact size, license, source, and expected memory needs.
+  - Do not commit model binaries unless explicitly approved.
+
+- `firmware: add inference resource probe`
+  - Measure heap, flash, CPU timing, and UI responsiveness during simulated
+    inference load.
+  - Keep microphone, speaker, button, display, and LED checks active.
+
+- `firmware: add local prompt-response experiment`
+  - Use a tiny local fixture or mock model interface.
+  - Keep all inference inputs and outputs on-device.
+  - Avoid cloud model downloads or activation calls.
+
+- `tests: add inference policy tests`
+  - Verify public endpoints remain blocked.
+  - Verify fallback state is selected when inference is unavailable.
+  - Verify model metadata validation rejects unknown artifacts.
+
+- `docs: record feasibility decision`
+  - Summarize measured resource use.
+  - Decide whether to continue in MicroPython, move inference to ESP-IDF, or
+    defer on-device inference.
+
+Acceptance criteria:
+
+- On-device inference feasibility is documented with measurements.
+- No cloud endpoint is required for the experiment.
+- Core I/O remains responsive during the probe or the limitation is documented.
+- A clear continue/defer/fallback decision is recorded.
+
+### `feat/14-on-device-inference`
+
+Purpose: add a supported on-device inference mode only if the feasibility branch
+proves it is practical.
+
+Expected commits:
+
+- `firmware: add inference runtime adapter`
+  - Isolate runtime-specific calls behind a small interface.
+  - Keep the assistant state machine independent from the inference backend.
+  - Preserve LAN service fallback.
+
+- `firmware: add model metadata loader`
+  - Load model identity, version, source, license, and checksum metadata.
+  - Reject missing or unapproved model metadata.
+  - Keep large model artifacts out of source control unless explicitly approved.
+
+- `firmware: add local inference mode`
+  - Route eligible prompts or intents to the on-device model.
+  - Return unsupported requests to LAN service fallback or a clear offline
+    response.
+  - Keep display, LED, and serial diagnostics updated.
+
+- `firmware: add inference failure handling`
+  - Recover from model load failure.
+  - Recover from timeout or memory pressure.
+  - Disable inference mode if it compromises audio or controls.
+
+- `tests: add inference routing tests`
+  - Test on-device route selection.
+  - Test fallback to LAN service.
+  - Test disabled or missing model behavior.
+
+- `docs: add on-device inference operation guide`
+  - Explain model installation and provenance checks.
+  - Explain when inference runs locally versus LAN fallback.
+  - Document measured limits and known failure modes.
+
+Acceptance criteria:
+
+- At least one useful assistant behavior runs entirely on-device.
+- The device remains local-only by default.
+- Display, LED, button, microphone, and speaker behavior remain responsive.
+- LAN service fallback remains available.
+- Model/runtime provenance is documented.
+- Host tests and hardware checks pass.
+
 ## Conditional Fallback Branch
 
 ### `fallback/esp-idf-audio-runtime`
@@ -503,6 +600,10 @@ Acceptance criteria:
 - Keep replacement firmware local-only by default.
 - Do not commit Wi-Fi credentials, service secrets, firmware dumps, or device
   serial-specific tokens.
+- Do not commit model binaries or inference runtime artifacts without explicit
+  approval.
+- Keep on-device inference optional until feasibility measurements show it is
+  stable on the target device.
 - Keep all generated Python methods documented with docstrings.
 - Add host-side tests for Python logic whenever code is generated.
 - Update `SPEC.md` when hardware behavior is verified or corrected.

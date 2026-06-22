@@ -4,8 +4,8 @@ Target device: XORIGIN AI PI-Lite / AIPI Lite, model `XY006PL01`
 
 Goal: replace the stock firmware with local-only firmware that uses the attached
 display, status LED, button, microphone, and speaker to communicate with the
-user. The device must communicate only with services on the local network unless
-an operator explicitly adds and approves another endpoint.
+user. The device must communicate only with on-device code or services on the
+local network unless an operator explicitly adds and approves another endpoint.
 
 ## Direction
 
@@ -21,11 +21,18 @@ ESP-IDF firmware in C/C++. CircuitPython is not the preferred fallback because
 the AIPI-Lite's primary risk is bidirectional ES8311 audio plus I2S streaming,
 not display/UI support.
 
+On-device LLM inference is welcomed if it can fit within the target device's
+memory, flash, compute, thermal, power, and responsiveness limits. It should not
+block the first firmware milestone, because display, audio, controls, Wi-Fi,
+and local-only policy must be proven first. Treat on-device inference as an
+optional local-only capability that can reduce or replace calls to a LAN service
+after the core I/O path is stable.
+
 ## Non-Goals
 
 - Do not contact AIPI, X-ORIGIN, MQTT, WebSocket, OTA, analytics, or cloud AI
   endpoints from replacement firmware.
-- Do not implement on-device LLM inference.
+- Do not require on-device LLM inference for the first working MVP.
 - Do not make wake-word detection part of the first firmware milestone.
 - Do not preserve stock cloud account provisioning.
 - Do not add production dependencies without explicit approval.
@@ -41,10 +48,37 @@ terminal:
 4. Status LED shows offline, connecting, ready, recording, processing, speaking,
    and error states.
 5. User presses the side function button to record.
-6. Device streams or uploads captured PCM audio to a local LAN service.
-7. Local service performs speech-to-text, assistant logic, and text-to-speech.
-8. Device receives response text and audio from the local service.
-9. Device displays short status/response text and plays response audio.
+6. Device streams or uploads captured PCM audio to a local LAN service, unless a
+   later on-device mode can handle the full exchange locally.
+7. Local service performs speech-to-text, assistant logic, and text-to-speech
+   for the MVP.
+8. A future on-device inference mode may perform some or all assistant logic
+   locally if it remains responsive and does not require cloud services.
+9. Device receives or produces response text and audio.
+10. Device displays short status/response text and plays response audio.
+
+## On-Device Inference Position
+
+On-device inference is a desirable enhancement, not a core bring-up dependency.
+It may take one of these forms:
+
+- Small local intent classification or command routing.
+- Tiny local text model for constrained responses.
+- Local wake-word or speech activity logic after the audio path is stable.
+- A native ESP-IDF inference path if MicroPython cannot host the required
+  runtime efficiently.
+
+Any on-device inference work must preserve these constraints:
+
+- No cloud endpoints, telemetry, model fetches, or remote activation are allowed
+  by default.
+- Models and runtime artifacts must be versioned and traceable.
+- The display, button, LED, microphone capture, speaker playback, and network
+  recovery behavior must remain responsive.
+- The firmware must fail back to the local LAN service or a clear offline state
+  if on-device inference is unavailable.
+- Memory, flash, CPU, latency, power, and thermal observations must be recorded
+  before the feature is promoted beyond an experiment.
 
 ## Hardware Map
 
@@ -81,6 +115,9 @@ path is stable and lower latency is required.
 All endpoints must be configured as local addresses, such as RFC1918 IPv4
 addresses, `.local` mDNS names, or a local DNS name controlled by the operator.
 The firmware should reject public internet hostnames by default.
+
+If on-device inference is enabled later, the local protocol remains useful as a
+fallback and for capabilities that do not fit on the device.
 
 ## Runtime Probe Sequence
 
@@ -140,6 +177,12 @@ Build the replacement firmware in small hardware validation steps:
     - Test local service unavailable.
     - Test low battery / battery-only behavior if the battery module is present.
 
+11. Optional on-device inference feasibility
+    - Measure available memory, flash, CPU headroom, latency, and power impact.
+    - Test only local model/runtime artifacts.
+    - Confirm that user I/O and audio streaming remain responsive.
+    - Keep LAN-service fallback available.
+
 ## Fallback Criteria
 
 Move from MicroPython to ESP-IDF if any of these block the MVP:
@@ -151,6 +194,11 @@ Move from MicroPython to ESP-IDF if any of these block the MVP:
 - Available heap is too small for buffered audio plus display/network state.
 - Local-only network policy cannot be enforced cleanly.
 
+On-device inference failure is not, by itself, a reason to abandon the
+MicroPython MVP if the local-service assistant flow works. Move to ESP-IDF for
+on-device inference only if native runtime control is required and the benefit
+is worth the added firmware complexity.
+
 ## Security and Federal Use Considerations
 
 - Default to local-only communications and reject public endpoints unless the
@@ -161,6 +209,8 @@ Move from MicroPython to ESP-IDF if any of these block the MVP:
 - Log endpoint names and connection attempts locally for auditability.
 - Keep firmware source, build artifacts, and third-party dependency versions
   traceable.
+- Keep model files, prompts, and inference runtime versions traceable if
+  on-device inference is added.
 - Before any U.S. Federal deployment, verify applicable security, privacy,
   accessibility, supply-chain, and procurement requirements for the complete
   system, including the local service and device hardware.
