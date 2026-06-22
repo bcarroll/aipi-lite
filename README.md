@@ -11,6 +11,11 @@ firmware, flash it, and upload the current application baseline:
 ./install.sh --port /dev/cu.usbmodem31101
 ```
 
+Before any installer actions, `install.sh` runs `git pull --ff-only` from the
+repository root and restarts itself once so the active script is current. Use
+`--skip-self-update` or `AIPI_SKIP_SELF_UPDATE=1` only for intentional offline
+or pinned-revision runs.
+
 If local prerequisites are missing, the installer prompts before downloading or
 installing components under ignored `tools/.local/`, then continues with the
 flash and upload workflow after approval.

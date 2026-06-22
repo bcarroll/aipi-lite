@@ -33,6 +33,18 @@ class InstallScriptTests(unittest.TestCase):
         self.assertIn("bash \"${SETUP_SCRIPT}\"", self.script_text)
         self.assertIn("-y|--yes", self.script_text)
 
+    def test_self_updates_from_git_before_installer_actions(self):
+        """The installer should pull the latest script before parsing normal actions."""
+        self_update_index = self.script_text.index('self_update_from_git "$@"')
+        parser_index = self.script_text.index("while [[ $# -gt 0 ]]")
+
+        self.assertIn('git -C "${worktree_root}" pull --ff-only', self.script_text)
+        self.assertIn('exec env AIPI_INSTALL_SELF_UPDATED=1 "${SCRIPT_DIR}/install.sh" "$@"', self.script_text)
+        self.assertIn("--skip-self-update", self.script_text)
+        self.assertIn("AIPI_SKIP_SELF_UPDATE", self.script_text)
+        self.assertIn("git pull failed; installer stopped before device operations", self.script_text)
+        self.assertLess(self_update_index, parser_index)
+
     def test_answers_are_persisted_in_conf(self):
         """The installer should read and write task answers from .conf."""
         gitignore_text = GITIGNORE.read_text(encoding="utf-8")

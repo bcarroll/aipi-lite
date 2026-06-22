@@ -24,6 +24,7 @@ BACKUP_PATH="${AIPI_STOCK_BACKUP_PATH:-}"
 RESTORE_BACKUP_PATH="${AIPI_RESTORE_BACKUP_PATH:-}"
 RESET_AFTER_UPLOAD="${AIPI_RESET_AFTER_UPLOAD:-}"
 CONF_FILE="${AIPI_INSTALL_CONF:-${SCRIPT_DIR}/.conf}"
+SKIP_SELF_UPDATE="${AIPI_SKIP_SELF_UPDATE:-0}"
 ASSUME_YES=0
 SKIP_ERASE=0
 RESTORE_MODE=0
@@ -54,6 +55,7 @@ Options:
   --restore-backup FILE   Restore this stock firmware backup instead of
                           installing MicroPython.
   --skip-erase            Write firmware without first erasing flash.
+  --skip-self-update      Do not run git pull before installer actions.
   -y, --yes               Approve prerequisite setup and flashing prompts.
   -h, --help              Show this help.
 
@@ -69,8 +71,72 @@ Environment overrides:
   AIPI_RESTORE_BACKUP_PATH
   AIPI_RESET_AFTER_UPLOAD
   AIPI_INSTALL_CONF
+  AIPI_SKIP_SELF_UPDATE
 USAGE
 }
+
+preparse_self_update_flags() {
+  local arg
+
+  for arg in "$@"; do
+    case "${arg}" in
+      --skip-self-update)
+        SKIP_SELF_UPDATE=1
+        return
+        ;;
+      --)
+        return
+        ;;
+    esac
+  done
+}
+
+is_truthy_value() {
+  case "$1" in
+    y|Y|yes|YES|true|TRUE|1)
+      return 0
+      ;;
+    *)
+      return 1
+      ;;
+  esac
+}
+
+self_update_from_git() {
+  local worktree_root
+
+  if is_truthy_value "${AIPI_INSTALL_SELF_UPDATED:-0}"; then
+    return
+  fi
+
+  if is_truthy_value "${SKIP_SELF_UPDATE}"; then
+    echo "Installer self-update skipped."
+    return
+  fi
+
+  if ! command -v git >/dev/null 2>&1; then
+    echo "error: git is required for installer self-update; pass --skip-self-update to continue without pulling" >&2
+    exit 1
+  fi
+
+  if ! git -C "${SCRIPT_DIR}" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+    echo "Installer self-update skipped: ${SCRIPT_DIR} is not a Git worktree."
+    return
+  fi
+
+  worktree_root="$(git -C "${SCRIPT_DIR}" rev-parse --show-toplevel)"
+  echo "Updating installer source with git pull --ff-only..."
+  if ! git -C "${worktree_root}" pull --ff-only; then
+    echo "error: git pull failed; installer stopped before device operations" >&2
+    exit 1
+  fi
+
+  echo "Restarting installer after self-update..."
+  exec env AIPI_INSTALL_SELF_UPDATED=1 "${SCRIPT_DIR}/install.sh" "$@"
+}
+
+preparse_self_update_flags "$@"
+self_update_from_git "$@"
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -125,6 +191,10 @@ while [[ $# -gt 0 ]]; do
       ;;
     --skip-erase)
       SKIP_ERASE=1
+      shift
+      ;;
+    --skip-self-update)
+      SKIP_SELF_UPDATE=1
       shift
       ;;
     -y|--yes)
