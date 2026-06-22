@@ -1,9 +1,4 @@
-"""AIPI-Lite MicroPython skeleton entrypoint.
-
-The first firmware milestone keeps startup deliberately small: print a
-serial-visible bring-up sequence, leave risky power-control pins untouched, and
-exercise the existing display baseline when the ST7735 driver is available.
-"""
+"""AIPI-Lite MicroPython application entrypoint."""
 
 import time
 
@@ -25,31 +20,12 @@ def sleep_ms(milliseconds):
     time.sleep(milliseconds / 1000)
 
 
-def load_sysfont():
-    """Load the bundled MicroPython ST7735 font only when the display is used."""
-    from lib.st7735.sysfont import sysfont
+def render_boot_screen():
+    """Initialize the display and render the local firmware boot status."""
+    from display import create_status_display
 
-    return sysfont
-
-
-def tftprinttest(display, font=None):
-    """Display sample strings with the provided font on the TFT display."""
-    if font is None:
-        font = load_sysfont()
-
-    from aipi_lite_config import BLACK, WHITE
-
-    display.fill(BLACK)
-    display.text((10, 30), "AIPI-LITE", WHITE, font, 2, nowrap=True)
-    display.text((30, 60), "Micropython", WHITE, font, 1, nowrap=True)
-    sleep_ms(1500)
-
-
-def run_display_demo():
-    """Initialize the existing display baseline and draw the startup message."""
-    from aipi_lite_config import tft
-
-    tftprinttest(tft)
+    status_display = create_status_display()
+    status_display.render_status("boot")
 
 
 def disable_speaker_amplifier():
@@ -74,10 +50,10 @@ def main(print_func=print):
         print_func("main: speaker amplifier default skipped: {}".format(type(exc).__name__))
 
     try:
-        run_display_demo()
-        print_func("main: display baseline rendered")
+        render_boot_screen()
+        print_func("main: display boot status rendered")
     except Exception as exc:
-        print_func("main: display baseline skipped: {}".format(type(exc).__name__))
+        print_func("main: display boot status skipped: {}".format(type(exc).__name__))
 
     sleep_ms(100)
     print_func("main: skeleton ready")
