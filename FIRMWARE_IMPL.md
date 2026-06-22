@@ -22,29 +22,32 @@ keep each branch focused, and merge only after its acceptance criteria pass.
 - For generated Python code, include tests in the same branch.
 - Do not add production dependencies without explicit approval.
 
-## Merge Order
+## Merge Order Checklist
 
-1. `feat/01-backup-recovery`
-2. `feat/02-micropython-skeleton`
-3. `feat/03-gpio-status-input`
-4. `feat/04-display-bringup`
-5. `feat/05-local-wifi-policy`
-6. `feat/06-es8311-codec-control`
-7. `feat/07-audio-capture`
-8. `feat/08-audio-playback`
-9. `feat/09-local-service-contract`
-10. `feat/10-push-to-talk-flow`
-11. `feat/11-reliability-power-errors`
-12. `feat/12-mvp-release`
+Legend: ✅ Complete, 🟡 Pending, ❌ Failed. Each icon is paired with text so
+the checklist does not rely on color alone.
+
+1. ✅ Complete - `feat/01-backup-recovery`
+2. ✅ Complete - `feat/02-micropython-skeleton`
+3. 🟡 Pending hardware validation - `feat/03-gpio-status-input`
+4. 🟡 Pending hardware validation - `feat/04-display-bringup`
+5. 🟡 Pending implementation - `feat/05-local-wifi-policy`
+6. 🟡 Pending hardware validation - `feat/06-es8311-codec-control`
+7. 🟡 Pending implementation - `feat/07-audio-capture`
+8. 🟡 Pending implementation - `feat/08-audio-playback`
+9. 🟡 Pending implementation - `feat/09-local-service-contract`
+10. 🟡 Pending implementation - `feat/10-push-to-talk-flow`
+11. 🟡 Pending implementation - `feat/11-reliability-power-errors`
+12. 🟡 Pending implementation - `feat/12-mvp-release`
 
 Optional on-device inference branches:
 
-13. `spike/13-on-device-inference-feasibility`
-14. `feat/14-on-device-inference`
+13. 🟡 Pending feasibility check - `spike/13-on-device-inference-feasibility`
+14. 🟡 Pending feasibility result - `feat/14-on-device-inference`
 
 Conditional runtime fallback branch:
 
-- `fallback/esp-idf-audio-runtime`
+- 🟡 Pending fallback criterion - `fallback/esp-idf-audio-runtime`
 
 ## Current Implementation Status
 
@@ -63,7 +66,7 @@ tooling directories.
 | LCD pin constants | Implemented | `src/pins.py` includes display, button, status LED, ES8311 audio, speaker enable, charge input, and board power constants from `SPEC.md`. | Verify unconfirmed GPIO10 power behavior before any branch attempts to drive it. |
 | `feat/03-gpio-status-input` | Implemented, hardware validation pending | `src/status_led.py`, `src/button.py`, `src/io_probe.py`, and `tests/test_gpio_status_input.py` add GPIO46 status states, GPIO42 active-low debounce events, a GPIO-only serial probe, and host regression coverage. | Validate LED colors and button press/release serial output on physical hardware. |
 | `feat/05-local-wifi-policy` | Not started | No imported Wi-Fi or local endpoint code. | Implement local config, endpoint validation, and `/health` client. |
-| `feat/06-es8311-codec-control` | Not started | No imported ES8311 I2C register code. | Implement codec detection, register setup, and speaker gate defaults. |
+| `feat/06-es8311-codec-control` | Implemented, hardware validation pending | `src/es8311.py`, `src/audio_probe.py`, `src/main.py`, and `tests/test_es8311_codec.py` add ES8311 I2C detection, register setup, GPIO9 speaker gate defaults, and host-side regression coverage. | Run `audio_probe.run_probe()` on physical hardware and record the observed scan and audio behavior. |
 | `feat/07-audio-capture` | Not started | No imported I2S microphone capture code. | Implement bounded PCM capture and WAV/PCM packaging. |
 | `feat/08-audio-playback` | Not started | No imported I2S speaker playback code. | Implement playback and speaker enable timing. |
 | `feat/09-local-service-contract` | Not started | No imported LAN service contract or mock service. | Define API, mock service, client, and tests. |
@@ -284,6 +287,17 @@ Acceptance criteria:
 - Initialization succeeds repeatedly after reset.
 - Speaker amplifier remains off unless explicitly enabled.
 - Host tests pass.
+
+Implementation notes:
+
+- The expected ES8311 I2C address is `0x18` in 7-bit notation; `0x19` is
+  accepted as the alternate CE-state address.
+- The initial register sequence configures 16 kHz, 16-bit I2S with MCLK on
+  GPIO6, analog microphone input, muted DAC output, and GPIO9 speaker-enable
+  held low by default.
+- The shutdown sequence mutes the DAC and powers down the ADC/DAC path. Physical
+  validation still needs to confirm microphone gain, playback volume, output
+  noise, and repeated reset behavior on the target device.
 
 ### `feat/07-audio-capture`
 

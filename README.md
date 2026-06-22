@@ -69,14 +69,18 @@ skeleton, GPIO probe, and display status probe:
 - `src/display.py`
 - `src/display_probe.py`
 - `src/aipi_lite_config.py`
+- `src/es8311.py`
+- `src/audio_probe.py`
 - `src/lib/st7735/`
 
 `boot.py` emits serial-visible safe startup status without constructing GPIO
 pins or touching GPIO10 board-power control. `main.py` prints the bring-up
-sequence and renders a best-effort boot status screen through the reusable
-display wrapper. `pins.py` centralizes the documented pin map for later hardware
-probe branches. `aipi_lite_config.py` remains as a compatibility shim for the
-imported display baseline.
+sequence, drives GPIO9 speaker enable low, and renders a best-effort boot
+status screen through the reusable display wrapper. `pins.py` centralizes the
+documented pin map for later hardware probe branches. `aipi_lite_config.py`
+remains as a compatibility shim for the imported display baseline. `es8311.py`
+provides codec I2C control and the speaker amplifier gate; `audio_probe.py` is
+the opt-in ES8311 hardware probe.
 
 The GPIO status/input probe remains opt-in so normal boot stays recoverable. To
 cycle the GPIO46 WS2812/NeoPixel status LED states and print debounced GPIO42
@@ -98,6 +102,16 @@ mpremote connect /dev/cu.usbmodem31101 exec "import display_probe; display_probe
 
 The display probe initializes only the ST7735-compatible LCD and GPIO3
 backlight. It does not start Wi-Fi, audio, or GPIO10 board-power control.
+
+The ES8311 codec probe remains opt-in as well. After uploading `src/`, run:
+
+```bash
+mpremote connect /dev/cu.usbmodem31101 exec "import audio_probe; audio_probe.run_probe()"
+```
+
+It scans the GPIO4/GPIO5 I2C bus for expected codec address `0x18`, writes the
+16 kHz 16-bit initialization registers, keeps the DAC muted, briefly pulses the
+GPIO9 speaker amplifier gate, and disables the gate before returning.
 
 See [src/README.md](src/README.md) for firmware image selection, upload, serial
 log, and safety notes for the MicroPython application tree.

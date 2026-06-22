@@ -28,6 +28,13 @@ def render_boot_screen():
     status_display.render_status("boot")
 
 
+def disable_speaker_amplifier():
+    """Drive the speaker amplifier gate off during normal application startup."""
+    from es8311 import SpeakerAmplifierGate
+
+    SpeakerAmplifierGate().disable()
+
+
 def main(print_func=print):
     """Run the safe serial-visible MicroPython skeleton startup sequence."""
     for line in STARTUP_LINES:
@@ -35,6 +42,12 @@ def main(print_func=print):
 
     for signal_name, pin_number in DO_NOT_TOUCH_DURING_BOOT.items():
         print_func("main: safe boot leaves {} on GPIO{} untouched".format(signal_name, pin_number))
+
+    try:
+        disable_speaker_amplifier()
+        print_func("main: speaker amplifier disabled")
+    except Exception as exc:
+        print_func("main: speaker amplifier default skipped: {}".format(type(exc).__name__))
 
     try:
         render_boot_screen()

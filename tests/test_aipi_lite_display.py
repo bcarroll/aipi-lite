@@ -14,6 +14,7 @@ MODULES_TO_CLEAR = (
     "aipi_lite_config",
     "display",
     "display_probe",
+    "es8311",
     "main",
     "pins",
     "machine",
@@ -355,6 +356,9 @@ class AipiLiteDisplayConfigTests(unittest.TestCase):
         self.assertIn(("text", (6, 12), "AIPI-LITE", 65535, FAKE_FONT, 2, True), tft.calls)
         self.assertIn(("text", (6, 44), "Booting", 65535, FAKE_FONT, 1, True), tft.calls)
         self.assertEqual(FakePWM.created[0].duty_u16_values, [65535])
+        self.assertIn("main: speaker amplifier disabled", messages)
+        speaker_pin = next(pin for pin in FakePin.created if pin.pin_id == 9)
+        self.assertEqual(speaker_pin.values, [0, 0])
         self.assertEqual(messages[-2:], ["main: display boot status rendered", "main: skeleton ready"])
         self.assertEqual(fake_time.sleep_ms_calls, [100])
 

@@ -82,6 +82,11 @@ on SPI bus 1 at 20 MHz, uses rotation `1`, enables RGB color order in the
 driver, and drives GPIO3 as a PWM backlight. Confirm orientation, color order,
 and backlight brightness on physical hardware with `display_probe.run_probe()`.
 
+Current firmware expects the ES8311 control interface to scan at 7-bit I2C
+address `0x18`, with `0x19` accepted as the alternate CE-state address. Confirm
+the observed address on this unit with `audio_probe.run_probe()` before treating
+the register settings as hardware-validated.
+
 Known unconfirmed or indirect controls:
 
 - Left/power button: community notes indicate the left tactile button is not
