@@ -55,16 +55,24 @@ Backup, restore, expected output, and safety details are documented in
 
 See [tools/README.md](tools/README.md) for lower-level setup tooling.
 
-## Imported Display Baseline
+## MicroPython Application Skeleton
 
-The imported MicroPython source currently provides an early TFT display demo:
+The MicroPython source under `src/` now provides the first safe application
+skeleton:
 
+- `src/boot.py`
 - `src/main.py`
+- `src/pins.py`
 - `src/aipi_lite_config.py`
 - `src/lib/st7735/`
 
-This baseline is retained as hardware evidence and is now staged under `src/`
-as the MicroPython application tree copied to the device.
+`boot.py` emits serial-visible safe startup status without constructing GPIO
+pins or touching GPIO10 board-power control. `main.py` prints the bring-up
+sequence and retains the imported TFT display demo as a best-effort baseline.
+`pins.py` centralizes the documented pin map for later hardware probe branches.
+
+See [src/README.md](src/README.md) for firmware image selection, upload, serial
+log, and safety notes for the MicroPython application tree.
 
 ## Host-side tests
 

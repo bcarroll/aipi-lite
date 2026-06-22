@@ -46,7 +46,7 @@ Conditional runtime fallback branch:
 
 - `fallback/esp-idf-audio-runtime`
 
-## Imported Implementation Status
+## Current Implementation Status
 
 The repository now includes an earlier implementation from
 `https://github.com/bcarroll/aipi-lite` at remote commit `b06b569`. That imported
@@ -55,12 +55,12 @@ Legacy checked-in firmware binaries are intentionally excluded from the current
 workflow; firmware images should be downloaded or generated into ignored
 tooling directories.
 
-| Branch / component | Status after import | Evidence | Remaining work |
+| Branch / component | Status | Evidence | Remaining work |
 | --- | --- | --- | --- |
 | `feat/01-backup-recovery` | Implemented | `install.sh` prompts for bootloader readiness, stores answers in `.conf`, backs up stock flash to ignored tooling storage, restores saved stock backups, and `RECOVERY.md` documents backup, restore, expected recovery output, and the flashing safety checklist. | Validate the restore flow on physical hardware and record exact stock serial logs. |
-| `feat/02-micropython-skeleton` | Partial | `src/main.py` and `src/aipi_lite_config.py` form a small MicroPython app baseline. | Expand the `src/` layout with boot defaults, pin constants, and host tests. |
+| `feat/02-micropython-skeleton` | Implemented | `src/boot.py`, `src/main.py`, `src/pins.py`, `src/README.md`, and host tests provide safe startup defaults, grouped pin constants, serial-visible bring-up status, and hardware-free regression coverage. | Validate the serial output and display baseline on physical hardware. |
 | `feat/04-display-bringup` | Partial | `src/lib/st7735/`, `src/aipi_lite_config.py`, and `src/main.py` initialize the ST7735 TFT and display text. | Convert demo into reusable display probe/status renderer and document orientation/color assumptions. |
-| LCD pin constants | Implemented for display only | `src/aipi_lite_config.py` uses GPIO3, GPIO7, GPIO15, GPIO16, GPIO17, and GPIO18. | Add pin constants for button, LED, ES8311, speaker enable, charge input, and board power. |
+| LCD pin constants | Implemented | `src/pins.py` includes display, button, status LED, ES8311 audio, speaker enable, charge input, and board power constants from `SPEC.md`. | Verify unconfirmed GPIO10 power behavior before any branch attempts to drive it. |
 | `feat/03-gpio-status-input` | Not started | No imported GPIO42 button or GPIO46 WS2812 code. | Implement status LED, button debounce, and tests. |
 | `feat/05-local-wifi-policy` | Not started | No imported Wi-Fi or local endpoint code. | Implement local config, endpoint validation, and `/health` client. |
 | `feat/06-es8311-codec-control` | Not started | No imported ES8311 I2C register code. | Implement codec detection, register setup, and speaker gate defaults. |

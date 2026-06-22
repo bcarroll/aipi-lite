@@ -13,6 +13,7 @@ SRC_ROOT = REPO_ROOT / "src"
 MODULES_TO_CLEAR = (
     "aipi_lite_config",
     "main",
+    "pins",
     "machine",
     "time",
     "lib",
@@ -208,16 +209,19 @@ class AipiLiteDisplayConfigTests(unittest.TestCase):
         fake_time = install_micropython_stubs()
 
         main = importlib.import_module("main")
-        tft = main.tft
+        messages = []
+        main.main(print_func=messages.append)
+        tft = FakeTFT.created[0]
 
         self.assertEqual(
             tft.calls[-3:],
             [
-                ("fill", main.BLACK),
-                ("text", (10, 30), "AIPI-LITE", main.WHITE, main.sysfont, 2, True),
-                ("text", (30, 60), "Micropython", main.WHITE, main.sysfont, 1, True),
+                ("fill", 0),
+                ("text", (10, 30), "AIPI-LITE", 65535, main.load_sysfont(), 2, True),
+                ("text", (30, 60), "Micropython", 65535, main.load_sysfont(), 1, True),
             ],
         )
+        self.assertEqual(messages[-2:], ["main: display baseline rendered", "main: skeleton ready"])
         self.assertEqual(fake_time.sleep_ms_calls, [1500, 100])
 
 

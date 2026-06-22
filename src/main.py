@@ -1,42 +1,74 @@
-"""Simple TFT display demo.
+"""AIPI-Lite MicroPython skeleton entrypoint.
 
-This module initializes the SPI-connected ST7735 TFT display and runs a
-small text rendering demonstration.
+The first firmware milestone keeps startup deliberately small: print a
+serial-visible bring-up sequence, leave risky power-control pins untouched, and
+exercise the existing display baseline when the ST7735 driver is available.
 """
 
 import time
-from aipi_lite_config import tft
-from aipi_lite_config import BLACK, RED, GREEN, BLUE, WHITE
-from lib.st7735.sysfont import sysfont
 
-#from machine import SPI, Pin, PWM
+from pins import BOARD_POWER_CONTROL
+from pins import DO_NOT_TOUCH_DURING_BOOT
 
-#from lib.st7735 import TFT, sysfont
+STARTUP_LINES = (
+    "main: AIPI-Lite MicroPython skeleton starting",
+    "main: serial bring-up active",
+    "main: GPIO{} board power left unchanged".format(BOARD_POWER_CONTROL),
+)
 
 
+def sleep_ms(milliseconds):
+    """Sleep for the requested milliseconds on MicroPython or CPython."""
+    if hasattr(time, "sleep_ms"):
+        time.sleep_ms(milliseconds)
+        return
+    time.sleep(milliseconds / 1000)
 
 
-def tftprinttest(font=sysfont):
+def load_sysfont():
+    """Load the bundled MicroPython ST7735 font only when the display is used."""
+    from lib.st7735.sysfont import sysfont
+
+    return sysfont
+
+
+def tftprinttest(display, font=None):
     """Display sample strings with the provided font on the TFT display."""
-    tft.fill(BLACK)
-    v = 30
-    tft.text((10, v), "AIPI-LITE", WHITE, font, 2, nowrap=True)
-    tft.text((30, 60), "Micropython", WHITE, font, 1, nowrap=True)
-    #v += font["Height"]
-    #tft.text((0, v), "Hello World!", TFT.YELLOW, font, 2, nowrap=True)
-    #v += font["Height"] * 2
-    #tft.text((0, v), "Hello World!", TFT.GREEN, font, 3, nowrap=True)
-    #v += font["Height"] * 3
-    #tft.text((0, v), str(1234.5), TFT.BLUE, font, 4, nowrap=True)
-    time.sleep_ms(1500)
+    if font is None:
+        font = load_sysfont()
+
+    from aipi_lite_config import BLACK, WHITE
+
+    display.fill(BLACK)
+    display.text((10, 30), "AIPI-LITE", WHITE, font, 2, nowrap=True)
+    display.text((30, 60), "Micropython", WHITE, font, 1, nowrap=True)
+    sleep_ms(1500)
 
 
-def test_main():
-    """Run the TFT print test sequence."""
-    tftprinttest()
-    time.sleep_ms(100)
+def run_display_demo():
+    """Initialize the existing display baseline and draw the startup message."""
+    from aipi_lite_config import tft
+
+    tftprinttest(tft)
 
 
+def main(print_func=print):
+    """Run the safe serial-visible MicroPython skeleton startup sequence."""
+    for line in STARTUP_LINES:
+        print_func(line)
 
-test_main()
+    for signal_name, pin_number in DO_NOT_TOUCH_DURING_BOOT.items():
+        print_func("main: safe boot leaves {} on GPIO{} untouched".format(signal_name, pin_number))
 
+    try:
+        run_display_demo()
+        print_func("main: display baseline rendered")
+    except Exception as exc:
+        print_func("main: display baseline skipped: {}".format(type(exc).__name__))
+
+    sleep_ms(100)
+    print_func("main: skeleton ready")
+
+
+if __name__ == "__main__":
+    main()
