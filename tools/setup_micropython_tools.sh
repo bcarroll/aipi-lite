@@ -12,7 +12,7 @@ DEFAULT_FIRMWARE_URL="https://micropython.org/resources/firmware/ESP32_GENERIC_S
 
 FIRMWARE_URL="${AIPI_MICROPYTHON_FIRMWARE_URL:-${DEFAULT_FIRMWARE_URL}}"
 PORT="${AIPI_SERIAL_PORT:-}"
-APP_DIR="${REPO_ROOT}/firmware/micropython"
+APP_DIR="${REPO_ROOT}/src"
 DOWNLOAD_FIRMWARE=1
 DOWNLOAD_LIBRARIES=1
 
@@ -244,8 +244,8 @@ EOF
 Application source directory does not exist yet:
   ${APP_DIR}
 
-After firmware/micropython/ exists, upload it with:
-  ${mpremote_cmd} connect ${connect_arg} fs cp -r firmware/micropython/ :
+After src/ exists, upload it with:
+  ${mpremote_cmd} connect ${connect_arg} fs cp -r src/ :
 EOF
   fi
 }

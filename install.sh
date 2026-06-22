@@ -28,8 +28,7 @@ source over USB-C with mpremote.
 
 Options:
   --port PORT             Serial port, for example /dev/cu.usbmodem31101.
-  --app-dir DIR           Application directory to upload instead of the current
-                          repository baseline.
+  --app-dir DIR           Application directory to upload instead of src/.
   --firmware-url URL      MicroPython firmware .bin URL. Defaults to latest
                           stable ESP32_GENERIC_S3 from micropython.org.
   --baud RATE             Flash baud rate. Default: 460800.
@@ -197,6 +196,7 @@ ensure_prerequisites() {
   local firmware_path="$2"
   local missing
   local setup_args
+  local setup_app_dir
 
   missing="$(collect_missing_prerequisites "${firmware_path}")"
   if [[ -z "${missing}" ]]; then
@@ -219,9 +219,8 @@ EOF
   if [[ -n "${PORT}" ]]; then
     setup_args+=(--port "${PORT}")
   fi
-  if [[ -n "${APP_DIR}" ]]; then
-    setup_args+=(--app-dir "${APP_DIR}")
-  fi
+  setup_app_dir="${APP_DIR:-${SCRIPT_DIR}/src}"
+  setup_args+=(--app-dir "${setup_app_dir}")
 
   bash "${SETUP_SCRIPT}" "${setup_args[@]}"
 }
@@ -299,15 +298,13 @@ upload_application() {
     return
   fi
 
-  if [[ -d "${SCRIPT_DIR}/firmware/micropython" ]]; then
-    upload_tree "${mpremote_bin}" "${connect_target}" "${SCRIPT_DIR}/firmware/micropython" ""
+  if [[ -d "${SCRIPT_DIR}/src" ]]; then
+    upload_tree "${mpremote_bin}" "${connect_target}" "${SCRIPT_DIR}/src" ""
     return
   fi
 
-  upload_file "${mpremote_bin}" "${connect_target}" "${SCRIPT_DIR}/main.py" "main.py"
-  upload_file "${mpremote_bin}" "${connect_target}" "${SCRIPT_DIR}/aipi_lite_config.py" "aipi_lite_config.py"
-  remote_mkdir "${mpremote_bin}" "${connect_target}" "lib"
-  upload_tree "${mpremote_bin}" "${connect_target}" "${SCRIPT_DIR}/lib" "lib"
+  echo "error: application source directory not found: ${SCRIPT_DIR}/src" >&2
+  exit 1
 }
 
 main() {

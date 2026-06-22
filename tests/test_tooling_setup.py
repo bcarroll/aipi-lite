@@ -23,6 +23,7 @@ class SetupMicropythonToolsTests(unittest.TestCase):
         self.assertIn('DOWNLOAD_DIR="${TOOLS_ROOT}/downloads/firmware"', self.script_text)
         self.assertIn('LIB_ROOT="${TOOLS_ROOT}/micropython-libs"', self.script_text)
         self.assertIn("Downloaded files are placed under tools/.local/", self.script_text)
+        self.assertIn('APP_DIR="${REPO_ROOT}/src"', self.script_text)
 
     def test_required_host_tools_are_installed(self):
         """The setup script should install esptool and mpremote into the local venv."""

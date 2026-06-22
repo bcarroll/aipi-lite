@@ -58,9 +58,9 @@ tooling directories.
 | Branch / component | Status after import | Evidence | Remaining work |
 | --- | --- | --- | --- |
 | `feat/01-backup-recovery` | Partial | `install.sh`, `tools/setup_micropython_tools.sh`, `tools/README.md`, and `README.md` document bootloader mode and tools-based MicroPython firmware download/flash commands. | Add stock firmware backup, restore, and safety checklist docs. |
-| `feat/02-micropython-skeleton` | Partial | `main.py` and `aipi_lite_config.py` form a small MicroPython app baseline. | Move or wrap into the planned `firmware/micropython/` layout and add host tests. |
-| `feat/04-display-bringup` | Partial | `lib/st7735/`, `aipi_lite_config.py`, and `main.py` initialize the ST7735 TFT and display text. | Convert demo into reusable display probe/status renderer and document orientation/color assumptions. |
-| LCD pin constants | Implemented for display only | `aipi_lite_config.py` uses GPIO3, GPIO7, GPIO15, GPIO16, GPIO17, and GPIO18. | Add pin constants for button, LED, ES8311, speaker enable, charge input, and board power. |
+| `feat/02-micropython-skeleton` | Partial | `src/main.py` and `src/aipi_lite_config.py` form a small MicroPython app baseline. | Expand the `src/` layout with boot defaults, pin constants, and host tests. |
+| `feat/04-display-bringup` | Partial | `src/lib/st7735/`, `src/aipi_lite_config.py`, and `src/main.py` initialize the ST7735 TFT and display text. | Convert demo into reusable display probe/status renderer and document orientation/color assumptions. |
+| LCD pin constants | Implemented for display only | `src/aipi_lite_config.py` uses GPIO3, GPIO7, GPIO15, GPIO16, GPIO17, and GPIO18. | Add pin constants for button, LED, ES8311, speaker enable, charge input, and board power. |
 | `feat/03-gpio-status-input` | Not started | No imported GPIO42 button or GPIO46 WS2812 code. | Implement status LED, button debounce, and tests. |
 | `feat/05-local-wifi-policy` | Not started | No imported Wi-Fi or local endpoint code. | Implement local config, endpoint validation, and `/health` client. |
 | `feat/06-es8311-codec-control` | Not started | No imported ES8311 I2C register code. | Implement codec detection, register setup, and speaker gate defaults. |
@@ -108,9 +108,9 @@ Purpose: create the first runnable firmware tree with safe defaults.
 Expected commits:
 
 - `firmware: add MicroPython project skeleton`
-  - Add `firmware/micropython/boot.py`.
-  - Add `firmware/micropython/main.py`.
-  - Add `firmware/micropython/README.md`.
+  - Add or update `src/boot.py`.
+  - Add or update `src/main.py`.
+  - Add `src/README.md`.
   - Keep startup safe: no GPIO10 power-control changes.
 
 - `firmware: add AIPI-Lite pin constants`

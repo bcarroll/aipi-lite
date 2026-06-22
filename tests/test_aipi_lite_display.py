@@ -1,16 +1,21 @@
 """Tests for the implemented MicroPython display baseline."""
 
 import importlib
+from pathlib import Path
 import sys
 import types
 import unittest
 
+
+REPO_ROOT = Path(__file__).resolve().parents[1]
+SRC_ROOT = REPO_ROOT / "src"
 
 MODULES_TO_CLEAR = (
     "aipi_lite_config",
     "main",
     "machine",
     "time",
+    "lib",
     "lib.st7735",
     "lib.st7735.sysfont",
 )
@@ -150,6 +155,13 @@ def clear_imported_modules():
         sys.modules.pop(module_name, None)
 
 
+def ensure_src_path():
+    """Make the device-side source tree importable by host-side tests."""
+    src_path = str(SRC_ROOT)
+    if src_path not in sys.path:
+        sys.path.insert(0, src_path)
+
+
 class AipiLiteDisplayConfigTests(unittest.TestCase):
     """Validate the implemented display pin map and demo behavior."""
 
@@ -160,6 +172,7 @@ class AipiLiteDisplayConfigTests(unittest.TestCase):
     def test_display_config_uses_documented_lcd_pins(self):
         """aipi_lite_config should initialize the TFT with the known LCD pins."""
         clear_imported_modules()
+        ensure_src_path()
         install_micropython_stubs()
 
         config = importlib.import_module("aipi_lite_config")
@@ -191,6 +204,7 @@ class AipiLiteDisplayConfigTests(unittest.TestCase):
     def test_main_draws_expected_boot_demo_text(self):
         """main.py should render the current AIPI-LITE MicroPython demo text."""
         clear_imported_modules()
+        ensure_src_path()
         fake_time = install_micropython_stubs()
 
         main = importlib.import_module("main")

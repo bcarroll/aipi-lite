@@ -41,10 +41,11 @@ class InstallScriptTests(unittest.TestCase):
 
     def test_uploads_current_application_baseline(self):
         """The installer should copy the current app source when no app dir exists."""
-        self.assertIn("firmware/micropython", self.script_text)
-        self.assertIn("main.py", self.script_text)
-        self.assertIn("aipi_lite_config.py", self.script_text)
+        self.assertIn('${SCRIPT_DIR}/src', self.script_text)
         self.assertIn("upload_tree", self.script_text)
+        self.assertNotIn('${SCRIPT_DIR}/main.py', self.script_text)
+        self.assertNotIn('${SCRIPT_DIR}/aipi_lite_config.py', self.script_text)
+        self.assertNotIn('${SCRIPT_DIR}/lib', self.script_text)
         self.assertIn("lib/drivers", self.script_text)
 
 

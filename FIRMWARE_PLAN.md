@@ -221,14 +221,14 @@ is worth the added firmware complexity.
   caveats.
 - `FIRMWARE_PLAN.md`: firmware architecture, milestones, protocol, and fallback
   criteria.
-- Future `firmware/README.md`: flashing, backup, configuration, and recovery
-  instructions.
+- Future `src/README.md`: MicroPython application layout, configuration,
+  upload, and recovery notes.
 - Future `service/README.md`: local service API, deployment, and security
   controls.
 
 ## First Implementation Milestone
 
-Create a minimal MicroPython hardware probe under `firmware/micropython/` with:
+Create a minimal MicroPython hardware probe under `src/` with:
 
 - `boot.py` for safe startup defaults.
 - `main.py` for a serial-visible bring-up sequence.
@@ -251,9 +251,9 @@ baseline:
 | Plan component | Imported status | Evidence |
 | --- | --- | --- |
 | Flashing support | Partially implemented | `install.sh`, `tools/setup_micropython_tools.sh`, `tools/README.md`, and `README.md` document a reproducible tools-based workflow that downloads MicroPython firmware into ignored `tools/.local/` artifacts and uploads current application source. |
-| MicroPython source skeleton | Partially implemented | `main.py` runs a display demo and `aipi_lite_config.py` centralizes display pin setup. The planned `firmware/micropython/` layout is still future work. |
-| Pin mapping | Partially implemented | `aipi_lite_config.py` uses GPIO3 backlight, GPIO15 CS, GPIO7 D/C, GPIO18 reset, GPIO16 SCLK, and GPIO17 MOSI, matching the LCD pins in `SPEC.md`. |
-| Display bring-up | Partially implemented | `lib/st7735/` contains an ST7735 driver and font; `main.py` renders sample text to the 128 x 128 TFT. |
+| MicroPython source skeleton | Partially implemented | `src/main.py` runs a display demo and `src/aipi_lite_config.py` centralizes display pin setup. |
+| Pin mapping | Partially implemented | `src/aipi_lite_config.py` uses GPIO3 backlight, GPIO15 CS, GPIO7 D/C, GPIO18 reset, GPIO16 SCLK, and GPIO17 MOSI, matching the LCD pins in `SPEC.md`. |
+| Display bring-up | Partially implemented | `src/lib/st7735/` contains an ST7735 driver and font; `src/main.py` renders sample text to the 128 x 128 TFT. |
 | GPIO status LED and side button | Not implemented | No GPIO46 WS2812 or GPIO42 button handling has been imported. |
 | Wi-Fi and local-only service policy | Not implemented | No local endpoint validation, Wi-Fi configuration, or LAN service client has been imported. |
 | ES8311 audio control and I2S audio | Not implemented | No codec initialization, microphone capture, speaker playback, or GPIO9 speaker-enable logic has been imported. |

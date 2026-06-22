@@ -29,7 +29,7 @@ The script creates `tools/.local/micropython-venv/`, installs `esptool` and
 `mpremote`, downloads the default ESP32-S3 MicroPython firmware image, stages the
 MicroPython libraries needed by the AIPI-Lite firmware, and prints the commands
 needed to erase flash, write MicroPython firmware, upload libraries to `/lib`,
-and upload the future `firmware/micropython/` application tree.
+and upload the `src/` application tree.
 
 Use an explicit serial port when multiple USB serial devices are attached:
 

@@ -46,12 +46,12 @@ See [tools/README.md](tools/README.md) for lower-level setup tooling.
 
 The imported MicroPython source currently provides an early TFT display demo:
 
-- `main.py`
-- `aipi_lite_config.py`
-- `lib/st7735/`
+- `src/main.py`
+- `src/aipi_lite_config.py`
+- `src/lib/st7735/`
 
-This baseline is retained as hardware evidence and will be moved or wrapped into
-the planned `firmware/micropython/` application layout.
+This baseline is retained as hardware evidence and is now staged under `src/`
+as the MicroPython application tree copied to the device.
 
 ## Host-side tests
 
