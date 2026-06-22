@@ -3,6 +3,7 @@ tools/.local/
 /micropython/
 .conf
 .conf.tmp.*
+src/local_wifi_config.py
 __pycache__/
 *.pyc
 esp-env

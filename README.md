@@ -37,7 +37,11 @@ ESP32_GENERIC_S3 image is not the right target:
 
 Before erasing or writing flash, the installer now requires bootloader
 confirmation and backs up the 16 MB stock flash image to `tools/.local/backups/`
-unless `.conf` points at an existing backup.
+unless `.conf` points at an existing exact-size backup. The backup read is
+chunked by default so a failed transfer cannot be mistaken for a complete stock
+image on the next run. If a backup stalls on a specific USB setup, reduce the
+chunk size with `--backup-chunk-size 0x40000` or set
+`AIPI_BACKUP_CHUNK_SIZE=0x40000` in `.conf`.
 
 The user still needs to put the AIPI-Lite into ESP32-S3 bootloader mode and
 connect the device over USB-C because those are physical actions.
@@ -58,7 +62,7 @@ See [tools/README.md](tools/README.md) for lower-level setup tooling.
 ## MicroPython Application Skeleton
 
 The MicroPython source under `src/` now provides the first safe application
-skeleton and the first GPIO probe:
+skeleton, GPIO probe, and display status probe:
 
 - `src/boot.py`
 - `src/main.py`
@@ -66,13 +70,26 @@ skeleton and the first GPIO probe:
 - `src/status_led.py`
 - `src/button.py`
 - `src/io_probe.py`
+- `src/display.py`
+- `src/display_probe.py`
 - `src/aipi_lite_config.py`
+- `src/es8311.py`
+- `src/audio_probe.py`
+- `src/wifi_config.py`
+- `src/local_endpoint.py`
+- `src/wifi_probe.py`
 - `src/lib/st7735/`
 
 `boot.py` emits serial-visible safe startup status without constructing GPIO
 pins or touching GPIO10 board-power control. `main.py` prints the bring-up
-sequence and retains the imported TFT display demo as a best-effort baseline.
-`pins.py` centralizes the documented pin map for later hardware probe branches.
+sequence, drives GPIO9 speaker enable low, and renders a best-effort boot
+status screen through the reusable display wrapper. `pins.py` centralizes the
+documented pin map for later hardware probe branches. `aipi_lite_config.py`
+remains as a compatibility shim for the imported display baseline. `es8311.py`
+provides codec I2C control and the speaker amplifier gate; `audio_probe.py` is
+the opt-in ES8311 hardware probe. `wifi_probe.py` connects only to configured
+local Wi-Fi and calls only a local `/health` endpoint after endpoint policy
+validation passes.
 
 The GPIO status/input probe remains opt-in so normal boot stays recoverable. To
 cycle the GPIO46 WS2812/NeoPixel status LED states and print debounced GPIO42
@@ -85,6 +102,38 @@ mpremote connect /dev/cu.usbmodem31101 exec "import io_probe; io_probe.run_probe
 The probe does not start Wi-Fi, initialize audio, initialize the display, or
 touch GPIO10 board-power control.
 
+The display probe is also opt-in. To cycle the 128 x 128 LCD through boot,
+Wi-Fi, ready, recording, processing, speaking, and error screens, run:
+
+```bash
+mpremote connect /dev/cu.usbmodem31101 exec "import display_probe; display_probe.run_probe(cycles=2)"
+```
+
+The display probe initializes only the ST7735-compatible LCD and GPIO3
+backlight. It does not start Wi-Fi, audio, or GPIO10 board-power control.
+
+The ES8311 codec probe remains opt-in as well. After uploading `src/`, run:
+
+```bash
+mpremote connect /dev/cu.usbmodem31101 exec "import audio_probe; audio_probe.run_probe()"
+```
+
+It scans the GPIO4/GPIO5 I2C bus for expected codec address `0x18`, writes the
+16 kHz 16-bit initialization registers, keeps the DAC muted, briefly pulses the
+GPIO9 speaker amplifier gate, and disables the gate before returning.
+
+The Wi-Fi/local-service probe requires an ignored `src/local_wifi_config.py`
+file on the device. After uploading `src/`, run:
+
+```bash
+mpremote connect /dev/cu.usbmodem31101 exec "import wifi_probe; wifi_probe.run_probe()"
+```
+
+The probe validates the configured endpoint before connecting to Wi-Fi. It
+accepts RFC1918 IPv4 addresses, loopback/link-local IPv4 for bench testing,
+`.local` names, and explicitly approved local hostnames. Public internet
+endpoints are rejected by default and are not contacted.
+
 See [src/README.md](src/README.md) for firmware image selection, upload, serial
 log, and safety notes for the MicroPython application tree.
 
@@ -96,6 +145,6 @@ Run the host-side regression tests from the repository root:
 python3 -m unittest discover -s tests -v
 ```
 
-These tests use local stubs for MicroPython-only modules so they can validate the
-implemented display baseline and setup tooling without an attached AIPI-Lite
+These tests use local stubs for MicroPython-only modules so they can validate
+display layout, GPIO logic, and setup tooling without an attached AIPI-Lite
 device.

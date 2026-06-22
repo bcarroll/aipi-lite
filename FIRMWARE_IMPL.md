@@ -22,29 +22,32 @@ keep each branch focused, and merge only after its acceptance criteria pass.
 - For generated Python code, include tests in the same branch.
 - Do not add production dependencies without explicit approval.
 
-## Merge Order
+## Merge Order Checklist
 
-1. `feat/01-backup-recovery`
-2. `feat/02-micropython-skeleton`
-3. `feat/03-gpio-status-input`
-4. `feat/04-display-bringup`
-5. `feat/05-local-wifi-policy`
-6. `feat/06-es8311-codec-control`
-7. `feat/07-audio-capture`
-8. `feat/08-audio-playback`
-9. `feat/09-local-service-contract`
-10. `feat/10-push-to-talk-flow`
-11. `feat/11-reliability-power-errors`
-12. `feat/12-mvp-release`
+Legend: ✅ Complete, 🟡 Pending, ❌ Failed. Each icon is paired with text so
+the checklist does not rely on color alone.
+
+1. ✅ Complete - `feat/01-backup-recovery`
+2. ✅ Complete - `feat/02-micropython-skeleton`
+3. 🟡 Pending hardware validation - `feat/03-gpio-status-input`
+4. 🟡 Pending hardware validation - `feat/04-display-bringup`
+5. 🟡 Pending hardware validation - `feat/05-local-wifi-policy`
+6. 🟡 Pending hardware validation - `feat/06-es8311-codec-control`
+7. 🟡 Pending implementation - `feat/07-audio-capture`
+8. 🟡 Pending implementation - `feat/08-audio-playback`
+9. 🟡 Pending implementation - `feat/09-local-service-contract`
+10. 🟡 Pending implementation - `feat/10-push-to-talk-flow`
+11. 🟡 Pending implementation - `feat/11-reliability-power-errors`
+12. 🟡 Pending implementation - `feat/12-mvp-release`
 
 Optional on-device inference branches:
 
-13. `spike/13-on-device-inference-feasibility`
-14. `feat/14-on-device-inference`
+13. 🟡 Pending feasibility check - `spike/13-on-device-inference-feasibility`
+14. 🟡 Pending feasibility result - `feat/14-on-device-inference`
 
 Conditional runtime fallback branch:
 
-- `fallback/esp-idf-audio-runtime`
+- 🟡 Pending fallback criterion - `fallback/esp-idf-audio-runtime`
 
 ## Current Implementation Status
 
@@ -57,13 +60,13 @@ tooling directories.
 
 | Branch / component | Status | Evidence | Remaining work |
 | --- | --- | --- | --- |
-| `feat/01-backup-recovery` | Implemented | `install.sh` prompts for bootloader readiness, stores answers in `.conf`, backs up stock flash to ignored tooling storage, restores saved stock backups, and `RECOVERY.md` documents backup, restore, expected recovery output, and the flashing safety checklist. | Validate the restore flow on physical hardware and record exact stock serial logs. |
+| `feat/01-backup-recovery` | Implemented | `install.sh` prompts for bootloader readiness, stores answers in `.conf`, backs up stock flash to ignored tooling storage with exact-size validation and chunked reads, restores saved stock backups, and `RECOVERY.md` documents backup, restore, expected recovery output, and the flashing safety checklist. | Validate the restore flow on physical hardware and record exact stock serial logs. |
 | `feat/02-micropython-skeleton` | Implemented | `src/boot.py`, `src/main.py`, `src/pins.py`, `src/README.md`, and host tests provide safe startup defaults, grouped pin constants, serial-visible bring-up status, and hardware-free regression coverage. | Validate the serial output and display baseline on physical hardware. |
-| `feat/04-display-bringup` | Partial | `src/lib/st7735/`, `src/aipi_lite_config.py`, and `src/main.py` initialize the ST7735 TFT and display text. | Convert demo into reusable display probe/status renderer and document orientation/color assumptions. |
+| `feat/04-display-bringup` | Implemented, hardware validation pending | `src/display.py`, `src/display_probe.py`, `src/aipi_lite_config.py`, `src/main.py`, and `tests/test_aipi_lite_display.py` add an ST7735 wrapper, PWM backlight control, named status screens, an opt-in display probe, and host-side layout coverage. | Run `display_probe.run_probe()` on physical hardware and record final orientation, color order, and readability observations. |
 | LCD pin constants | Implemented | `src/pins.py` includes display, button, status LED, ES8311 audio, speaker enable, charge input, and board power constants from `SPEC.md`. | Verify unconfirmed GPIO10 power behavior before any branch attempts to drive it. |
 | `feat/03-gpio-status-input` | Implemented, hardware validation pending | `src/status_led.py`, `src/button.py`, `src/io_probe.py`, and `tests/test_gpio_status_input.py` add GPIO46 status states, GPIO42 active-low debounce events, a GPIO-only serial probe, and host regression coverage. | Validate LED colors and button press/release serial output on physical hardware. |
-| `feat/05-local-wifi-policy` | Not started | No imported Wi-Fi or local endpoint code. | Implement local config, endpoint validation, and `/health` client. |
-| `feat/06-es8311-codec-control` | Not started | No imported ES8311 I2C register code. | Implement codec detection, register setup, and speaker gate defaults. |
+| `feat/05-local-wifi-policy` | Implemented, hardware validation pending | `src/wifi_config.py`, `src/local_endpoint.py`, `src/wifi_probe.py`, `.gitignore`, and `tests/test_wifi_policy.py` add ignored local config loading, local-only endpoint validation, a Wi-Fi `/health` probe, and host-side policy coverage. | Run `wifi_probe.run_probe()` on physical hardware with a local service and record connection, endpoint, LED, and display behavior. |
+| `feat/06-es8311-codec-control` | Implemented, hardware validation pending | `src/es8311.py`, `src/audio_probe.py`, `src/main.py`, and `tests/test_es8311_codec.py` add ES8311 I2C detection, register setup, GPIO9 speaker gate defaults, and host-side regression coverage. | Run `audio_probe.run_probe()` on physical hardware and record the observed scan and audio behavior. |
 | `feat/07-audio-capture` | Not started | No imported I2S microphone capture code. | Implement bounded PCM capture and WAV/PCM packaging. |
 | `feat/08-audio-playback` | Not started | No imported I2S speaker playback code. | Implement playback and speaker enable timing. |
 | `feat/09-local-service-contract` | Not started | No imported LAN service contract or mock service. | Define API, mock service, client, and tests. |
@@ -201,6 +204,19 @@ Acceptance criteria:
 - Status screens are legible on the target device.
 - Host tests pass.
 
+Implementation notes:
+
+- Display setup uses the existing ST7735-compatible driver, SPI bus 1 at
+  20 MHz, GPIO15 CS, GPIO16 SCLK, GPIO17 MOSI, GPIO7 D/C, GPIO18 reset, and
+  GPIO3 PWM backlight.
+- The renderer uses rotation `1`, RGB color order enabled, a 128 x 128 screen,
+  bounded ASCII truncation, and status screens for boot, Wi-Fi, ready,
+  recording, processing, speaking, and error.
+- `aipi_lite_config.py` remains as a compatibility shim for the imported display
+  baseline. New code should use `display.py`.
+- Physical validation still needs to confirm whether the current rotation,
+  color constants, and text size are optimal on the target LCD.
+
 ### `feat/05-local-wifi-policy`
 
 Purpose: connect to Wi-Fi and enforce local-only network behavior.
@@ -235,6 +251,21 @@ Acceptance criteria:
 - Firmware refuses public service endpoints by default.
 - Health check state is visible on serial, LED, and display.
 - Host tests pass.
+
+Implementation notes:
+
+- Operator configuration belongs in ignored `src/local_wifi_config.py` with
+  `WIFI_SSID`, `WIFI_PASSWORD`, `LOCAL_SERVICE_URL`, and optional
+  `APPROVED_LOCAL_HOSTS`.
+- Endpoint validation accepts RFC1918 IPv4, loopback/link-local IPv4 for bench
+  testing, `.local` mDNS names, and explicitly approved local hostnames. Public
+  IPv4 addresses, public hostnames, embedded credentials, query strings, and
+  unsupported schemes fail closed before Wi-Fi or HTTP calls.
+- `wifi_probe.py` uses MicroPython station mode, validates the endpoint before
+  connecting, calls only the derived local `/health` URL, and reports state
+  through serial plus available LED/display modules.
+- Physical validation still needs to confirm MicroPython `network.WLAN`,
+  `urequests`, local mDNS behavior, and status UI behavior on the target device.
 
 ### `feat/06-es8311-codec-control`
 
@@ -271,6 +302,17 @@ Acceptance criteria:
 - Initialization succeeds repeatedly after reset.
 - Speaker amplifier remains off unless explicitly enabled.
 - Host tests pass.
+
+Implementation notes:
+
+- The expected ES8311 I2C address is `0x18` in 7-bit notation; `0x19` is
+  accepted as the alternate CE-state address.
+- The initial register sequence configures 16 kHz, 16-bit I2S with MCLK on
+  GPIO6, analog microphone input, muted DAC output, and GPIO9 speaker-enable
+  held low by default.
+- The shutdown sequence mutes the DAC and powers down the ADC/DAC path. Physical
+  validation still needs to confirm microphone gain, playback volume, output
+  noise, and repeated reset behavior on the target device.
 
 ### `feat/07-audio-capture`
 

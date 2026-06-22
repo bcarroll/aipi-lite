@@ -1,4 +1,4 @@
-"""Tests for the implemented MicroPython display baseline."""
+"""Tests for the AIPI-Lite MicroPython display bring-up."""
 
 import importlib
 from pathlib import Path
@@ -12,6 +12,9 @@ SRC_ROOT = REPO_ROOT / "src"
 
 MODULES_TO_CLEAR = (
     "aipi_lite_config",
+    "display",
+    "display_probe",
+    "es8311",
     "main",
     "pins",
     "machine",
@@ -20,6 +23,8 @@ MODULES_TO_CLEAR = (
     "lib.st7735",
     "lib.st7735.sysfont",
 )
+
+FAKE_FONT = {"Width": 5, "Height": 8, "Start": 0, "End": 255, "Data": bytearray()}
 
 
 class FakePin:
@@ -43,16 +48,30 @@ class FakePin:
             return self.values[-1] if self.values else 0
         self.values.append(value)
 
+    def value(self, value=None):
+        """Read or set the fake pin through MicroPython's value API."""
+        return self.__call__(value)
+
 
 class FakePWM:
-    """Record PWM construction for backlight setup."""
+    """Record PWM construction and duty changes for backlight setup."""
 
     created = []
 
     def __init__(self, pin):
         """Create a fake PWM channel bound to a fake pin."""
         self.pin = pin
+        self.duty_u16_values = []
+        self.duty_values = []
         FakePWM.created.append(self)
+
+    def duty_u16(self, value):
+        """Record a 16-bit PWM duty change."""
+        self.duty_u16_values.append(value)
+
+    def duty(self, value):
+        """Record a 10-bit PWM duty change."""
+        self.duty_values.append(value)
 
 
 class FakeSPI:
@@ -121,6 +140,18 @@ class FakeTime(types.ModuleType):
         self.sleep_ms_calls.append(milliseconds)
 
 
+class FakeStatusDisplay:
+    """Record display probe status render calls."""
+
+    def __init__(self):
+        """Create a fake display renderer."""
+        self.statuses = []
+
+    def render_status(self, status, detail=None):
+        """Record one rendered status screen."""
+        self.statuses.append((status, detail))
+
+
 def install_micropython_stubs():
     """Install fake MicroPython modules required by the current firmware code."""
     FakePin.created.clear()
@@ -138,7 +169,7 @@ def install_micropython_stubs():
     st7735.TFT = FakeTFT
 
     sysfont = types.ModuleType("lib.st7735.sysfont")
-    sysfont.sysfont = {"Width": 5, "Height": 8, "Start": 0, "End": 255, "Data": bytearray()}
+    sysfont.sysfont = FAKE_FONT
     st7735.sysfont = sysfont
 
     fake_time = FakeTime()
@@ -164,11 +195,16 @@ def ensure_src_path():
 
 
 class AipiLiteDisplayConfigTests(unittest.TestCase):
-    """Validate the implemented display pin map and demo behavior."""
+    """Validate display hardware setup, layout, and probe behavior."""
 
     def tearDown(self):
         """Clean imported firmware modules after each test."""
         clear_imported_modules()
+
+    def import_display(self):
+        """Import the display module with the source tree on sys.path."""
+        ensure_src_path()
+        return importlib.import_module("display")
 
     def test_display_config_uses_documented_lcd_pins(self):
         """aipi_lite_config should initialize the TFT with the known LCD pins."""
@@ -202,8 +238,111 @@ class AipiLiteDisplayConfigTests(unittest.TestCase):
         self.assertEqual(tft.screen_size, (128, 128))
         self.assertEqual(tft.calls[:3], [("initr",), ("rotation", 1), ("rgb", True)])
 
-    def test_main_draws_expected_boot_demo_text(self):
-        """main.py should render the current AIPI-LITE MicroPython demo text."""
+    def test_status_definitions_cover_required_roadmap_states(self):
+        """The renderer should support every display status from feat/04."""
+        display = self.import_display()
+
+        self.assertEqual(
+            display.available_statuses(),
+            ("boot", "wifi", "ready", "recording", "processing", "speaking", "error"),
+        )
+        for status in display.available_statuses():
+            definition = display.screen_definition(status)
+            self.assertIn("title", definition)
+            self.assertIn("lines", definition)
+            self.assertIn("foreground", definition)
+            self.assertIn("background", definition)
+
+    def test_wrap_text_keeps_lines_within_display_bounds(self):
+        """Long status details should wrap and truncate inside the screen width."""
+        display = self.import_display()
+
+        lines = display.wrap_text(
+            "supercalifragilistic local firmware display status details",
+            max_chars=12,
+            max_lines=3,
+        )
+
+        self.assertLessEqual(len(lines), 3)
+        self.assertTrue(all(len(line) <= 12 for line in lines))
+        self.assertEqual(lines[0], "supercalifra")
+
+    def test_layout_status_lines_includes_detail_without_overflow(self):
+        """Status layout should include bounded detail text."""
+        display = self.import_display()
+
+        lines = display.layout_status_lines(
+            "error",
+            detail="local service unavailable after repeated health check failures",
+        )
+
+        self.assertLessEqual(len(lines), display.MAX_BODY_LINES)
+        max_chars = display.max_chars_for_width(display.BODY_SCALE)
+        self.assertTrue(all(len(line) <= max_chars for line in lines))
+        self.assertIn("Check serial", lines)
+
+    def test_status_display_renders_ready_screen_and_controls_backlight(self):
+        """StatusDisplay should clear, draw text, and turn on the backlight."""
+        clear_imported_modules()
+        install_micropython_stubs()
+        display = self.import_display()
+        hardware = display.create_display_hardware(
+            pin_factory=FakePin,
+            pwm_factory=FakePWM,
+            spi_factory=FakeSPI,
+            tft_factory=FakeTFT,
+        )
+        renderer = display.StatusDisplay(hardware, font=FAKE_FONT)
+
+        title, lines = renderer.render_status("ready", detail="LAN service reachable")
+
+        self.assertEqual(title, "READY")
+        self.assertIn("Press button", lines)
+        self.assertIn("LAN service", lines)
+        self.assertEqual(FakePWM.created[-1].duty_u16_values, [65535])
+
+        tft = FakeTFT.created[-1]
+        self.assertEqual(tft.calls[:3], [("initr",), ("rotation", 1), ("rgb", True)])
+        self.assertEqual(tft.calls[3], ("fill", 0))
+        self.assertEqual(
+            tft.calls[4],
+            ("text", (6, 12), "READY", display.GREEN, FAKE_FONT, 2, True),
+        )
+        body_calls = [call for call in tft.calls if call[0] == "text" and call[1][1] >= 44]
+        self.assertTrue(all(call[1][0] == 6 for call in body_calls))
+
+        renderer.backlight_off()
+        self.assertEqual(FakePWM.created[-1].duty_u16_values[-1], 0)
+
+    def test_display_probe_cycles_status_screens_and_logs_transitions(self):
+        """The display probe should cycle all status screens in order."""
+        clear_imported_modules()
+        ensure_src_path()
+        probe = importlib.import_module("display_probe")
+        display = self.import_display()
+        fake_display = FakeStatusDisplay()
+        messages = []
+        sleeps = []
+
+        probe.run_probe(
+            cycles=1,
+            delay_ms=5,
+            print_func=messages.append,
+            status_display=fake_display,
+            sleep_ms_func=sleeps.append,
+        )
+
+        self.assertEqual(
+            fake_display.statuses,
+            [(status, None) for status in display.available_statuses()],
+        )
+        self.assertEqual(sleeps, [5] * len(display.available_statuses()))
+        self.assertEqual(messages[0], "display_probe: starting display probe")
+        self.assertEqual(messages[-1], "display_probe: complete")
+        self.assertIn("display_probe: screen ready", messages)
+
+    def test_main_renders_boot_status_screen(self):
+        """main.py should render the reusable boot status screen."""
         clear_imported_modules()
         ensure_src_path()
         fake_time = install_micropython_stubs()
@@ -213,16 +352,15 @@ class AipiLiteDisplayConfigTests(unittest.TestCase):
         main.main(print_func=messages.append)
         tft = FakeTFT.created[0]
 
-        self.assertEqual(
-            tft.calls[-3:],
-            [
-                ("fill", 0),
-                ("text", (10, 30), "AIPI-LITE", 65535, main.load_sysfont(), 2, True),
-                ("text", (30, 60), "Micropython", 65535, main.load_sysfont(), 1, True),
-            ],
-        )
-        self.assertEqual(messages[-2:], ["main: display baseline rendered", "main: skeleton ready"])
-        self.assertEqual(fake_time.sleep_ms_calls, [1500, 100])
+        self.assertIn(("fill", 0), tft.calls)
+        self.assertIn(("text", (6, 12), "AIPI-LITE", 65535, FAKE_FONT, 2, True), tft.calls)
+        self.assertIn(("text", (6, 44), "Booting", 65535, FAKE_FONT, 1, True), tft.calls)
+        self.assertEqual(FakePWM.created[0].duty_u16_values, [65535])
+        self.assertIn("main: speaker amplifier disabled", messages)
+        speaker_pin = next(pin for pin in FakePin.created if pin.pin_id == 9)
+        self.assertEqual(speaker_pin.values, [0, 0])
+        self.assertEqual(messages[-2:], ["main: display boot status rendered", "main: skeleton ready"])
+        self.assertEqual(fake_time.sleep_ms_calls, [100])
 
 
 if __name__ == "__main__":

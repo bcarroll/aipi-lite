@@ -45,6 +45,7 @@ class InstallScriptTests(unittest.TestCase):
         self.assertIn("AIPI_BOOTLOADER_CONFIRMED", self.script_text)
         self.assertIn("AIPI_CONFIRM_FLASH", self.script_text)
         self.assertIn("AIPI_CONFIRM_RESTORE", self.script_text)
+        self.assertIn("AIPI_BACKUP_CHUNK_SIZE", self.script_text)
         self.assertIn(".conf", gitignore_text)
 
     def test_flashes_firmware_at_offset_zero(self):
@@ -77,9 +78,22 @@ class InstallScriptTests(unittest.TestCase):
 
         self.assertIn('BACKUP_DIR="${TOOLS_ROOT}/backups"', self.script_text)
         self.assertIn("AIPI_STOCK_BACKUP_PATH", self.script_text)
-        self.assertIn('read_flash 0 "${FLASH_SIZE}"', self.script_text)
+        self.assertIn('read_flash "${offset_arg}" "${read_size_arg}" "${chunk_path}"', self.script_text)
+        self.assertIn('mv "${tmp_path}" "${BACKUP_PATH}"', self.script_text)
         self.assertLess(backup_index, erase_index)
         self.assertLess(backup_index, write_index)
+
+    def test_backup_uses_chunked_reads_and_rejects_partial_files(self):
+        """The stock backup should be chunked and exact-size validated."""
+        self.assertIn('BACKUP_CHUNK_SIZE="${AIPI_BACKUP_CHUNK_SIZE:-}"', self.script_text)
+        self.assertIn("--backup-chunk-size SIZE", self.script_text)
+        self.assertIn('BACKUP_CHUNK_SIZE="${BACKUP_CHUNK_SIZE:-0x80000}"', self.script_text)
+        self.assertIn("positive_size_to_bytes()", self.script_text)
+        self.assertIn("file_size_bytes()", self.script_text)
+        self.assertIn("backup_file_is_complete()", self.script_text)
+        self.assertIn("Existing stock firmware backup is incomplete", self.script_text)
+        self.assertIn("backup chunk size mismatch", self.script_text)
+        self.assertNotIn('read_flash 0 "${FLASH_SIZE}" "${BACKUP_PATH}"', self.script_text)
 
     def test_uploads_current_application_baseline(self):
         """The installer should copy the current app source when no app dir exists."""

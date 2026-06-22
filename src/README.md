@@ -8,12 +8,19 @@ ESP32-S3 image by the repository installer.
 | Path | Purpose |
 | --- | --- |
 | `boot.py` | Safe startup defaults. It emits serial status and does not construct GPIO pins or change GPIO10 board-power control. |
-| `main.py` | Skeleton application entrypoint. It prints bring-up status and runs the imported display baseline when the ST7735 driver is available. |
+| `main.py` | Application entrypoint. It prints bring-up status and renders the boot status screen when the ST7735 driver is available. |
 | `pins.py` | Central pin constants from `SPEC.md`, grouped by display, audio, status LED, button, and power. |
 | `status_led.py` | WS2812/NeoPixel status LED driver for GPIO46 with named firmware states. |
 | `button.py` | Active-low GPIO42 side button reader with debounce and press/release events. |
 | `io_probe.py` | Explicit GPIO-only probe that cycles status LED states and prints button events. |
-| `aipi_lite_config.py` | Display wiring helper for the current ST7735 baseline. |
+| `display.py` | ST7735 display wrapper, PWM backlight control, text layout, and named status screen renderer. |
+| `display_probe.py` | Explicit LCD probe that cycles boot, Wi-Fi, ready, recording, processing, speaking, and error screens. |
+| `aipi_lite_config.py` | Compatibility shim for the imported ST7735 baseline. |
+| `es8311.py` | ES8311 I2C register driver and GPIO9 speaker amplifier gate helper. |
+| `audio_probe.py` | Opt-in serial codec probe that scans I2C, initializes the ES8311, and briefly pulses the muted speaker gate. |
+| `wifi_config.py` | Loader for ignored local Wi-Fi and local-service configuration. |
+| `local_endpoint.py` | Local-only endpoint parser and validator for configured service URLs. |
+| `wifi_probe.py` | Explicit Wi-Fi/local-service probe that validates endpoint policy, connects Wi-Fi, calls `/health`, and reports status. |
 | `lib/st7735/` | Imported ST7735 display driver and font files. |
 
 ## Firmware Image Selection
@@ -53,12 +60,13 @@ main: AIPI-Lite MicroPython skeleton starting
 main: serial bring-up active
 main: GPIO10 board power left unchanged
 main: safe boot leaves board_power_control on GPIO10 untouched
-main: display baseline rendered
+main: speaker amplifier disabled
+main: display boot status rendered
 main: skeleton ready
 ```
 
 If display libraries or hardware initialization are unavailable, `main.py`
-prints `main: display baseline skipped: <ErrorName>` and still reaches the
+prints `main: display boot status skipped: <ErrorName>` and still reaches the
 skeleton-ready line.
 
 ## GPIO Status/Input Probe
@@ -78,14 +86,89 @@ prints debounced `pressed` and `released` events to serial.
 This probe intentionally avoids Wi-Fi, display initialization, audio setup, and
 GPIO10 board-power control.
 
+## Display Probe
+
+After the application tree is uploaded, run the display probe explicitly when
+you want to validate the LCD, backlight, orientation, color order, and status
+screen readability:
+
+```bash
+mpremote connect /dev/cu.usbmodem31101 exec "import display_probe; display_probe.run_probe(cycles=2)"
+```
+
+The probe cycles through `boot`, `wifi`, `ready`, `recording`, `processing`,
+`speaking`, and `error` screens and prints each transition to serial. The
+renderer uses the ST7735-compatible driver, SPI bus 1 at 20 MHz, rotation `1`,
+RGB color order enabled, and GPIO3 PWM backlight control. These assumptions are
+not yet physically validated on this exact unit.
+
+## ES8311 Codec Probe
+
+The current codec-control milestone adds ES8311 setup over the documented I2C
+bus on GPIO4/GPIO5. The firmware expects the codec to appear at 7-bit I2C
+address `0x18`; `0x19` is also accepted as the alternate ES8311 address.
+
+Run the probe from a MicroPython REPL only when the device is ready for hardware
+bring-up:
+
+```python
+import audio_probe
+audio_probe.run_probe()
+```
+
+The probe prints the I2C scan result, initializes the codec for 16 kHz 16-bit
+I2S with MCLK on GPIO6, keeps the DAC muted, briefly enables the GPIO9 speaker
+amplifier gate, and disables it again before returning. It does not capture or
+play I2S audio; those are separate later milestones.
+
+## Wi-Fi and Local Service Probe
+
+Create an ignored `src/local_wifi_config.py` file before uploading `src/` to the
+device:
+
+```python
+WIFI_SSID = "your-local-ssid"
+WIFI_PASSWORD = "your-wpa2-password"
+LOCAL_SERVICE_URL = "http://192.168.1.10:8080"
+APPROVED_LOCAL_HOSTS = ("assistant.lan",)
+```
+
+`APPROVED_LOCAL_HOSTS` is optional and should contain only operator-controlled
+local DNS names. Do not commit this file. It is ignored by Git because it may
+contain Wi-Fi credentials or local infrastructure names.
+
+Run the probe explicitly when the device is ready to validate local Wi-Fi and
+local service reachability:
+
+```bash
+mpremote connect /dev/cu.usbmodem31101 exec "import wifi_probe; wifi_probe.run_probe()"
+```
+
+The probe validates `LOCAL_SERVICE_URL` before connecting or making an HTTP
+request. It accepts RFC1918 IPv4 addresses, loopback/link-local IPv4 for bench
+testing, `.local` mDNS names, and explicitly approved local hostnames. It
+rejects public IPv4 addresses, public DNS names, embedded credentials, query
+strings, fragments, and unsupported schemes by default.
+
+When policy validation passes, the probe connects with MicroPython
+`network.WLAN`, calls only the derived local `/health` URL, prints serial
+status, and updates the status LED and display when those modules initialize.
+
 ## Safety Notes
 
 - `boot.py` must remain safe to run before hardware probes. It should not
   instantiate `machine.Pin`, start Wi-Fi, configure audio, or toggle GPIO10.
+- Normal `main.py` startup drives GPIO9 speaker enable low. The DAC remains
+  muted after codec initialization until later playback code explicitly unmutes
+  it.
 - `pins.py` is declarative only. Later branches should import constants from it
   instead of repeating numeric GPIO assignments.
 - `io_probe.py` is opt-in. Keep normal boot behavior safe and serial-visible so
   a failed LED or button experiment cannot block recovery access.
+- `display_probe.py` is opt-in. It initializes only the LCD and backlight and
+  should remain independent of Wi-Fi, audio, and GPIO10 board-power control.
+- `wifi_probe.py` is opt-in. It validates endpoint policy before network
+  connection attempts and should remain local-only by default.
 - Local Wi-Fi credentials, service URLs, and operator overrides belong in
   ignored local configuration files, not in source control.
 - Replacement firmware must remain local-only by default. Do not add cloud,

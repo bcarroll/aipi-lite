@@ -20,8 +20,8 @@ restore operations.
 ## Stock Firmware Backup
 
 The preferred path is the installer. It prompts for bootloader confirmation,
-stores answers in ignored `.conf`, then backs up the full 16 MB flash before it
-erases or writes replacement firmware:
+stores answers in ignored `.conf`, then backs up the full 16 MB flash in
+smaller chunks before it erases or writes replacement firmware:
 
 ```bash
 ./install.sh --port /dev/cu.usbmodem31101
@@ -39,6 +39,20 @@ Use a specific backup destination when needed:
 ./install.sh \
   --port /dev/cu.usbmodem31101 \
   --backup-path /path/outside/git/aipi-lite-stock.bin
+```
+
+The installer accepts an existing stock backup only when it exactly matches `AIPI_FLASH_SIZE`.
+That defaults to `0x1000000` / `16777216` bytes. A failed partial transfer, for
+example `1048576/16777216` bytes, is treated as incomplete and replaced on the
+next run instead of being reused.
+
+The default backup chunk size is `0x80000`. If USB transfer reliability is poor,
+use a smaller chunk size:
+
+```bash
+./install.sh \
+  --port /dev/cu.usbmodem31101 \
+  --backup-chunk-size 0x40000
 ```
 
 Manual backup is also possible after staging tools:
@@ -59,7 +73,8 @@ Expected backup indicators:
 
 - `esptool` detects an ESP32-S3.
 - `flash_id` reports a flash chip without connection errors.
-- `read_flash` reaches 100 percent and writes a non-empty `.bin` file.
+- `read_flash` reaches 100 percent for every chunk and writes a complete
+  16 MB / `16777216` byte `.bin` file.
 - The backup file remains under ignored `tools/.local/` or another location
   outside source control.
 
@@ -128,7 +143,9 @@ Before any erase, write, or restore operation:
 - Reads and writes installer answers from ignored `.conf`.
 - Prompts for bootloader readiness.
 - Stages missing local tools only after approval.
-- Backs up full 16 MB stock flash before installing MicroPython.
+- Backs up full 16 MB stock flash in chunks before installing MicroPython.
+- Rejects partial stock backups whose byte count does not match the configured
+  flash size.
 - Restores a saved stock firmware backup with `--restore` or
   `--restore-backup`.
 - Keeps generated tools, downloads, and backups under ignored `tools/.local/`
