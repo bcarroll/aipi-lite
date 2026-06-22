@@ -37,7 +37,11 @@ ESP32_GENERIC_S3 image is not the right target:
 
 Before erasing or writing flash, the installer now requires bootloader
 confirmation and backs up the 16 MB stock flash image to `tools/.local/backups/`
-unless `.conf` points at an existing backup.
+unless `.conf` points at an existing exact-size backup. The backup read is
+chunked by default so a failed transfer cannot be mistaken for a complete stock
+image on the next run. If a backup stalls on a specific USB setup, reduce the
+chunk size with `--backup-chunk-size 0x40000` or set
+`AIPI_BACKUP_CHUNK_SIZE=0x40000` in `.conf`.
 
 The user still needs to put the AIPI-Lite into ESP32-S3 bootloader mode and
 connect the device over USB-C because those are physical actions.

@@ -18,6 +18,7 @@ APP_DIR="${AIPI_APP_DIR:-}"
 FIRMWARE_URL="${AIPI_MICROPYTHON_FIRMWARE_URL:-}"
 BAUD="${AIPI_FLASH_BAUD:-}"
 FLASH_SIZE="${AIPI_FLASH_SIZE:-}"
+BACKUP_CHUNK_SIZE="${AIPI_BACKUP_CHUNK_SIZE:-}"
 BACKUP_PATH="${AIPI_STOCK_BACKUP_PATH:-}"
 RESTORE_BACKUP_PATH="${AIPI_RESTORE_BACKUP_PATH:-}"
 RESET_AFTER_UPLOAD="${AIPI_RESET_AFTER_UPLOAD:-}"
@@ -41,6 +42,8 @@ Options:
   --firmware-url URL      MicroPython firmware .bin URL. Defaults to latest
                           stable ESP32_GENERIC_S3 from micropython.org.
   --flash-size SIZE       Stock firmware backup size. Default: 0x1000000.
+  --backup-chunk-size SIZE
+                          Stock backup read chunk size. Default: 0x80000.
   --baud RATE             Flash baud rate. Default: 460800.
   --no-reset              Do not reset the device after uploading source.
   --restore               Restore the backup path saved in .conf instead of
@@ -57,6 +60,7 @@ Environment overrides:
   AIPI_MICROPYTHON_FIRMWARE_URL
   AIPI_FLASH_BAUD
   AIPI_FLASH_SIZE
+  AIPI_BACKUP_CHUNK_SIZE
   AIPI_STOCK_BACKUP_PATH
   AIPI_RESTORE_BACKUP_PATH
   AIPI_RESET_AFTER_UPLOAD
@@ -88,6 +92,10 @@ while [[ $# -gt 0 ]]; do
       ;;
     --flash-size)
       FLASH_SIZE="${2:?--flash-size requires a value}"
+      shift 2
+      ;;
+    --backup-chunk-size)
+      BACKUP_CHUNK_SIZE="${2:?--backup-chunk-size requires a value}"
       shift 2
       ;;
     --baud)
@@ -321,6 +329,11 @@ apply_config_defaults() {
   fi
   FLASH_SIZE="${FLASH_SIZE:-0x1000000}"
 
+  if [[ -z "${BACKUP_CHUNK_SIZE}" ]] && configured_value="$(config_get "AIPI_BACKUP_CHUNK_SIZE")"; then
+    BACKUP_CHUNK_SIZE="${configured_value}"
+  fi
+  BACKUP_CHUNK_SIZE="${BACKUP_CHUNK_SIZE:-0x80000}"
+
   if [[ -z "${BACKUP_PATH}" ]] && configured_value="$(config_get "AIPI_STOCK_BACKUP_PATH")"; then
     BACKUP_PATH="${configured_value}"
   fi
@@ -346,6 +359,7 @@ persist_config_defaults() {
   config_set "AIPI_MICROPYTHON_FIRMWARE_URL" "${FIRMWARE_URL}"
   config_set "AIPI_FLASH_BAUD" "${BAUD}"
   config_set "AIPI_FLASH_SIZE" "${FLASH_SIZE}"
+  config_set "AIPI_BACKUP_CHUNK_SIZE" "${BACKUP_CHUNK_SIZE}"
   config_set "AIPI_RESET_AFTER_UPLOAD" "${RESET_AFTER_UPLOAD}"
 }
 
@@ -544,10 +558,85 @@ default_backup_path() {
   printf '%s/aipi-lite-stock-%s.bin\n' "${BACKUP_DIR}" "${timestamp}"
 }
 
+size_to_bytes() {
+  local value="$1"
+  local field_name="$2"
+  local digits
+
+  case "${value}" in
+    0x*|0X*)
+      digits="${value#0x}"
+      digits="${digits#0X}"
+      if [[ ! "${digits}" =~ ^[0-9a-fA-F]+$ ]]; then
+        echo "error: ${field_name} must be a positive decimal or hex byte count" >&2
+        exit 1
+      fi
+      printf '%d\n' "$((16#${digits}))"
+      ;;
+    *)
+      if [[ ! "${value}" =~ ^[0-9]+$ ]]; then
+        echo "error: ${field_name} must be a positive decimal or hex byte count" >&2
+        exit 1
+      fi
+      printf '%d\n' "$((10#${value}))"
+      ;;
+  esac
+}
+
+positive_size_to_bytes() {
+  local value="$1"
+  local field_name="$2"
+  local bytes
+
+  bytes="$(size_to_bytes "${value}" "${field_name}")"
+  if [[ "${bytes}" -le 0 ]]; then
+    echo "error: ${field_name} must be greater than zero" >&2
+    exit 1
+  fi
+  printf '%s\n' "${bytes}"
+}
+
+format_hex_size() {
+  local bytes="$1"
+
+  printf '0x%x\n' "${bytes}"
+}
+
+file_size_bytes() {
+  local path="$1"
+
+  if stat -f %z "${path}" >/dev/null 2>&1; then
+    stat -f %z "${path}"
+    return
+  fi
+
+  stat -c %s "${path}"
+}
+
+backup_file_is_complete() {
+  local path="$1"
+  local expected_bytes="$2"
+  local actual_bytes
+
+  [[ -f "${path}" ]] || return 1
+  actual_bytes="$(file_size_bytes "${path}")"
+  [[ "${actual_bytes}" -eq "${expected_bytes}" ]]
+}
+
 backup_stock_firmware() {
   local esptool_py="$1"
   shift
   local port_args=("$@")
+  local flash_size_bytes
+  local chunk_size_bytes
+  local actual_bytes
+  local tmp_path
+  local chunk_path
+  local offset=0
+  local remaining
+  local read_size
+  local offset_arg
+  local read_size_arg
 
   if [[ -z "${BACKUP_PATH}" ]]; then
     BACKUP_PATH="$(default_backup_path)"
@@ -555,14 +644,70 @@ backup_stock_firmware() {
 
   config_set "AIPI_STOCK_BACKUP_PATH" "${BACKUP_PATH}"
 
-  if [[ -s "${BACKUP_PATH}" ]]; then
-    echo "Using existing stock firmware backup: ${BACKUP_PATH}"
+  flash_size_bytes="$(positive_size_to_bytes "${FLASH_SIZE}" "AIPI_FLASH_SIZE")"
+  chunk_size_bytes="$(positive_size_to_bytes "${BACKUP_CHUNK_SIZE}" "AIPI_BACKUP_CHUNK_SIZE")"
+
+  if [[ "${chunk_size_bytes}" -gt "${flash_size_bytes}" ]]; then
+    chunk_size_bytes="${flash_size_bytes}"
+  fi
+
+  if backup_file_is_complete "${BACKUP_PATH}" "${flash_size_bytes}"; then
+    echo "Using existing complete stock firmware backup: ${BACKUP_PATH}"
     return
   fi
 
+  if [[ -f "${BACKUP_PATH}" ]]; then
+    actual_bytes="$(file_size_bytes "${BACKUP_PATH}")"
+    echo "Existing stock firmware backup is incomplete (${actual_bytes}/${flash_size_bytes} bytes); replacing it."
+  fi
+
   mkdir -p "$(dirname "${BACKUP_PATH}")"
+  tmp_path="${BACKUP_PATH}.tmp.$$"
+  chunk_path="${BACKUP_PATH}.chunk.$$"
+  rm -f "${tmp_path}" "${chunk_path}"
+  : >"${tmp_path}"
+
   echo "Backing up stock firmware to ${BACKUP_PATH}"
-  "${esptool_py}" -m esptool --chip esp32s3 "${port_args[@]}" read_flash 0 "${FLASH_SIZE}" "${BACKUP_PATH}"
+  echo "Reading ${flash_size_bytes} bytes in ${chunk_size_bytes}-byte chunks."
+
+  while [[ "${offset}" -lt "${flash_size_bytes}" ]]; do
+    remaining=$((flash_size_bytes - offset))
+    read_size="${chunk_size_bytes}"
+    if [[ "${read_size}" -gt "${remaining}" ]]; then
+      read_size="${remaining}"
+    fi
+
+    offset_arg="$(format_hex_size "${offset}")"
+    read_size_arg="$(format_hex_size "${read_size}")"
+    echo "Backing up flash chunk ${offset_arg}+${read_size_arg}"
+    if ! "${esptool_py}" -m esptool --chip esp32s3 "${port_args[@]}" \
+      read_flash "${offset_arg}" "${read_size_arg}" "${chunk_path}"; then
+      rm -f "${tmp_path}" "${chunk_path}"
+      echo "error: failed to read stock firmware backup chunk at ${offset_arg}" >&2
+      exit 1
+    fi
+
+    actual_bytes="$(file_size_bytes "${chunk_path}")"
+    if [[ "${actual_bytes}" -ne "${read_size}" ]]; then
+      rm -f "${tmp_path}" "${chunk_path}"
+      echo "error: backup chunk size mismatch (${actual_bytes}/${read_size} bytes)" >&2
+      exit 1
+    fi
+
+    cat "${chunk_path}" >>"${tmp_path}"
+    rm -f "${chunk_path}"
+    offset=$((offset + read_size))
+  done
+
+  actual_bytes="$(file_size_bytes "${tmp_path}")"
+  if [[ "${actual_bytes}" -ne "${flash_size_bytes}" ]]; then
+    rm -f "${tmp_path}" "${chunk_path}"
+    echo "error: stock firmware backup size mismatch (${actual_bytes}/${flash_size_bytes} bytes)" >&2
+    exit 1
+  fi
+
+  mv "${tmp_path}" "${BACKUP_PATH}"
+  echo "Stock firmware backup complete: ${BACKUP_PATH}"
 }
 
 resolve_restore_backup_path() {
