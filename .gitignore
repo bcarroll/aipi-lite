@@ -2,6 +2,7 @@ tools/.local/
 .tools/
 /micropython/
 .conf
+.conf.tmp.*
 __pycache__/
 *.pyc
 esp-env

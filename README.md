@@ -50,6 +50,9 @@ After flashing and copying `src/`, the installer attempts to reset the device.
 Set `AIPI_RESET_AFTER_UPLOAD=no` in `.conf` or pass `--no-reset` to skip that
 step.
 
+Backup, restore, expected output, and safety details are documented in
+[RECOVERY.md](RECOVERY.md).
+
 See [tools/README.md](tools/README.md) for lower-level setup tooling.
 
 ## Imported Display Baseline

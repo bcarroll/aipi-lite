@@ -44,6 +44,7 @@ class InstallScriptTests(unittest.TestCase):
         self.assertIn("AIPI_SERIAL_PORT", self.script_text)
         self.assertIn("AIPI_BOOTLOADER_CONFIRMED", self.script_text)
         self.assertIn("AIPI_CONFIRM_FLASH", self.script_text)
+        self.assertIn("AIPI_CONFIRM_RESTORE", self.script_text)
         self.assertIn(".conf", gitignore_text)
 
     def test_flashes_firmware_at_offset_zero(self):
@@ -53,6 +54,19 @@ class InstallScriptTests(unittest.TestCase):
         self.assertIn("write_flash 0 \"${firmware_path}\"", self.script_text)
         self.assertNotIn("bootloader.bin", self.script_text)
         self.assertNotIn("partition-table.bin", self.script_text)
+
+    def test_restore_mode_uses_saved_backup_without_firmware_download(self):
+        """Restore mode should write a stock backup without resolving MicroPython."""
+        main_text = self.script_text[self.script_text.index("main()") :]
+        restore_index = main_text.index('if [[ "${RESTORE_MODE}" -eq 1 ]]')
+        resolve_index = main_text.index('firmware_url="$(resolve_firmware_url)"')
+
+        self.assertIn("--restore", self.script_text)
+        self.assertIn("--restore-backup FILE", self.script_text)
+        self.assertIn("AIPI_RESTORE_BACKUP_PATH", self.script_text)
+        self.assertIn("AIPI_CONFIRM_RESTORE", self.script_text)
+        self.assertIn('write_flash 0 "${RESTORE_BACKUP_PATH}"', self.script_text)
+        self.assertLess(restore_index, resolve_index)
 
     def test_backs_up_stock_firmware_before_flashing(self):
         """The installer should read the stock flash before erase/write operations."""

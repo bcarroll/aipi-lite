@@ -19,10 +19,12 @@ FIRMWARE_URL="${AIPI_MICROPYTHON_FIRMWARE_URL:-}"
 BAUD="${AIPI_FLASH_BAUD:-}"
 FLASH_SIZE="${AIPI_FLASH_SIZE:-}"
 BACKUP_PATH="${AIPI_STOCK_BACKUP_PATH:-}"
+RESTORE_BACKUP_PATH="${AIPI_RESTORE_BACKUP_PATH:-}"
 RESET_AFTER_UPLOAD="${AIPI_RESET_AFTER_UPLOAD:-}"
 CONF_FILE="${AIPI_INSTALL_CONF:-${SCRIPT_DIR}/.conf}"
 ASSUME_YES=0
 SKIP_ERASE=0
+RESTORE_MODE=0
 
 usage() {
   cat <<'USAGE'
@@ -41,6 +43,10 @@ Options:
   --flash-size SIZE       Stock firmware backup size. Default: 0x1000000.
   --baud RATE             Flash baud rate. Default: 460800.
   --no-reset              Do not reset the device after uploading source.
+  --restore               Restore the backup path saved in .conf instead of
+                          installing MicroPython.
+  --restore-backup FILE   Restore this stock firmware backup instead of
+                          installing MicroPython.
   --skip-erase            Write firmware without first erasing flash.
   -y, --yes               Approve prerequisite setup and flashing prompts.
   -h, --help              Show this help.
@@ -52,6 +58,7 @@ Environment overrides:
   AIPI_FLASH_BAUD
   AIPI_FLASH_SIZE
   AIPI_STOCK_BACKUP_PATH
+  AIPI_RESTORE_BACKUP_PATH
   AIPI_RESET_AFTER_UPLOAD
   AIPI_INSTALL_CONF
 USAGE
@@ -90,6 +97,15 @@ while [[ $# -gt 0 ]]; do
     --no-reset)
       RESET_AFTER_UPLOAD="no"
       shift
+      ;;
+    --restore)
+      RESTORE_MODE=1
+      shift
+      ;;
+    --restore-backup)
+      RESTORE_MODE=1
+      RESTORE_BACKUP_PATH="${2:?--restore-backup requires a value}"
+      shift 2
       ;;
     --skip-erase)
       SKIP_ERASE=1
@@ -221,6 +237,38 @@ confirm_from_config() {
   return 1
 }
 
+prompt_value_from_config() {
+  local key="$1"
+  local prompt="$2"
+  local default_value="${3:-}"
+  local answer
+
+  if answer="$(config_get "${key}")"; then
+    printf '%s\n' "${answer}"
+    return
+  fi
+
+  if [[ "${ASSUME_YES}" -eq 1 ]]; then
+    if [[ -z "${default_value}" ]]; then
+      echo "error: ${key} must be set in ${CONF_FILE} or passed on the command line" >&2
+      exit 1
+    fi
+    config_set "${key}" "${default_value}"
+    printf '%s\n' "${default_value}"
+    return
+  fi
+
+  read -r -p "${prompt} [${default_value}] " answer
+  answer="${answer:-${default_value}}"
+  if [[ -z "${answer}" ]]; then
+    echo "error: ${key} is required" >&2
+    exit 1
+  fi
+
+  config_set "${key}" "${answer}"
+  printf '%s\n' "${answer}"
+}
+
 prompt_serial_port() {
   local answer
 
@@ -277,6 +325,10 @@ apply_config_defaults() {
     BACKUP_PATH="${configured_value}"
   fi
 
+  if [[ -z "${RESTORE_BACKUP_PATH}" ]] && configured_value="$(config_get "AIPI_RESTORE_BACKUP_PATH")"; then
+    RESTORE_BACKUP_PATH="${configured_value}"
+  fi
+
   if [[ -z "${RESET_AFTER_UPLOAD}" ]] && configured_value="$(config_get "AIPI_RESET_AFTER_UPLOAD")"; then
     RESET_AFTER_UPLOAD="${configured_value}"
   fi
@@ -287,6 +339,9 @@ persist_config_defaults() {
   config_set "AIPI_SERIAL_PORT" "${PORT:-auto}"
   if [[ -n "${APP_DIR}" ]]; then
     config_set "AIPI_APP_DIR" "${APP_DIR}"
+  fi
+  if [[ -n "${RESTORE_BACKUP_PATH}" ]]; then
+    config_set "AIPI_RESTORE_BACKUP_PATH" "${RESTORE_BACKUP_PATH}"
   fi
   config_set "AIPI_MICROPYTHON_FIRMWARE_URL" "${FIRMWARE_URL}"
   config_set "AIPI_FLASH_BAUD" "${BAUD}"
@@ -428,6 +483,41 @@ EOF
   bash "${SETUP_SCRIPT}" "${setup_args[@]}"
 }
 
+ensure_restore_prerequisites() {
+  local missing=()
+  local setup_args
+  local setup_app_dir
+
+  if ! has_esptool; then
+    missing+=("esptool in ${VENV_DIR}")
+  fi
+
+  if [[ "${#missing[@]}" -eq 0 ]]; then
+    return
+  fi
+
+  cat <<EOF
+Missing restore prerequisite components:
+$(printf '%s\n' "${missing[@]}")
+
+These components will be installed under tools/.local/.
+EOF
+
+  if ! confirm_from_config "AIPI_DOWNLOAD_PREREQUISITES" "Download missing components and continue" "no"; then
+    echo "aborted: restore prerequisites are missing" >&2
+    exit 1
+  fi
+
+  setup_args=(--skip-firmware --skip-libraries)
+  if [[ -n "${PORT}" ]]; then
+    setup_args+=(--port "${PORT}")
+  fi
+  setup_app_dir="${APP_DIR:-${SCRIPT_DIR}/src}"
+  setup_args+=(--app-dir "${setup_app_dir}")
+
+  bash "${SETUP_SCRIPT}" "${setup_args[@]}"
+}
+
 print_bootloader_instructions() {
   cat <<'EOF'
 
@@ -473,6 +563,53 @@ backup_stock_firmware() {
   mkdir -p "$(dirname "${BACKUP_PATH}")"
   echo "Backing up stock firmware to ${BACKUP_PATH}"
   "${esptool_py}" -m esptool --chip esp32s3 "${port_args[@]}" read_flash 0 "${FLASH_SIZE}" "${BACKUP_PATH}"
+}
+
+resolve_restore_backup_path() {
+  local configured_value
+
+  if [[ -z "${RESTORE_BACKUP_PATH}" ]] && configured_value="$(config_get "AIPI_STOCK_BACKUP_PATH")"; then
+    RESTORE_BACKUP_PATH="${configured_value}"
+  fi
+
+  if [[ -z "${RESTORE_BACKUP_PATH}" ]]; then
+    RESTORE_BACKUP_PATH="$(prompt_value_from_config "AIPI_RESTORE_BACKUP_PATH" "Stock firmware backup path to restore" "")"
+  fi
+
+  if [[ ! -f "${RESTORE_BACKUP_PATH}" ]]; then
+    echo "error: restore backup not found: ${RESTORE_BACKUP_PATH}" >&2
+    exit 1
+  fi
+
+  config_set "AIPI_RESTORE_BACKUP_PATH" "${RESTORE_BACKUP_PATH}"
+}
+
+restore_stock_firmware() {
+  local esptool_py="$1"
+  shift
+  local port_args=("$@")
+
+  resolve_restore_backup_path
+
+  cat <<EOF
+
+Ready to restore stock firmware:
+  Backup: ${RESTORE_BACKUP_PATH}
+  Port: ${PORT:-auto}
+  Baud: ${BAUD}
+EOF
+
+  if ! confirm_from_config "AIPI_CONFIRM_RESTORE" "Erase/write stock firmware backup" "no"; then
+    echo "aborted: restore was not confirmed" >&2
+    exit 1
+  fi
+
+  if [[ "${SKIP_ERASE}" -eq 0 ]]; then
+    "${esptool_py}" -m esptool --chip esp32s3 "${port_args[@]}" erase_flash
+  fi
+
+  "${esptool_py}" -m esptool --chip esp32s3 "${port_args[@]}" --baud "${BAUD}" write_flash 0 "${RESTORE_BACKUP_PATH}"
+  echo "Stock firmware restore complete. Power-cycle or reset the device."
 }
 
 remote_mkdir() {
@@ -591,6 +728,19 @@ main() {
   prompt_serial_port
   persist_config_defaults
 
+  if [[ -n "${PORT}" ]]; then
+    port_args=(--port "${PORT}")
+    connect_target="${PORT}"
+  fi
+
+  if [[ "${RESTORE_MODE}" -eq 1 ]]; then
+    ensure_restore_prerequisites
+    esptool_py="${VENV_DIR}/bin/python"
+    ensure_bootloader_ready
+    restore_stock_firmware "${esptool_py}" "${port_args[@]}"
+    return
+  fi
+
   firmware_url="$(resolve_firmware_url)"
   firmware_name="$(firmware_filename "${firmware_url}")"
   firmware_path="${DOWNLOAD_DIR}/${firmware_name}"
@@ -599,11 +749,6 @@ main() {
 
   esptool_py="${VENV_DIR}/bin/python"
   mpremote_bin="${VENV_DIR}/bin/mpremote"
-
-  if [[ -n "${PORT}" ]]; then
-    port_args=(--port "${PORT}")
-    connect_target="${PORT}"
-  fi
 
   ensure_bootloader_ready
   backup_stock_firmware "${esptool_py}" "${port_args[@]}"

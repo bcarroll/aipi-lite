@@ -221,6 +221,8 @@ is worth the added firmware complexity.
   caveats.
 - `FIRMWARE_PLAN.md`: firmware architecture, milestones, protocol, and fallback
   criteria.
+- `RECOVERY.md`: stock firmware backup, restore, expected recovery output, and
+  flashing safety checklist.
 - Future `src/README.md`: MicroPython application layout, configuration,
   upload, and recovery notes.
 - Future `service/README.md`: local service API, deployment, and security
@@ -250,7 +252,7 @@ baseline:
 
 | Plan component | Imported status | Evidence |
 | --- | --- | --- |
-| Flashing support | Partially implemented | `install.sh`, `tools/setup_micropython_tools.sh`, `tools/README.md`, and `README.md` document a reproducible tools-based workflow that downloads MicroPython firmware into ignored `tools/.local/` artifacts and uploads current application source. |
+| Flashing support | Implemented for backup/recovery milestone | `install.sh`, `RECOVERY.md`, `tools/setup_micropython_tools.sh`, `tools/README.md`, and `README.md` document and automate stock backup, MicroPython install, source upload, and stock restore using ignored local artifacts. |
 | MicroPython source skeleton | Partially implemented | `src/main.py` runs a display demo and `src/aipi_lite_config.py` centralizes display pin setup. |
 | Pin mapping | Partially implemented | `src/aipi_lite_config.py` uses GPIO3 backlight, GPIO15 CS, GPIO7 D/C, GPIO18 reset, GPIO16 SCLK, and GPIO17 MOSI, matching the LCD pins in `SPEC.md`. |
 | Display bring-up | Partially implemented | `src/lib/st7735/` contains an ST7735 driver and font; `src/main.py` renders sample text to the 128 x 128 TFT. |
