@@ -16,6 +16,19 @@ repository root and restarts itself once so the active script is current. Use
 `--skip-self-update` or `AIPI_SKIP_SELF_UPDATE=1` only for intentional offline
 or pinned-revision runs.
 
+For issue reporting or future troubleshooting context, add `--debug` to keep a
+sanitized installer transcript and environment summary under
+`tools/.local/debug/`:
+
+```bash
+./install.sh --debug --port /dev/cu.usbmodem31101
+```
+
+The debug file path is printed during the run. Use `--debug-file FILE` when a
+specific GitHub issue artifact path is needed. The generated file redacts common
+secrets, credentials, SSIDs, tokens, and MAC-like identifiers before writing the
+transcript.
+
 If local prerequisites are missing, the installer prompts before downloading or
 installing components under ignored `tools/.local/`, then continues with the
 flash and upload workflow after approval.

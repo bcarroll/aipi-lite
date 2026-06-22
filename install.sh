@@ -25,9 +25,12 @@ RESTORE_BACKUP_PATH="${AIPI_RESTORE_BACKUP_PATH:-}"
 RESET_AFTER_UPLOAD="${AIPI_RESET_AFTER_UPLOAD:-}"
 CONF_FILE="${AIPI_INSTALL_CONF:-${SCRIPT_DIR}/.conf}"
 SKIP_SELF_UPDATE="${AIPI_SKIP_SELF_UPDATE:-0}"
+DEBUG_ENABLED="${AIPI_INSTALL_DEBUG:-0}"
+DEBUG_FILE="${AIPI_INSTALL_DEBUG_FILE:-}"
 ASSUME_YES=0
 SKIP_ERASE=0
 RESTORE_MODE=0
+DEBUG_CONTEXT_WRITTEN=0
 
 usage() {
   cat <<'USAGE'
@@ -56,6 +59,8 @@ Options:
                           installing MicroPython.
   --skip-erase            Write firmware without first erasing flash.
   --skip-self-update      Do not run git pull before installer actions.
+  --debug                 Write a sanitized installer debug file for issues.
+  --debug-file FILE       Write --debug output to this file.
   -y, --yes               Approve prerequisite setup and flashing prompts.
   -h, --help              Show this help.
 
@@ -72,20 +77,37 @@ Environment overrides:
   AIPI_RESET_AFTER_UPLOAD
   AIPI_INSTALL_CONF
   AIPI_SKIP_SELF_UPDATE
+  AIPI_INSTALL_DEBUG
+  AIPI_INSTALL_DEBUG_FILE
 USAGE
 }
 
-preparse_self_update_flags() {
-  local arg
-
-  for arg in "$@"; do
-    case "${arg}" in
+preparse_preflight_flags() {
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
       --skip-self-update)
         SKIP_SELF_UPDATE=1
-        return
+        shift
+        ;;
+      --debug)
+        DEBUG_ENABLED=1
+        shift
+        ;;
+      --debug-file)
+        DEBUG_ENABLED=1
+        DEBUG_FILE="${2:?--debug-file requires a value}"
+        shift 2
+        ;;
+      --debug-file=*)
+        DEBUG_ENABLED=1
+        DEBUG_FILE="${1#*=}"
+        shift
         ;;
       --)
         return
+        ;;
+      *)
+        shift
         ;;
     esac
   done
@@ -100,6 +122,168 @@ is_truthy_value() {
       return 1
       ;;
   esac
+}
+
+redact_stream() {
+  sed -E \
+    -e 's#(https?://)[^/@[:space:]]+:[^/@[:space:]]+@#\1<redacted>@#g' \
+    -e 's#(https?://)[^/@[:space:]]+@#\1<redacted>@#g' \
+    -e 's/([Pp][Aa][Ss][Ss][Ww][Oo][Rr][Dd]|[Pp][Aa][Ss][Ss][Ww][Dd]|[Tt][Oo][Kk][Ee][Nn]|[Ss][Ee][Cc][Rr][Ee][Tt]|[Kk][Ee][Yy])=([^[:space:]]+)/\1=<redacted>/g' \
+    -e 's/([Ss][Ss][Ii][Dd])=([^[:space:]]+)/\1=<redacted>/g' \
+    -e 's/([[:xdigit:]]{2}:){5}[[:xdigit:]]{2}/<redacted-mac>/g'
+}
+
+default_debug_file() {
+  local timestamp
+
+  timestamp="$(date -u +%Y%m%d-%H%M%S)"
+  printf '%s/debug/install-debug-%s.txt\n' "${TOOLS_ROOT}" "${timestamp}"
+}
+
+quote_args() {
+  local arg
+
+  for arg in "$@"; do
+    printf '%q ' "${arg}"
+  done
+  printf '\n'
+}
+
+debug_command_output() {
+  local label="$1"
+  shift
+  local output
+  local status
+
+  if ! is_truthy_value "${DEBUG_ENABLED}"; then
+    return
+  fi
+
+  {
+    printf '\n### %s\n' "${label}"
+    printf '$'
+    printf ' %q' "$@"
+    printf '\n'
+  } >>"${DEBUG_FILE}"
+
+  set +e
+  output="$("$@" 2>&1)"
+  status=$?
+  set -e
+
+  {
+    printf '%s\n' "${output}"
+    if [[ "${status}" -ne 0 ]]; then
+      printf '(exit %s)\n' "${status}"
+    fi
+  } | redact_stream >>"${DEBUG_FILE}"
+}
+
+start_debug_logging() {
+  local debug_pipe
+
+  if ! is_truthy_value "${DEBUG_ENABLED}"; then
+    return
+  fi
+
+  if [[ -z "${DEBUG_FILE}" ]]; then
+    DEBUG_FILE="$(default_debug_file)"
+  fi
+
+  export AIPI_INSTALL_DEBUG=1
+  export AIPI_INSTALL_DEBUG_FILE="${DEBUG_FILE}"
+
+  if is_truthy_value "${AIPI_INSTALL_DEBUG_ACTIVE:-0}"; then
+    return
+  fi
+
+  mkdir -p "$(dirname "${DEBUG_FILE}")"
+  : >"${DEBUG_FILE}"
+  chmod 600 "${DEBUG_FILE}"
+
+  {
+    printf '# AIPI-Lite installer debug log\n'
+    printf 'created_utc=%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+    printf 'redaction=common secrets tokens passwords ssids credentials and MAC-like identifiers are redacted\n'
+  } >>"${DEBUG_FILE}"
+
+  export AIPI_INSTALL_DEBUG_ACTIVE=1
+  debug_pipe="${DEBUG_FILE}.pipe.$$"
+  rm -f "${debug_pipe}"
+  mkfifo "${debug_pipe}"
+  redact_stream <"${debug_pipe}" | tee -a "${DEBUG_FILE}" &
+  exec >"${debug_pipe}" 2>&1
+  rm -f "${debug_pipe}"
+  echo "Installer debug file: ${DEBUG_FILE}"
+}
+
+finish_debug_logging() {
+  local status=$?
+
+  if is_truthy_value "${DEBUG_ENABLED}" && [[ -n "${DEBUG_FILE:-}" ]]; then
+    echo "Installer debug file: ${DEBUG_FILE}"
+  fi
+
+  return "${status}"
+}
+
+write_debug_context() {
+  local worktree_root=""
+  local command_line
+
+  if ! is_truthy_value "${DEBUG_ENABLED}"; then
+    return
+  fi
+  if [[ "${DEBUG_CONTEXT_WRITTEN}" -eq 1 ]]; then
+    return
+  fi
+  DEBUG_CONTEXT_WRITTEN=1
+
+  command_line="$(quote_args "$@" | redact_stream)"
+
+  {
+    printf '\n## Sanitized run context\n'
+    printf 'timestamp_utc=%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+    printf 'script_dir=%s\n' "${SCRIPT_DIR}"
+    printf 'working_dir=%s\n' "$(pwd)"
+    printf 'argv=%s\n' "${command_line}"
+    printf 'conf_file=%s\n' "${CONF_FILE}"
+    printf 'serial_port=%s\n' "${PORT:-auto}"
+    printf 'app_dir=%s\n' "${APP_DIR:-${SCRIPT_DIR}/src}"
+    printf 'firmware_url=%s\n' "${FIRMWARE_URL}"
+    printf 'baud=%s\n' "${BAUD}"
+    printf 'flash_size=%s\n' "${FLASH_SIZE}"
+    printf 'backup_chunk_size=%s\n' "${BACKUP_CHUNK_SIZE}"
+    printf 'backup_min_chunk_size=%s\n' "${BACKUP_MIN_CHUNK_SIZE}"
+    printf 'backup_path=%s\n' "${BACKUP_PATH:-auto}"
+    printf 'restore_backup_path=%s\n' "${RESTORE_BACKUP_PATH:-none}"
+    printf 'reset_after_upload=%s\n' "${RESET_AFTER_UPLOAD}"
+    printf 'skip_self_update=%s\n' "${SKIP_SELF_UPDATE}"
+  } | redact_stream >>"${DEBUG_FILE}"
+
+  debug_command_output "uname" uname -a
+  debug_command_output "git version" git --version
+  debug_command_output "python version" python3 --version
+
+  if git -C "${SCRIPT_DIR}" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+    worktree_root="$(git -C "${SCRIPT_DIR}" rev-parse --show-toplevel)"
+    debug_command_output "git branch" git -C "${worktree_root}" branch --show-current
+    debug_command_output "git commit" git -C "${worktree_root}" rev-parse HEAD
+    debug_command_output "git status" git -C "${worktree_root}" status --short --branch
+    debug_command_output "git remotes" git -C "${worktree_root}" remote -v
+  fi
+
+  if [[ -x "${VENV_DIR}/bin/python" ]]; then
+    debug_command_output "esptool version" "${VENV_DIR}/bin/python" -m esptool version
+  else
+    printf '\n### esptool version\nnot staged at %s\n' "${VENV_DIR}/bin/python" >>"${DEBUG_FILE}"
+  fi
+
+  if [[ -x "${VENV_DIR}/bin/mpremote" ]]; then
+    debug_command_output "mpremote help header" "${VENV_DIR}/bin/mpremote" --help
+  else
+    printf '\n### mpremote help header\nnot staged at %s\n' "${VENV_DIR}/bin/mpremote" >>"${DEBUG_FILE}"
+  fi
 }
 
 self_update_from_git() {
@@ -135,7 +319,9 @@ self_update_from_git() {
   exec env AIPI_INSTALL_SELF_UPDATED=1 "${SCRIPT_DIR}/install.sh" "$@"
 }
 
-preparse_self_update_flags "$@"
+preparse_preflight_flags "$@"
+start_debug_logging
+trap finish_debug_logging EXIT
 self_update_from_git "$@"
 
 while [[ $# -gt 0 ]]; do
@@ -195,6 +381,20 @@ while [[ $# -gt 0 ]]; do
       ;;
     --skip-self-update)
       SKIP_SELF_UPDATE=1
+      shift
+      ;;
+    --debug)
+      DEBUG_ENABLED=1
+      shift
+      ;;
+    --debug-file)
+      DEBUG_ENABLED=1
+      DEBUG_FILE="${2:?--debug-file requires a value}"
+      shift 2
+      ;;
+    --debug-file=*)
+      DEBUG_ENABLED=1
+      DEBUG_FILE="${1#*=}"
       shift
       ;;
     -y|--yes)
@@ -974,6 +1174,7 @@ main() {
   apply_config_defaults
   prompt_serial_port
   persist_config_defaults
+  write_debug_context "$@"
 
   if [[ -n "${PORT}" ]]; then
     port_args=(--port "${PORT}")

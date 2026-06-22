@@ -36,7 +36,7 @@ class InstallScriptTests(unittest.TestCase):
     def test_self_updates_from_git_before_installer_actions(self):
         """The installer should pull the latest script before parsing normal actions."""
         self_update_index = self.script_text.index('self_update_from_git "$@"')
-        parser_index = self.script_text.index("while [[ $# -gt 0 ]]")
+        parser_index = self.script_text.index("while [[ $# -gt 0 ]]", self_update_index)
 
         self.assertIn('git -C "${worktree_root}" pull --ff-only', self.script_text)
         self.assertIn('exec env AIPI_INSTALL_SELF_UPDATED=1 "${SCRIPT_DIR}/install.sh" "$@"', self.script_text)
@@ -44,6 +44,27 @@ class InstallScriptTests(unittest.TestCase):
         self.assertIn("AIPI_SKIP_SELF_UPDATE", self.script_text)
         self.assertIn("git pull failed; installer stopped before device operations", self.script_text)
         self.assertLess(self_update_index, parser_index)
+
+    def test_debug_mode_writes_sanitized_issue_artifact(self):
+        """Debug mode should write an ignored, sanitized issue-ready artifact."""
+        gitignore_text = GITIGNORE.read_text(encoding="utf-8")
+        debug_index = self.script_text.index("start_debug_logging")
+        self_update_index = self.script_text.index('self_update_from_git "$@"')
+
+        self.assertIn("--debug", self.script_text)
+        self.assertIn("--debug-file FILE", self.script_text)
+        self.assertIn("AIPI_INSTALL_DEBUG", self.script_text)
+        self.assertIn("AIPI_INSTALL_DEBUG_FILE", self.script_text)
+        self.assertIn('TOOLS_ROOT="${TOOLS_DIR}/.local"', self.script_text)
+        self.assertIn('debug/install-debug-%s.txt', self.script_text)
+        self.assertIn("redact_stream()", self.script_text)
+        self.assertIn("mkfifo", self.script_text)
+        self.assertIn("redacted-mac", self.script_text)
+        self.assertIn("Sanitized run context", self.script_text)
+        self.assertIn("status --short --branch", self.script_text)
+        self.assertIn("Installer debug file:", self.script_text)
+        self.assertIn("tools/.local/", gitignore_text)
+        self.assertLess(debug_index, self_update_index)
 
     def test_answers_are_persisted_in_conf(self):
         """The installer should read and write task answers from .conf."""
