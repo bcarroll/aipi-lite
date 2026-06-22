@@ -43,3 +43,14 @@ Micropython binary source:
 
 https://github.com/alastairhm/micropython-st7735
 
+## Host-side tests
+
+Run the host-side regression tests from the repository root:
+
+```bash
+python3 -m unittest discover -s tests -v
+```
+
+These tests use local stubs for MicroPython-only modules so they can validate the
+implemented display baseline and setup tooling without an attached AIPI-Lite
+device.
