@@ -41,7 +41,10 @@ unless `.conf` points at an existing exact-size backup. The backup read is
 chunked by default so a failed transfer cannot be mistaken for a complete stock
 image on the next run. If a backup stalls on a specific USB setup, reduce the
 chunk size with `--backup-chunk-size 0x40000` or set
-`AIPI_BACKUP_CHUNK_SIZE=0x40000` in `.conf`.
+`AIPI_BACKUP_CHUNK_SIZE=0x40000` in `.conf`. The installer also retries failed
+backup chunks down to 4 KiB without resetting the chip between chunks; a repeat
+failure at the same offset should be treated as an address-specific read
+failure or an unstable USB path.
 
 The user still needs to put the AIPI-Lite into ESP32-S3 bootloader mode and
 connect the device over USB-C because those are physical actions.

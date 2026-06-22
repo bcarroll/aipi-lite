@@ -46,6 +46,7 @@ class InstallScriptTests(unittest.TestCase):
         self.assertIn("AIPI_CONFIRM_FLASH", self.script_text)
         self.assertIn("AIPI_CONFIRM_RESTORE", self.script_text)
         self.assertIn("AIPI_BACKUP_CHUNK_SIZE", self.script_text)
+        self.assertIn("AIPI_BACKUP_MIN_CHUNK_SIZE", self.script_text)
         self.assertIn(".conf", gitignore_text)
 
     def test_flashes_firmware_at_offset_zero(self):
@@ -87,10 +88,16 @@ class InstallScriptTests(unittest.TestCase):
         """The stock backup should be chunked and exact-size validated."""
         self.assertIn('BACKUP_CHUNK_SIZE="${AIPI_BACKUP_CHUNK_SIZE:-}"', self.script_text)
         self.assertIn("--backup-chunk-size SIZE", self.script_text)
+        self.assertIn("--backup-min-chunk-size SIZE", self.script_text)
         self.assertIn('BACKUP_CHUNK_SIZE="${BACKUP_CHUNK_SIZE:-0x80000}"', self.script_text)
+        self.assertIn('BACKUP_MIN_CHUNK_SIZE="${BACKUP_MIN_CHUNK_SIZE:-0x1000}"', self.script_text)
         self.assertIn("positive_size_to_bytes()", self.script_text)
         self.assertIn("file_size_bytes()", self.script_text)
         self.assertIn("backup_file_is_complete()", self.script_text)
+        self.assertIn("--before no_reset --after no_reset", self.script_text)
+        self.assertIn("Retrying failed chunks down to", self.script_text)
+        self.assertIn("retrying down to", self.script_text)
+        self.assertIn("read-protected", self.script_text)
         self.assertIn("Existing stock firmware backup is incomplete", self.script_text)
         self.assertIn("backup chunk size mismatch", self.script_text)
         self.assertNotIn('read_flash 0 "${FLASH_SIZE}" "${BACKUP_PATH}"', self.script_text)

@@ -19,6 +19,7 @@ FIRMWARE_URL="${AIPI_MICROPYTHON_FIRMWARE_URL:-}"
 BAUD="${AIPI_FLASH_BAUD:-}"
 FLASH_SIZE="${AIPI_FLASH_SIZE:-}"
 BACKUP_CHUNK_SIZE="${AIPI_BACKUP_CHUNK_SIZE:-}"
+BACKUP_MIN_CHUNK_SIZE="${AIPI_BACKUP_MIN_CHUNK_SIZE:-}"
 BACKUP_PATH="${AIPI_STOCK_BACKUP_PATH:-}"
 RESTORE_BACKUP_PATH="${AIPI_RESTORE_BACKUP_PATH:-}"
 RESET_AFTER_UPLOAD="${AIPI_RESET_AFTER_UPLOAD:-}"
@@ -44,6 +45,8 @@ Options:
   --flash-size SIZE       Stock firmware backup size. Default: 0x1000000.
   --backup-chunk-size SIZE
                           Stock backup read chunk size. Default: 0x80000.
+  --backup-min-chunk-size SIZE
+                          Smallest retry chunk size. Default: 0x1000.
   --baud RATE             Flash baud rate. Default: 460800.
   --no-reset              Do not reset the device after uploading source.
   --restore               Restore the backup path saved in .conf instead of
@@ -61,6 +64,7 @@ Environment overrides:
   AIPI_FLASH_BAUD
   AIPI_FLASH_SIZE
   AIPI_BACKUP_CHUNK_SIZE
+  AIPI_BACKUP_MIN_CHUNK_SIZE
   AIPI_STOCK_BACKUP_PATH
   AIPI_RESTORE_BACKUP_PATH
   AIPI_RESET_AFTER_UPLOAD
@@ -96,6 +100,10 @@ while [[ $# -gt 0 ]]; do
       ;;
     --backup-chunk-size)
       BACKUP_CHUNK_SIZE="${2:?--backup-chunk-size requires a value}"
+      shift 2
+      ;;
+    --backup-min-chunk-size)
+      BACKUP_MIN_CHUNK_SIZE="${2:?--backup-min-chunk-size requires a value}"
       shift 2
       ;;
     --baud)
@@ -334,6 +342,11 @@ apply_config_defaults() {
   fi
   BACKUP_CHUNK_SIZE="${BACKUP_CHUNK_SIZE:-0x80000}"
 
+  if [[ -z "${BACKUP_MIN_CHUNK_SIZE}" ]] && configured_value="$(config_get "AIPI_BACKUP_MIN_CHUNK_SIZE")"; then
+    BACKUP_MIN_CHUNK_SIZE="${configured_value}"
+  fi
+  BACKUP_MIN_CHUNK_SIZE="${BACKUP_MIN_CHUNK_SIZE:-0x1000}"
+
   if [[ -z "${BACKUP_PATH}" ]] && configured_value="$(config_get "AIPI_STOCK_BACKUP_PATH")"; then
     BACKUP_PATH="${configured_value}"
   fi
@@ -360,6 +373,7 @@ persist_config_defaults() {
   config_set "AIPI_FLASH_BAUD" "${BAUD}"
   config_set "AIPI_FLASH_SIZE" "${FLASH_SIZE}"
   config_set "AIPI_BACKUP_CHUNK_SIZE" "${BACKUP_CHUNK_SIZE}"
+  config_set "AIPI_BACKUP_MIN_CHUNK_SIZE" "${BACKUP_MIN_CHUNK_SIZE}"
   config_set "AIPI_RESET_AFTER_UPLOAD" "${RESET_AFTER_UPLOAD}"
 }
 
@@ -629,6 +643,7 @@ backup_stock_firmware() {
   local port_args=("$@")
   local flash_size_bytes
   local chunk_size_bytes
+  local minimum_chunk_size_bytes
   local actual_bytes
   local tmp_path
   local chunk_path
@@ -646,9 +661,13 @@ backup_stock_firmware() {
 
   flash_size_bytes="$(positive_size_to_bytes "${FLASH_SIZE}" "AIPI_FLASH_SIZE")"
   chunk_size_bytes="$(positive_size_to_bytes "${BACKUP_CHUNK_SIZE}" "AIPI_BACKUP_CHUNK_SIZE")"
+  minimum_chunk_size_bytes="$(positive_size_to_bytes "${BACKUP_MIN_CHUNK_SIZE}" "AIPI_BACKUP_MIN_CHUNK_SIZE")"
 
   if [[ "${chunk_size_bytes}" -gt "${flash_size_bytes}" ]]; then
     chunk_size_bytes="${flash_size_bytes}"
+  fi
+  if [[ "${minimum_chunk_size_bytes}" -gt "${chunk_size_bytes}" ]]; then
+    minimum_chunk_size_bytes="${chunk_size_bytes}"
   fi
 
   if backup_file_is_complete "${BACKUP_PATH}" "${flash_size_bytes}"; then
@@ -669,6 +688,7 @@ backup_stock_firmware() {
 
   echo "Backing up stock firmware to ${BACKUP_PATH}"
   echo "Reading ${flash_size_bytes} bytes in ${chunk_size_bytes}-byte chunks."
+  echo "Retrying failed chunks down to ${minimum_chunk_size_bytes} bytes."
 
   while [[ "${offset}" -lt "${flash_size_bytes}" ]]; do
     remaining=$((flash_size_bytes - offset))
@@ -681,10 +701,22 @@ backup_stock_firmware() {
     read_size_arg="$(format_hex_size "${read_size}")"
     echo "Backing up flash chunk ${offset_arg}+${read_size_arg}"
     if ! "${esptool_py}" -m esptool --chip esp32s3 "${port_args[@]}" \
+      --before no_reset --after no_reset \
       read_flash "${offset_arg}" "${read_size_arg}" "${chunk_path}"; then
-      rm -f "${tmp_path}" "${chunk_path}"
-      echo "error: failed to read stock firmware backup chunk at ${offset_arg}" >&2
-      exit 1
+      rm -f "${chunk_path}"
+      if [[ "${read_size}" -le "${minimum_chunk_size_bytes}" ]]; then
+        rm -f "${tmp_path}"
+        echo "error: failed to read stock firmware backup chunk at ${offset_arg} after retrying down to ${read_size_arg}" >&2
+        echo "error: if this repeats at the same offset, the stock firmware region may be read-protected or the USB link is unstable." >&2
+        exit 1
+      fi
+
+      chunk_size_bytes=$((read_size / 2))
+      if [[ "${chunk_size_bytes}" -lt "${minimum_chunk_size_bytes}" ]]; then
+        chunk_size_bytes="${minimum_chunk_size_bytes}"
+      fi
+      echo "warning: retrying ${offset_arg} with smaller ${chunk_size_bytes}-byte chunks" >&2
+      continue
     fi
 
     actual_bytes="$(file_size_bytes "${chunk_path}")"
