@@ -258,7 +258,7 @@ baseline:
 | Display bring-up | Partially implemented | `src/lib/st7735/` contains an ST7735 driver and font; `src/main.py` renders sample text to the 128 x 128 TFT. |
 | GPIO status LED and side button | Not implemented | No GPIO46 WS2812 or GPIO42 button handling has been imported. |
 | Wi-Fi and local-only service policy | Not implemented | No local endpoint validation, Wi-Fi configuration, or LAN service client has been imported. |
-| ES8311 audio control and I2S audio | Not implemented | No codec initialization, microphone capture, speaker playback, or GPIO9 speaker-enable logic has been imported. |
+| ES8311 audio control and I2S audio | Codec control implemented; I2S audio not implemented | `src/es8311.py` and `src/audio_probe.py` configure the ES8311 over I2C at expected address `0x18`, keep the DAC muted, and default GPIO9 speaker enable off. Microphone capture and speaker playback remain later milestones. |
 | Push-to-talk assistant flow | Not implemented | No recording lifecycle, local service exchange, response display, or response playback has been imported. |
 | On-device inference | Not implemented | No local model runtime, model metadata, or inference routing has been imported. |
 

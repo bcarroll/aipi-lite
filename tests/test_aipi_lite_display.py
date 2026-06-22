@@ -12,6 +12,7 @@ SRC_ROOT = REPO_ROOT / "src"
 
 MODULES_TO_CLEAR = (
     "aipi_lite_config",
+    "es8311",
     "main",
     "pins",
     "machine",
@@ -221,6 +222,9 @@ class AipiLiteDisplayConfigTests(unittest.TestCase):
                 ("text", (30, 60), "Micropython", 65535, main.load_sysfont(), 1, True),
             ],
         )
+        self.assertIn("main: speaker amplifier disabled", messages)
+        speaker_pin = next(pin for pin in FakePin.created if pin.pin_id == 9)
+        self.assertEqual(speaker_pin.values, [0, 0])
         self.assertEqual(messages[-2:], ["main: display baseline rendered", "main: skeleton ready"])
         self.assertEqual(fake_time.sleep_ms_calls, [1500, 100])
 

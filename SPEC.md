@@ -77,6 +77,11 @@ hardware or changing power-control behavior.
 | GPIO42 | Right function button | Side function button | Active-low / inverted in ESPHome templates. |
 | GPIO46 | WS2812 data | Single addressable status LED | Community notes identify one WS2812-style RGB LED using GRB order. |
 
+Current firmware expects the ES8311 control interface to scan at 7-bit I2C
+address `0x18`, with `0x19` accepted as the alternate CE-state address. Confirm
+the observed address on this unit with `audio_probe.run_probe()` before treating
+the register settings as hardware-validated.
+
 Known unconfirmed or indirect controls:
 
 - Left/power button: community notes indicate the left tactile button is not
