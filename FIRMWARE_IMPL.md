@@ -31,7 +31,7 @@ the checklist does not rely on color alone.
 2. ✅ Complete - `feat/02-micropython-skeleton`
 3. 🟡 Pending hardware validation - `feat/03-gpio-status-input`
 4. 🟡 Pending hardware validation - `feat/04-display-bringup`
-5. 🟡 Pending implementation - `feat/05-local-wifi-policy`
+5. 🟡 Pending hardware validation - `feat/05-local-wifi-policy`
 6. 🟡 Pending hardware validation - `feat/06-es8311-codec-control`
 7. 🟡 Pending implementation - `feat/07-audio-capture`
 8. 🟡 Pending implementation - `feat/08-audio-playback`
@@ -65,7 +65,7 @@ tooling directories.
 | `feat/04-display-bringup` | Implemented, hardware validation pending | `src/display.py`, `src/display_probe.py`, `src/aipi_lite_config.py`, `src/main.py`, and `tests/test_aipi_lite_display.py` add an ST7735 wrapper, PWM backlight control, named status screens, an opt-in display probe, and host-side layout coverage. | Run `display_probe.run_probe()` on physical hardware and record final orientation, color order, and readability observations. |
 | LCD pin constants | Implemented | `src/pins.py` includes display, button, status LED, ES8311 audio, speaker enable, charge input, and board power constants from `SPEC.md`. | Verify unconfirmed GPIO10 power behavior before any branch attempts to drive it. |
 | `feat/03-gpio-status-input` | Implemented, hardware validation pending | `src/status_led.py`, `src/button.py`, `src/io_probe.py`, and `tests/test_gpio_status_input.py` add GPIO46 status states, GPIO42 active-low debounce events, a GPIO-only serial probe, and host regression coverage. | Validate LED colors and button press/release serial output on physical hardware. |
-| `feat/05-local-wifi-policy` | Not started | No imported Wi-Fi or local endpoint code. | Implement local config, endpoint validation, and `/health` client. |
+| `feat/05-local-wifi-policy` | Implemented, hardware validation pending | `src/wifi_config.py`, `src/local_endpoint.py`, `src/wifi_probe.py`, `.gitignore`, and `tests/test_wifi_policy.py` add ignored local config loading, local-only endpoint validation, a Wi-Fi `/health` probe, and host-side policy coverage. | Run `wifi_probe.run_probe()` on physical hardware with a local service and record connection, endpoint, LED, and display behavior. |
 | `feat/06-es8311-codec-control` | Implemented, hardware validation pending | `src/es8311.py`, `src/audio_probe.py`, `src/main.py`, and `tests/test_es8311_codec.py` add ES8311 I2C detection, register setup, GPIO9 speaker gate defaults, and host-side regression coverage. | Run `audio_probe.run_probe()` on physical hardware and record the observed scan and audio behavior. |
 | `feat/07-audio-capture` | Not started | No imported I2S microphone capture code. | Implement bounded PCM capture and WAV/PCM packaging. |
 | `feat/08-audio-playback` | Not started | No imported I2S speaker playback code. | Implement playback and speaker enable timing. |
@@ -251,6 +251,21 @@ Acceptance criteria:
 - Firmware refuses public service endpoints by default.
 - Health check state is visible on serial, LED, and display.
 - Host tests pass.
+
+Implementation notes:
+
+- Operator configuration belongs in ignored `src/local_wifi_config.py` with
+  `WIFI_SSID`, `WIFI_PASSWORD`, `LOCAL_SERVICE_URL`, and optional
+  `APPROVED_LOCAL_HOSTS`.
+- Endpoint validation accepts RFC1918 IPv4, loopback/link-local IPv4 for bench
+  testing, `.local` mDNS names, and explicitly approved local hostnames. Public
+  IPv4 addresses, public hostnames, embedded credentials, query strings, and
+  unsupported schemes fail closed before Wi-Fi or HTTP calls.
+- `wifi_probe.py` uses MicroPython station mode, validates the endpoint before
+  connecting, calls only the derived local `/health` URL, and reports state
+  through serial plus available LED/display modules.
+- Physical validation still needs to confirm MicroPython `network.WLAN`,
+  `urequests`, local mDNS behavior, and status UI behavior on the target device.
 
 ### `feat/06-es8311-codec-control`
 

@@ -18,6 +18,9 @@ ESP32-S3 image by the repository installer.
 | `aipi_lite_config.py` | Compatibility shim for the imported ST7735 baseline. |
 | `es8311.py` | ES8311 I2C register driver and GPIO9 speaker amplifier gate helper. |
 | `audio_probe.py` | Opt-in serial codec probe that scans I2C, initializes the ES8311, and briefly pulses the muted speaker gate. |
+| `wifi_config.py` | Loader for ignored local Wi-Fi and local-service configuration. |
+| `local_endpoint.py` | Local-only endpoint parser and validator for configured service URLs. |
+| `wifi_probe.py` | Explicit Wi-Fi/local-service probe that validates endpoint policy, connects Wi-Fi, calls `/health`, and reports status. |
 | `lib/st7735/` | Imported ST7735 display driver and font files. |
 
 ## Firmware Image Selection
@@ -118,6 +121,39 @@ I2S with MCLK on GPIO6, keeps the DAC muted, briefly enables the GPIO9 speaker
 amplifier gate, and disables it again before returning. It does not capture or
 play I2S audio; those are separate later milestones.
 
+## Wi-Fi and Local Service Probe
+
+Create an ignored `src/local_wifi_config.py` file before uploading `src/` to the
+device:
+
+```python
+WIFI_SSID = "your-local-ssid"
+WIFI_PASSWORD = "your-wpa2-password"
+LOCAL_SERVICE_URL = "http://192.168.1.10:8080"
+APPROVED_LOCAL_HOSTS = ("assistant.lan",)
+```
+
+`APPROVED_LOCAL_HOSTS` is optional and should contain only operator-controlled
+local DNS names. Do not commit this file. It is ignored by Git because it may
+contain Wi-Fi credentials or local infrastructure names.
+
+Run the probe explicitly when the device is ready to validate local Wi-Fi and
+local service reachability:
+
+```bash
+mpremote connect /dev/cu.usbmodem31101 exec "import wifi_probe; wifi_probe.run_probe()"
+```
+
+The probe validates `LOCAL_SERVICE_URL` before connecting or making an HTTP
+request. It accepts RFC1918 IPv4 addresses, loopback/link-local IPv4 for bench
+testing, `.local` mDNS names, and explicitly approved local hostnames. It
+rejects public IPv4 addresses, public DNS names, embedded credentials, query
+strings, fragments, and unsupported schemes by default.
+
+When policy validation passes, the probe connects with MicroPython
+`network.WLAN`, calls only the derived local `/health` URL, prints serial
+status, and updates the status LED and display when those modules initialize.
+
 ## Safety Notes
 
 - `boot.py` must remain safe to run before hardware probes. It should not
@@ -131,6 +167,8 @@ play I2S audio; those are separate later milestones.
   a failed LED or button experiment cannot block recovery access.
 - `display_probe.py` is opt-in. It initializes only the LCD and backlight and
   should remain independent of Wi-Fi, audio, and GPIO10 board-power control.
+- `wifi_probe.py` is opt-in. It validates endpoint policy before network
+  connection attempts and should remain local-only by default.
 - Local Wi-Fi credentials, service URLs, and operator overrides belong in
   ignored local configuration files, not in source control.
 - Replacement firmware must remain local-only by default. Do not add cloud,

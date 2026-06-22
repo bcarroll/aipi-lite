@@ -71,6 +71,9 @@ skeleton, GPIO probe, and display status probe:
 - `src/aipi_lite_config.py`
 - `src/es8311.py`
 - `src/audio_probe.py`
+- `src/wifi_config.py`
+- `src/local_endpoint.py`
+- `src/wifi_probe.py`
 - `src/lib/st7735/`
 
 `boot.py` emits serial-visible safe startup status without constructing GPIO
@@ -80,7 +83,9 @@ status screen through the reusable display wrapper. `pins.py` centralizes the
 documented pin map for later hardware probe branches. `aipi_lite_config.py`
 remains as a compatibility shim for the imported display baseline. `es8311.py`
 provides codec I2C control and the speaker amplifier gate; `audio_probe.py` is
-the opt-in ES8311 hardware probe.
+the opt-in ES8311 hardware probe. `wifi_probe.py` connects only to configured
+local Wi-Fi and calls only a local `/health` endpoint after endpoint policy
+validation passes.
 
 The GPIO status/input probe remains opt-in so normal boot stays recoverable. To
 cycle the GPIO46 WS2812/NeoPixel status LED states and print debounced GPIO42
@@ -112,6 +117,18 @@ mpremote connect /dev/cu.usbmodem31101 exec "import audio_probe; audio_probe.run
 It scans the GPIO4/GPIO5 I2C bus for expected codec address `0x18`, writes the
 16 kHz 16-bit initialization registers, keeps the DAC muted, briefly pulses the
 GPIO9 speaker amplifier gate, and disables the gate before returning.
+
+The Wi-Fi/local-service probe requires an ignored `src/local_wifi_config.py`
+file on the device. After uploading `src/`, run:
+
+```bash
+mpremote connect /dev/cu.usbmodem31101 exec "import wifi_probe; wifi_probe.run_probe()"
+```
+
+The probe validates the configured endpoint before connecting to Wi-Fi. It
+accepts RFC1918 IPv4 addresses, loopback/link-local IPv4 for bench testing,
+`.local` names, and explicitly approved local hostnames. Public internet
+endpoints are rejected by default and are not contacted.
 
 See [src/README.md](src/README.md) for firmware image selection, upload, serial
 log, and safety notes for the MicroPython application tree.
