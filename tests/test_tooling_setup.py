@@ -36,6 +36,13 @@ class SetupMicropythonToolsTests(unittest.TestCase):
         self.assertIn("ESP32_GENERIC_S3-20260406-v1.28.0.bin", self.script_text)
         self.assertIn("https://micropython.org/resources/firmware/", self.script_text)
 
+    def test_legacy_checked_in_binary_flow_is_not_used(self):
+        """The setup script should avoid the removed checked-in firmware image flow."""
+        self.assertNotIn("bootloader.bin", self.script_text)
+        self.assertNotIn("partition-table.bin", self.script_text)
+        self.assertNotIn("micropython.bin", self.script_text)
+        self.assertIn("write_flash 0 ${firmware_path}", self.script_text)
+
     def test_required_display_libraries_are_declared(self):
         """The setup script should stage the TFT display driver bundle and license."""
         expected_destinations = {

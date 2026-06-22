@@ -1,5 +1,6 @@
 tools/.local/
 .tools/
+/micropython/
 __pycache__/
 *.pyc
 esp-env

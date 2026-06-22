@@ -250,7 +250,7 @@ baseline:
 
 | Plan component | Imported status | Evidence |
 | --- | --- | --- |
-| Flashing support | Partially implemented | `README.md` documents ESP32-S3 bootloader entry and `esptool` flashing with checked-in MicroPython binaries under `micropython/`. |
+| Flashing support | Partially implemented | `tools/setup_micropython_tools.sh`, `tools/README.md`, and `README.md` document a reproducible tools-based workflow that downloads MicroPython firmware into ignored `tools/.local/` artifacts. |
 | MicroPython source skeleton | Partially implemented | `main.py` runs a display demo and `aipi_lite_config.py` centralizes display pin setup. The planned `firmware/micropython/` layout is still future work. |
 | Pin mapping | Partially implemented | `aipi_lite_config.py` uses GPIO3 backlight, GPIO15 CS, GPIO7 D/C, GPIO18 reset, GPIO16 SCLK, and GPIO17 MOSI, matching the LCD pins in `SPEC.md`. |
 | Display bring-up | Partially implemented | `lib/st7735/` contains an ST7735 driver and font; `main.py` renders sample text to the 128 x 128 TFT. |
@@ -262,6 +262,9 @@ baseline:
 
 The imported baseline should be treated as hardware evidence for the display
 branch and as a starting point for refactoring into the planned firmware layout.
+Legacy checked-in firmware binaries from the earlier import are not part of the
+current workflow; generated or downloaded firmware images belong under ignored
+tooling directories such as `tools/.local/`.
 
 ## References
 

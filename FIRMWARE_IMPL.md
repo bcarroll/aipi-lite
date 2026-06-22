@@ -50,11 +50,14 @@ Conditional runtime fallback branch:
 
 The repository now includes an earlier implementation from
 `https://github.com/bcarroll/aipi-lite` at remote commit `b06b569`. That imported
-code should be treated as the current baseline for implementation work.
+code should be treated as the current source baseline for implementation work.
+Legacy checked-in firmware binaries are intentionally excluded from the current
+workflow; firmware images should be downloaded or generated into ignored
+tooling directories.
 
 | Branch / component | Status after import | Evidence | Remaining work |
 | --- | --- | --- | --- |
-| `feat/01-backup-recovery` | Partial | `README.md` documents bootloader mode and flashing checked-in MicroPython binaries from `micropython/`. | Add stock firmware backup, restore, and safety checklist docs. |
+| `feat/01-backup-recovery` | Partial | `tools/setup_micropython_tools.sh`, `tools/README.md`, and `README.md` document bootloader mode and tools-based MicroPython firmware download/flash commands. | Add stock firmware backup, restore, and safety checklist docs. |
 | `feat/02-micropython-skeleton` | Partial | `main.py` and `aipi_lite_config.py` form a small MicroPython app baseline. | Move or wrap into the planned `firmware/micropython/` layout and add host tests. |
 | `feat/04-display-bringup` | Partial | `lib/st7735/`, `aipi_lite_config.py`, and `main.py` initialize the ST7735 TFT and display text. | Convert demo into reusable display probe/status renderer and document orientation/color assumptions. |
 | LCD pin constants | Implemented for display only | `aipi_lite_config.py` uses GPIO3, GPIO7, GPIO15, GPIO16, GPIO17, and GPIO18. | Add pin constants for button, LED, ES8311, speaker enable, charge input, and board power. |
