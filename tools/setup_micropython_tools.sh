@@ -1,0 +1,202 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
+TOOLS_ROOT="${REPO_ROOT}/.tools"
+VENV_DIR="${TOOLS_ROOT}/micropython-venv"
+DOWNLOAD_DIR="${TOOLS_ROOT}/downloads"
+DEFAULT_FIRMWARE_URL="https://micropython.org/resources/firmware/ESP32_GENERIC_S3-20260406-v1.28.0.bin"
+
+FIRMWARE_URL="${AIPI_MICROPYTHON_FIRMWARE_URL:-${DEFAULT_FIRMWARE_URL}}"
+PORT="${AIPI_SERIAL_PORT:-}"
+APP_DIR="${REPO_ROOT}/firmware/micropython"
+DOWNLOAD_FIRMWARE=1
+
+usage() {
+  cat <<'USAGE'
+Usage: tools/setup_micropython_tools.sh [options]
+
+Downloads repo-local tools for flashing MicroPython firmware and uploading
+MicroPython application source to the AIPI-Lite over USB-C.
+
+Options:
+  --port PORT             Serial port, for example /dev/cu.usbmodem31101.
+  --app-dir DIR           MicroPython application directory to upload.
+  --firmware-url URL      MicroPython firmware .bin URL to download.
+  --skip-firmware         Install tools but do not download firmware.
+  -h, --help              Show this help.
+
+Environment overrides:
+  AIPI_SERIAL_PORT
+  AIPI_MICROPYTHON_FIRMWARE_URL
+
+Downloaded files are placed under .tools/, which is ignored by Git.
+USAGE
+}
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --port)
+      PORT="${2:?--port requires a value}"
+      shift 2
+      ;;
+    --app-dir)
+      APP_DIR="${2:?--app-dir requires a value}"
+      shift 2
+      ;;
+    --firmware-url)
+      FIRMWARE_URL="${2:?--firmware-url requires a value}"
+      DOWNLOAD_FIRMWARE=1
+      shift 2
+      ;;
+    --skip-firmware)
+      DOWNLOAD_FIRMWARE=0
+      shift
+      ;;
+    -h|--help)
+      usage
+      exit 0
+      ;;
+    *)
+      echo "error: unknown option: $1" >&2
+      usage >&2
+      exit 2
+      ;;
+  esac
+done
+
+require_command() {
+  local command_name="$1"
+
+  if ! command -v "${command_name}" >/dev/null 2>&1; then
+    echo "error: required command not found: ${command_name}" >&2
+    exit 1
+  fi
+}
+
+firmware_filename() {
+  local url="$1"
+  local path="${url%%\?*}"
+
+  basename "${path}"
+}
+
+download_file() {
+  local url="$1"
+  local output_path="$2"
+
+  if [[ -f "${output_path}" ]]; then
+    echo "already downloaded: ${output_path}"
+    return
+  fi
+
+  if command -v curl >/dev/null 2>&1; then
+    curl --fail --location --show-error --output "${output_path}" "${url}"
+  elif command -v wget >/dev/null 2>&1; then
+    wget --output-document="${output_path}" "${url}"
+  else
+    echo "error: curl or wget is required to download firmware" >&2
+    exit 1
+  fi
+}
+
+print_next_steps() {
+  local firmware_path="$1"
+  local esptool_cmd="${VENV_DIR}/bin/python -m esptool"
+  local mpremote_cmd="${VENV_DIR}/bin/mpremote"
+  local port_arg=""
+  local connect_arg="auto"
+
+  if [[ -n "${PORT}" ]]; then
+    port_arg="--port ${PORT}"
+    connect_arg="${PORT}"
+  fi
+
+  cat <<EOF
+
+Tooling is ready.
+
+Installed:
+  ${VENV_DIR}/bin/python
+  ${VENV_DIR}/bin/mpremote
+
+Firmware image:
+  ${firmware_path}
+
+Before flashing:
+  1. Back up stock firmware.
+  2. Put the AIPI-Lite into ESP32-S3 bootloader mode.
+  3. Connect the device over USB-C.
+
+Erase flash:
+  ${esptool_cmd} --chip esp32s3 ${port_arg} erase_flash
+EOF
+
+  if [[ "${firmware_path}" != "not downloaded" ]]; then
+    cat <<EOF
+
+Write MicroPython firmware:
+  ${esptool_cmd} --chip esp32s3 ${port_arg} --baud 460800 write_flash 0 ${firmware_path}
+EOF
+  else
+    cat <<EOF
+
+MicroPython firmware was not downloaded. Re-run without --skip-firmware or pass
+--firmware-url before writing firmware.
+EOF
+  fi
+
+  cat <<EOF
+
+Open a MicroPython REPL:
+  ${mpremote_cmd} connect ${connect_arg} repl
+EOF
+
+  if [[ -d "${APP_DIR}" ]]; then
+    cat <<EOF
+
+Upload application source:
+  ${mpremote_cmd} connect ${connect_arg} fs cp -r ${APP_DIR}/ :
+EOF
+  else
+    cat <<EOF
+
+Application source directory does not exist yet:
+  ${APP_DIR}
+
+After firmware/micropython/ exists, upload it with:
+  ${mpremote_cmd} connect ${connect_arg} fs cp -r firmware/micropython/ :
+EOF
+  fi
+}
+
+main() {
+  local firmware_name
+  local firmware_path
+
+  require_command python3
+
+  mkdir -p "${TOOLS_ROOT}" "${DOWNLOAD_DIR}"
+
+  if [[ ! -d "${VENV_DIR}" ]]; then
+    python3 -m venv "${VENV_DIR}"
+  fi
+
+  "${VENV_DIR}/bin/python" -m pip install --upgrade pip
+  "${VENV_DIR}/bin/python" -m pip install --upgrade esptool mpremote
+
+  firmware_path="not downloaded"
+  if [[ "${DOWNLOAD_FIRMWARE}" -eq 1 ]]; then
+    firmware_name="$(firmware_filename "${FIRMWARE_URL}")"
+    firmware_path="${DOWNLOAD_DIR}/${firmware_name}"
+    download_file "${FIRMWARE_URL}" "${firmware_path}"
+  fi
+
+  "${VENV_DIR}/bin/python" -m esptool version
+  "${VENV_DIR}/bin/mpremote" --help >/dev/null
+
+  print_next_steps "${firmware_path}"
+}
+
+main "$@"
