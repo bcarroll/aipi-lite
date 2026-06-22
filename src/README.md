@@ -10,6 +10,9 @@ ESP32-S3 image by the repository installer.
 | `boot.py` | Safe startup defaults. It emits serial status and does not construct GPIO pins or change GPIO10 board-power control. |
 | `main.py` | Skeleton application entrypoint. It prints bring-up status and runs the imported display baseline when the ST7735 driver is available. |
 | `pins.py` | Central pin constants from `SPEC.md`, grouped by display, audio, status LED, button, and power. |
+| `status_led.py` | WS2812/NeoPixel status LED driver for GPIO46 with named firmware states. |
+| `button.py` | Active-low GPIO42 side button reader with debounce and press/release events. |
+| `io_probe.py` | Explicit GPIO-only probe that cycles status LED states and prints button events. |
 | `aipi_lite_config.py` | Display wiring helper for the current ST7735 baseline. |
 | `lib/st7735/` | Imported ST7735 display driver and font files. |
 
@@ -58,12 +61,31 @@ If display libraries or hardware initialization are unavailable, `main.py`
 prints `main: display baseline skipped: <ErrorName>` and still reaches the
 skeleton-ready line.
 
+## GPIO Status/Input Probe
+
+After the application tree is uploaded, run the GPIO-only probe explicitly when
+you want to validate the status LED and side function button:
+
+```bash
+mpremote connect /dev/cu.usbmodem31101 exec "import io_probe; io_probe.run_probe(cycles=2)"
+```
+
+The probe cycles these named LED states over the GPIO46 WS2812/NeoPixel status
+LED: `offline`, `connecting`, `ready`, `recording`, `processing`, `speaking`,
+and `error`. It then watches the active-low GPIO42 right function button and
+prints debounced `pressed` and `released` events to serial.
+
+This probe intentionally avoids Wi-Fi, display initialization, audio setup, and
+GPIO10 board-power control.
+
 ## Safety Notes
 
 - `boot.py` must remain safe to run before hardware probes. It should not
   instantiate `machine.Pin`, start Wi-Fi, configure audio, or toggle GPIO10.
 - `pins.py` is declarative only. Later branches should import constants from it
   instead of repeating numeric GPIO assignments.
+- `io_probe.py` is opt-in. Keep normal boot behavior safe and serial-visible so
+  a failed LED or button experiment cannot block recovery access.
 - Local Wi-Fi credentials, service URLs, and operator overrides belong in
   ignored local configuration files, not in source control.
 - Replacement firmware must remain local-only by default. Do not add cloud,

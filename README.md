@@ -58,11 +58,14 @@ See [tools/README.md](tools/README.md) for lower-level setup tooling.
 ## MicroPython Application Skeleton
 
 The MicroPython source under `src/` now provides the first safe application
-skeleton:
+skeleton and the first GPIO probe:
 
 - `src/boot.py`
 - `src/main.py`
 - `src/pins.py`
+- `src/status_led.py`
+- `src/button.py`
+- `src/io_probe.py`
 - `src/aipi_lite_config.py`
 - `src/lib/st7735/`
 
@@ -70,6 +73,17 @@ skeleton:
 pins or touching GPIO10 board-power control. `main.py` prints the bring-up
 sequence and retains the imported TFT display demo as a best-effort baseline.
 `pins.py` centralizes the documented pin map for later hardware probe branches.
+
+The GPIO status/input probe remains opt-in so normal boot stays recoverable. To
+cycle the GPIO46 WS2812/NeoPixel status LED states and print debounced GPIO42
+right-function-button events after uploading `src/`, run:
+
+```bash
+mpremote connect /dev/cu.usbmodem31101 exec "import io_probe; io_probe.run_probe(cycles=2)"
+```
+
+The probe does not start Wi-Fi, initialize audio, initialize the display, or
+touch GPIO10 board-power control.
 
 See [src/README.md](src/README.md) for firmware image selection, upload, serial
 log, and safety notes for the MicroPython application tree.
