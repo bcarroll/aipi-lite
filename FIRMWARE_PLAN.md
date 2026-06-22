@@ -242,6 +242,27 @@ The first success condition is not a full assistant. The first success condition
 is proven control of display, LED, button, Wi-Fi, ES8311, microphone capture,
 and speaker playback on the target device.
 
+## Imported Code Baseline
+
+Existing code from `https://github.com/bcarroll/aipi-lite` has been merged as
+the current project target. That code provides an early MicroPython LCD bring-up
+baseline:
+
+| Plan component | Imported status | Evidence |
+| --- | --- | --- |
+| Flashing support | Partially implemented | `README.md` documents ESP32-S3 bootloader entry and `esptool` flashing with checked-in MicroPython binaries under `micropython/`. |
+| MicroPython source skeleton | Partially implemented | `main.py` runs a display demo and `aipi_lite_config.py` centralizes display pin setup. The planned `firmware/micropython/` layout is still future work. |
+| Pin mapping | Partially implemented | `aipi_lite_config.py` uses GPIO3 backlight, GPIO15 CS, GPIO7 D/C, GPIO18 reset, GPIO16 SCLK, and GPIO17 MOSI, matching the LCD pins in `SPEC.md`. |
+| Display bring-up | Partially implemented | `lib/st7735/` contains an ST7735 driver and font; `main.py` renders sample text to the 128 x 128 TFT. |
+| GPIO status LED and side button | Not implemented | No GPIO46 WS2812 or GPIO42 button handling has been imported. |
+| Wi-Fi and local-only service policy | Not implemented | No local endpoint validation, Wi-Fi configuration, or LAN service client has been imported. |
+| ES8311 audio control and I2S audio | Not implemented | No codec initialization, microphone capture, speaker playback, or GPIO9 speaker-enable logic has been imported. |
+| Push-to-talk assistant flow | Not implemented | No recording lifecycle, local service exchange, response display, or response playback has been imported. |
+| On-device inference | Not implemented | No local model runtime, model metadata, or inference routing has been imported. |
+
+The imported baseline should be treated as hardware evidence for the display
+branch and as a starting point for refactoring into the planned firmware layout.
+
 ## References
 
 - Hardware specification: [SPEC.md](SPEC.md)

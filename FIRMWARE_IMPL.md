@@ -46,6 +46,30 @@ Conditional runtime fallback branch:
 
 - `fallback/esp-idf-audio-runtime`
 
+## Imported Implementation Status
+
+The repository now includes an earlier implementation from
+`https://github.com/bcarroll/aipi-lite` at remote commit `b06b569`. That imported
+code should be treated as the current baseline for implementation work.
+
+| Branch / component | Status after import | Evidence | Remaining work |
+| --- | --- | --- | --- |
+| `feat/01-backup-recovery` | Partial | `README.md` documents bootloader mode and flashing checked-in MicroPython binaries from `micropython/`. | Add stock firmware backup, restore, and safety checklist docs. |
+| `feat/02-micropython-skeleton` | Partial | `main.py` and `aipi_lite_config.py` form a small MicroPython app baseline. | Move or wrap into the planned `firmware/micropython/` layout and add host tests. |
+| `feat/04-display-bringup` | Partial | `lib/st7735/`, `aipi_lite_config.py`, and `main.py` initialize the ST7735 TFT and display text. | Convert demo into reusable display probe/status renderer and document orientation/color assumptions. |
+| LCD pin constants | Implemented for display only | `aipi_lite_config.py` uses GPIO3, GPIO7, GPIO15, GPIO16, GPIO17, and GPIO18. | Add pin constants for button, LED, ES8311, speaker enable, charge input, and board power. |
+| `feat/03-gpio-status-input` | Not started | No imported GPIO42 button or GPIO46 WS2812 code. | Implement status LED, button debounce, and tests. |
+| `feat/05-local-wifi-policy` | Not started | No imported Wi-Fi or local endpoint code. | Implement local config, endpoint validation, and `/health` client. |
+| `feat/06-es8311-codec-control` | Not started | No imported ES8311 I2C register code. | Implement codec detection, register setup, and speaker gate defaults. |
+| `feat/07-audio-capture` | Not started | No imported I2S microphone capture code. | Implement bounded PCM capture and WAV/PCM packaging. |
+| `feat/08-audio-playback` | Not started | No imported I2S speaker playback code. | Implement playback and speaker enable timing. |
+| `feat/09-local-service-contract` | Not started | No imported LAN service contract or mock service. | Define API, mock service, client, and tests. |
+| `feat/10-push-to-talk-flow` | Not started | No imported assistant state machine. | Integrate button, audio, local service, display, and speaker. |
+| `feat/11-reliability-power-errors` | Not started | No imported reconnect, retry, power, or diagnostics logic. | Add recovery behavior and hardware troubleshooting docs. |
+| `feat/12-mvp-release` | Not started | No imported release checklist. | Package repeatable MVP validation and version metadata. |
+| `spike/13-on-device-inference-feasibility` | Not started | No imported on-device inference experiment. | Measure feasibility after core I/O is reliable. |
+| `feat/14-on-device-inference` | Not started | No imported inference runtime integration. | Add only after feasibility is proven. |
+
 ## Task Branches
 
 ### `feat/01-backup-recovery`

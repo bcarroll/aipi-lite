@@ -2,3 +2,7 @@ tools/.local/
 .tools/
 __pycache__/
 *.pyc
+esp-env
+settings.json
+.vscode/
+.DS_Store
