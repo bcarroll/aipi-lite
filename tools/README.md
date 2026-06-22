@@ -1,8 +1,8 @@
 # AIPI-Lite Tooling
 
 This directory contains host-side tooling for preparing an AIPI-Lite device over
-USB-C. Downloaded tools, virtual environments, and firmware binaries are stored
-under the repo-local `.tools/` directory, which is ignored by Git.
+USB-C. Downloaded tools, virtual environments, firmware binaries, and staged
+MicroPython libraries are stored under `tools/.local/`, which is ignored by Git.
 
 ## Bootstrap Flashing Tools
 
@@ -12,10 +12,11 @@ Run:
 tools/setup_micropython_tools.sh
 ```
 
-The script creates `.tools/micropython-venv/`, installs `esptool` and
-`mpremote`, downloads the default ESP32-S3 MicroPython firmware image, and prints
-the commands needed to erase flash, write MicroPython firmware, and upload the
-future `firmware/micropython/` application tree.
+The script creates `tools/.local/micropython-venv/`, installs `esptool` and
+`mpremote`, downloads the default ESP32-S3 MicroPython firmware image, stages the
+MicroPython libraries needed by the AIPI-Lite firmware, and prints the commands
+needed to erase flash, write MicroPython firmware, upload libraries to `/lib`,
+and upload the future `firmware/micropython/` application tree.
 
 Use an explicit serial port when multiple USB serial devices are attached:
 
@@ -33,3 +34,19 @@ tools/setup_micropython_tools.sh \
 
 The script does not flash the device automatically. Review the printed commands
 and confirm the stock firmware backup exists before erasing or writing flash.
+
+## Staged MicroPython Libraries
+
+The current setup script downloads the ST7735R display driver bundle from
+`micropython-nano-gui` into:
+
+```text
+tools/.local/micropython-libs/lib/drivers/
+```
+
+That bundle covers the AIPI-Lite TFT LCD driver dependency. The first firmware
+bring-up expects other device capabilities to come from MicroPython built-ins:
+`machine`, `network`, `socket`, `framebuf`, `neopixel`, and `machine.I2S`.
+
+The downloaded display driver source is MIT licensed; the script also downloads
+the upstream license into `tools/.local/micropython-libs/metadata/`.

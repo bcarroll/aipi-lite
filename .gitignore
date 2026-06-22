@@ -1,3 +1,4 @@
+tools/.local/
 .tools/
 __pycache__/
 *.pyc
