@@ -4,33 +4,33 @@ Local-only replacement firmware work for the XORIGIN AI PI-Lite / AIPI Lite.
 
 ## Current MicroPython Workflow
 
-Use the repository tooling to download host tools, the selected MicroPython
-firmware image, and staged MicroPython libraries:
+Use the repository installer to resolve the latest stable ESP32-S3 MicroPython
+firmware, flash it, and upload the current application baseline:
 
 ```bash
-tools/setup_micropython_tools.sh
+./install.sh --port /dev/cu.usbmodem31101
 ```
 
-The script creates ignored artifacts under `tools/.local/`, installs `esptool`
-and `mpremote`, downloads the default ESP32-S3 MicroPython firmware image, and
-prints the commands for erasing flash, writing firmware, opening a REPL, and
-uploading libraries or application source.
+If local prerequisites are missing, the installer prompts before downloading or
+installing components under ignored `tools/.local/`, then continues with the
+flash and upload workflow after approval.
 
-Use an explicit USB serial port when needed:
+Run without `--port` to let `esptool` and `mpremote` auto-detect the attached
+device:
 
 ```bash
-tools/setup_micropython_tools.sh --port /dev/cu.usbmodem31101
+./install.sh
 ```
 
-Use a specific MicroPython firmware build when the default image is not the
-right target:
+Use a specific MicroPython firmware build when the latest standard
+ESP32_GENERIC_S3 image is not the right target:
 
 ```bash
-tools/setup_micropython_tools.sh \
+./install.sh --port /dev/cu.usbmodem31101 \
   --firmware-url https://micropython.org/resources/firmware/ESP32_GENERIC_S3-20260406-v1.28.0.bin
 ```
 
-The setup script does not flash automatically. Before erasing or writing flash:
+Before erasing or writing flash:
 
 - Back up the stock firmware.
 - Put the AIPI-Lite into ESP32-S3 bootloader mode.
@@ -40,7 +40,7 @@ Bootloader access currently requires removing the four back screws, pressing the
 button under the display while plugging the device into USB-C, and confirming
 that the screen remains black.
 
-See [tools/README.md](tools/README.md) for the full tooling workflow.
+See [tools/README.md](tools/README.md) for lower-level setup tooling.
 
 ## Imported Display Baseline
 

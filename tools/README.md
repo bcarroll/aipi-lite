@@ -6,6 +6,19 @@ MicroPython libraries are stored under `tools/.local/`, which is ignored by Git.
 
 ## Bootstrap Flashing Tools
 
+The preferred full install path is the repository root installer:
+
+```bash
+./install.sh --port /dev/cu.usbmodem31101
+```
+
+It resolves the latest stable ESP32-S3 MicroPython firmware, prompts before
+downloading missing local prerequisites, flashes the connected device, and
+copies application source with `mpremote`.
+
+Use the setup script directly when you only want to stage tools, firmware, and
+libraries without flashing:
+
 Run:
 
 ```bash
