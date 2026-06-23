@@ -29,6 +29,26 @@ specific GitHub issue artifact path is needed. The generated file redacts common
 secrets, credentials, SSIDs, tokens, and MAC-like identifiers before writing the
 transcript.
 
+For development-team install captures and future hardware validation runs, use
+`dev_install.sh`. It runs the same `install.sh` path, passes installer arguments
+through unchanged, shows installer output interactively, and stores raw,
+redacted, metadata, and GitHub issue-body artifacts under ignored
+`tools/.local/dev-install/`:
+
+```bash
+./dev_install.sh \
+  --device-label bench-a \
+  --hardware-note "display probe readable after install" \
+  -- --port /dev/cu.usbmodem31101
+```
+
+Add `--issue OWNER/REPO#NUMBER` or a GitHub issue URL to post the redacted issue
+body as a comment when the `gh` CLI is already installed and authenticated. If
+GitHub tooling is missing, unauthenticated, or `--prepare-only` is supplied, the
+script leaves the issue body locally for inspection or manual submission. The
+wrapper returns the installer exit status so capture or posting problems do not
+mask install failures.
+
 If local prerequisites are missing, the installer prompts before downloading or
 installing components under ignored `tools/.local/`, then continues with the
 flash and upload workflow after approval.

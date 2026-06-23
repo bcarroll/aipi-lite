@@ -44,7 +44,7 @@ the checklist does not rely on color alone.
 
 Support tooling branch:
 
-- 🟡 Pending implementation - `tooling/dev-install-capture`
+- ✅ Complete - `tooling/dev-install-capture`
 
 Optional on-device inference branches:
 
@@ -67,7 +67,7 @@ tooling directories.
 | Branch / component | Status | Evidence | Remaining work |
 | --- | --- | --- | --- |
 | `feat/01-backup-recovery` | Implemented | `install.sh` self-updates with `git pull --ff-only`, can write sanitized debug artifacts for GitHub issues, prompts for bootloader readiness, stores answers in `.conf`, backs up stock flash to ignored tooling storage with exact-size validation, no-reset chunked reads, and smaller-chunk retries, restores saved stock backups, and `RECOVERY.md` documents backup, restore, expected recovery output, and the flashing safety checklist. | Validate the restore flow on physical hardware and record exact stock serial logs. |
-| `tooling/dev-install-capture` | Not started | No `dev_install.sh` wrapper exists for developer issue-capture runs. | Add a host-only wrapper that runs `install.sh` with provided CLI arguments, captures the user-visible transcript, writes redacted issue-ready output to ignored local storage, and posts or prepares it for an explicit GitHub issue target. |
+| `tooling/dev-install-capture` | Implemented | `dev_install.sh`, `tests/test_dev_install_capture.py`, `README.md`, and `tools/README.md` add a host-only installer wrapper that captures raw and redacted transcripts, run metadata, hardware validation notes, and a GitHub-ready issue body under ignored local storage, then optionally posts to an explicit issue target with an existing `gh` CLI. | Use it during physical hardware validation runs and refine collected metadata if real bench analysis needs more fields. |
 | `feat/02-micropython-skeleton` | Implemented | `src/boot.py`, `src/main.py`, `src/pins.py`, `src/README.md`, and host tests provide safe startup defaults, grouped pin constants, serial-visible bring-up status, and hardware-free regression coverage. | Validate the serial output and display baseline on physical hardware. |
 | `feat/04-display-bringup` | Implemented, hardware validation pending | `src/display.py`, `src/display_probe.py`, `src/aipi_lite_config.py`, `src/main.py`, and `tests/test_aipi_lite_display.py` add an ST7735 wrapper, PWM backlight control, named status screens, an opt-in display probe, and host-side layout coverage. | Run `display_probe.run_probe()` on physical hardware and record final orientation, color order, and readability observations. |
 | LCD pin constants | Implemented | `src/pins.py` includes display, button, status LED, ES8311 audio, speaker enable, charge input, and board power constants from `SPEC.md`. | Verify unconfirmed GPIO10 power behavior before any branch attempts to drive it. |
@@ -151,6 +151,21 @@ Acceptance criteria:
   failures.
 - No credentials, device tokens, firmware dumps, or local-only artifacts are
   committed.
+
+Implementation notes:
+
+- `dev_install.sh` writes each run to `tools/.local/dev-install/` by default,
+  including `install-transcript-raw.txt`, `install-transcript-redacted.txt`,
+  `run-metadata.txt`, and `github-issue-body.md`.
+- Developer options are parsed before a `--` separator; all remaining arguments
+  are passed to `install.sh` unchanged.
+- `--device-label` and repeatable `--hardware-note` entries add non-secret
+  validation context for later device analysis.
+- `--issue OWNER/REPO#NUMBER` or a GitHub issue URL posts the redacted issue
+  body through an already-installed and authenticated `gh` CLI. Without `gh`, or
+  with `--prepare-only`, the issue body remains local for manual review.
+- The wrapper exits with the installer status even if GitHub posting fails, so
+  capture/reporting problems do not hide installer failures.
 
 ### `feat/02-micropython-skeleton`
 

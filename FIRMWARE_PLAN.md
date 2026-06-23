@@ -231,6 +231,11 @@ firmware dumps, or other local-only artifacts. If GitHub upload tooling is not
 available or authenticated, the wrapper should leave a local issue body artifact
 that a developer can inspect and submit manually.
 
+The same capture path is also the preferred host-side collection mechanism for
+future hardware validation runs. Developers can add non-secret device labels and
+hardware notes to the issue body while preserving the installer transcript,
+metadata, and redacted local artifacts for later analysis.
+
 ## Documentation to Maintain
 
 - `SPEC.md`: hardware facts, pinout, verified source links, and electrical

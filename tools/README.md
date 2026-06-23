@@ -17,6 +17,24 @@ downloading missing local prerequisites, stores answers in the ignored root
 `.conf` file, backs up stock firmware, flashes the connected device, copies
 application source with `mpremote`, and resets the device when possible.
 
+Use the development wrapper when an install run should produce a shareable
+transcript for GitHub issue review or hardware validation analysis:
+
+```bash
+./dev_install.sh \
+  --issue OWNER/REPO#123 \
+  --device-label bench-a \
+  --hardware-note "captured serial-visible install behavior" \
+  -- --port /dev/cu.usbmodem31101
+```
+
+`dev_install.sh` stores generated artifacts under
+`tools/.local/dev-install/`, which is ignored by Git. Each run includes the raw
+visible installer transcript, a redacted transcript, run metadata, and a
+GitHub-ready Markdown issue body. Posting requires an explicit issue target and
+an already-authenticated `gh` CLI; otherwise the local issue body remains
+available for manual review.
+
 Use the setup script directly when you only want to stage tools, firmware, and
 libraries without flashing:
 
