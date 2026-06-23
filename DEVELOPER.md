@@ -6,11 +6,17 @@ AIPI-Lite and automatically report redacted findings to a GitHub issue.
 ## Prerequisites
 
 - Put the device into ESP32-S3 bootloader mode and connect it over USB-C.
-- Install and authenticate the GitHub CLI:
+- Install and authenticate GitHub CLI. The `gh` command comes from GitHub CLI,
+  GitHub's official command-line tool. On macOS with Homebrew:
 
 ```bash
+brew install gh
+gh auth login
 gh auth status
 ```
+
+  For Windows, Linux, or non-Homebrew macOS installs, use the official
+  installation instructions at <https://cli.github.com/>.
 
 - Choose the issue that should receive the report:
 
