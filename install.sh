@@ -30,6 +30,7 @@ DEBUG_FILE="${AIPI_INSTALL_DEBUG_FILE:-}"
 ASSUME_YES=0
 SKIP_ERASE=0
 RESTORE_MODE=0
+CLEAN_TOOLS=0
 DEBUG_CONTEXT_WRITTEN=0
 
 usage() {
@@ -59,6 +60,10 @@ Options:
                           installing MicroPython.
   --skip-erase            Write firmware without first erasing flash.
   --skip-self-update      Do not run git pull before installer actions.
+  --clean-tools, --clean-prereqs
+                          Delete downloaded prerequisite artifacts under
+                          tools/.local and exit. Preserves stock backups,
+                          debug logs, and dev install captures.
   --debug                 Write a sanitized installer debug file for issues.
   --debug-file FILE       Write --debug output to this file.
   -y, --yes               Approve prerequisite setup and flashing prompts.
@@ -82,10 +87,39 @@ Environment overrides:
 USAGE
 }
 
+remove_path_if_present() {
+  local path="$1"
+
+  if [[ -e "${path}" || -L "${path}" ]]; then
+    echo "Deleting prerequisite artifact: ${path}"
+    rm -rf -- "${path}"
+  else
+    echo "Already clean: ${path}"
+  fi
+}
+
+clean_prerequisite_artifacts() {
+  echo "Cleaning downloaded prerequisite artifacts under ${TOOLS_ROOT}..."
+  remove_path_if_present "${VENV_DIR}"
+  remove_path_if_present "${DOWNLOAD_DIR}"
+  remove_path_if_present "${LIB_ROOT}"
+  rmdir "${TOOLS_ROOT}/downloads" 2>/dev/null || true
+  echo "Preserved local artifacts:"
+  echo "  ${BACKUP_DIR}"
+  echo "  ${TOOLS_ROOT}/debug"
+  echo "  ${TOOLS_ROOT}/dev-install"
+  echo "Prerequisite cleanup complete."
+}
+
 preparse_preflight_flags() {
   while [[ $# -gt 0 ]]; do
     case "$1" in
       --skip-self-update)
+        SKIP_SELF_UPDATE=1
+        shift
+        ;;
+      --clean-tools|--clean-prereqs)
+        CLEAN_TOOLS=1
         SKIP_SELF_UPDATE=1
         shift
         ;;
@@ -383,6 +417,10 @@ while [[ $# -gt 0 ]]; do
       SKIP_SELF_UPDATE=1
       shift
       ;;
+    --clean-tools|--clean-prereqs)
+      CLEAN_TOOLS=1
+      shift
+      ;;
     --debug)
       DEBUG_ENABLED=1
       shift
@@ -412,6 +450,11 @@ while [[ $# -gt 0 ]]; do
       ;;
   esac
 done
+
+if [[ "${CLEAN_TOOLS}" -eq 1 ]]; then
+  clean_prerequisite_artifacts
+  exit 0
+fi
 
 config_get() {
   local key="$1"

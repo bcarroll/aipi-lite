@@ -29,6 +29,18 @@ specific GitHub issue artifact path is needed. The generated file redacts common
 secrets, credentials, SSIDs, tokens, and MAC-like identifiers before writing the
 transcript.
 
+Use `--clean-tools` when you need to remove downloaded prerequisite artifacts
+before a fresh setup run:
+
+```bash
+./install.sh --clean-tools
+```
+
+This removes the local MicroPython virtual environment, downloaded firmware
+cache, and staged MicroPython libraries under `tools/.local/`. It preserves
+stock firmware backups, installer debug logs, and developer install captures.
+`--clean-prereqs` is accepted as an alias.
+
 For development-team install captures and future hardware validation runs, use
 `dev_install.sh`. It runs the same `install.sh` path, passes installer arguments
 through unchanged, shows installer output interactively, and stores raw,
@@ -47,7 +59,8 @@ body as a comment when the `gh` CLI is already installed and authenticated. If
 GitHub tooling is missing, unauthenticated, or `--prepare-only` is supplied, the
 script leaves the issue body locally for inspection or manual submission. The
 wrapper returns the installer exit status so capture or posting problems do not
-mask install failures.
+mask install failures. The same cleanup option can be captured with
+`./dev_install.sh --clean-tools`.
 
 If local prerequisites are missing, the installer prompts before downloading or
 installing components under ignored `tools/.local/`, then continues with the

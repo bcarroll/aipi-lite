@@ -273,7 +273,7 @@ baseline:
 
 | Plan component | Imported status | Evidence |
 | --- | --- | --- |
-| Flashing support | Implemented for backup/recovery milestone | `install.sh`, `RECOVERY.md`, `tools/setup_micropython_tools.sh`, `tools/README.md`, and `README.md` document and automate installer self-update, sanitized debug artifacts, exact-size adaptive stock backup, MicroPython install, source upload, and stock restore using ignored local artifacts. |
+| Flashing support | Implemented for backup/recovery milestone | `install.sh`, `RECOVERY.md`, `tools/setup_micropython_tools.sh`, `tools/README.md`, and `README.md` document and automate installer self-update, sanitized debug artifacts, exact-size adaptive stock backup, prerequisite cleanup, MicroPython install, source upload, and stock restore using ignored local artifacts. |
 | MicroPython source skeleton | Partially implemented | `src/main.py` renders a boot status screen through the reusable display wrapper. |
 | Pin mapping | Partially implemented | `src/display.py` uses GPIO3 backlight, GPIO15 CS, GPIO7 D/C, GPIO18 reset, GPIO16 SCLK, and GPIO17 MOSI, matching the LCD pins in `SPEC.md`. |
 | Display bring-up | Implemented, hardware validation pending | `src/display.py` wraps ST7735 setup, PWM backlight control, text layout, and named status screens; `src/display_probe.py` cycles boot, Wi-Fi, ready, recording, processing, speaking, and error screens. |

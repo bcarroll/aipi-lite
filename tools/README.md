@@ -35,6 +35,19 @@ GitHub-ready Markdown issue body. Posting requires an explicit issue target and
 an already-authenticated `gh` CLI; otherwise the local issue body remains
 available for manual review.
 
+To force a clean prerequisite setup without deleting operational artifacts, run:
+
+```bash
+./install.sh --clean-tools
+```
+
+The cleanup removes `tools/.local/micropython-venv/`,
+`tools/.local/downloads/firmware/`, and `tools/.local/micropython-libs/`.
+It preserves stock backups in `tools/.local/backups/`, debug logs in
+`tools/.local/debug/`, and developer install captures in
+`tools/.local/dev-install/`. Use `./dev_install.sh --clean-tools` when the
+cleanup transcript should be captured for issue review.
+
 Use the setup script directly when you only want to stage tools, firmware, and
 libraries without flashing:
 

@@ -1,6 +1,9 @@
 """Tests for the root install.sh firmware installer."""
 
 from pathlib import Path
+import shutil
+import subprocess
+import tempfile
 import unittest
 
 
@@ -66,6 +69,46 @@ class InstallScriptTests(unittest.TestCase):
         self.assertIn("tools/.local/", gitignore_text)
         self.assertLess(debug_index, self_update_index)
 
+    def test_clean_tools_removes_downloaded_prerequisites_only(self):
+        """The cleanup option should preserve backups and diagnostic artifacts."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            repo_root = Path(tmpdir)
+            tmp_install = repo_root / "install.sh"
+            shutil.copy2(INSTALL_SCRIPT, tmp_install)
+            tmp_install.chmod(0o755)
+
+            tools_root = repo_root / "tools" / ".local"
+            prerequisite_paths = [
+                tools_root / "micropython-venv",
+                tools_root / "downloads" / "firmware",
+                tools_root / "micropython-libs",
+            ]
+            preserved_paths = [
+                tools_root / "backups",
+                tools_root / "debug",
+                tools_root / "dev-install",
+            ]
+            for path in prerequisite_paths + preserved_paths:
+                path.mkdir(parents=True)
+                (path / "marker.txt").write_text("keep scope visible", encoding="utf-8")
+
+            result = subprocess.run(
+                [str(tmp_install), "--clean-tools"],
+                cwd=repo_root,
+                text=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                check=False,
+            )
+
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertIn("Cleaning downloaded prerequisite artifacts", result.stdout)
+            self.assertIn("Prerequisite cleanup complete.", result.stdout)
+            for path in prerequisite_paths:
+                self.assertFalse(path.exists(), f"{path} should have been removed")
+            for path in preserved_paths:
+                self.assertTrue((path / "marker.txt").exists(), f"{path} should be preserved")
+
     def test_answers_are_persisted_in_conf(self):
         """The installer should read and write task answers from .conf."""
         gitignore_text = GITIGNORE.read_text(encoding="utf-8")
@@ -122,6 +165,8 @@ class InstallScriptTests(unittest.TestCase):
         self.assertIn('BACKUP_CHUNK_SIZE="${AIPI_BACKUP_CHUNK_SIZE:-}"', self.script_text)
         self.assertIn("--backup-chunk-size SIZE", self.script_text)
         self.assertIn("--backup-min-chunk-size SIZE", self.script_text)
+        self.assertIn("--clean-tools", self.script_text)
+        self.assertIn("--clean-prereqs", self.script_text)
         self.assertIn('BACKUP_CHUNK_SIZE="${BACKUP_CHUNK_SIZE:-0x80000}"', self.script_text)
         self.assertIn('BACKUP_MIN_CHUNK_SIZE="${BACKUP_MIN_CHUNK_SIZE:-0x1000}"', self.script_text)
         self.assertIn("positive_size_to_bytes()", self.script_text)

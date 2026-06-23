@@ -34,6 +34,9 @@ Developer options:
   --device-label LABEL    Optional non-secret device or bench label for
                           hardware validation context.
   --hardware-note TEXT    Optional hardware validation note. May be repeated.
+  --clean-tools, --clean-prereqs
+                          Pass the installer cleanup option through and capture
+                          the cleanup transcript.
   -h, --help              Show this help.
 
 All remaining arguments are passed through to install.sh unchanged. Use -- when
@@ -114,6 +117,10 @@ parse_args() {
         ;;
       --hardware-note=*|--validation-note=*)
         HARDWARE_NOTES+=("${1#*=}")
+        shift
+        ;;
+      --clean-tools|--clean-prereqs)
+        INSTALL_ARGS+=("$1")
         shift
         ;;
       -h|--help)
