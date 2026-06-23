@@ -1,0 +1,4 @@
+interface:
+  display_name: "GitHub Issue Worker"
+  short_description: "Work GitHub issues and close completed fixes."
+  default_prompt: "Use $github-issue-worker to inspect GitHub issues with gh, implement one safely, commit the fix, and close the completed issue."
