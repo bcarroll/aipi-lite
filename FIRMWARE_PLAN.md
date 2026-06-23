@@ -280,7 +280,8 @@ baseline:
 | GPIO status LED and side button | Not implemented | No GPIO46 WS2812 or GPIO42 button handling has been imported. |
 | Wi-Fi and local-only service policy | Implemented, hardware validation pending | `src/wifi_config.py`, `src/local_endpoint.py`, and `src/wifi_probe.py` load ignored local Wi-Fi config, reject public service endpoints by default, call only local `/health`, and report health state through serial plus available LED/display modules. |
 | ES8311 audio control and I2S audio | Codec control, microphone capture, and speaker playback implemented; hardware validation pending | `src/es8311.py` and `src/audio_probe.py` configure the ES8311 over I2C at expected address `0x18`, keep the DAC muted, and default GPIO9 speaker enable off. `src/audio_capture.py` and `src/capture_probe.py` add bounded 16 kHz 16-bit mono capture, WAV packaging, and serial level metrics. `src/audio_playback.py` and `src/playback_probe.py` add bounded 16 kHz 16-bit mono PCM/WAV speaker playback, generated tone output, GPIO9 gate timing, and write/underrun metrics. |
-| Push-to-talk assistant flow | Not implemented | No recording lifecycle, local service exchange, response display, or response playback has been imported. |
+| Local service contract | Implemented | `src/service_contract.py`, `src/service_client.py`, `service/mock_service.py`, `service/README.md`, and `tests/test_local_service_contract.py` define `/health`, `/session`, `/audio`, `/response/{session_id}`, and `/audio/{response_id}.wav` with a local-only firmware client and deterministic mock service. |
+| Push-to-talk assistant flow | Not implemented | No recording lifecycle, full local service exchange, response display, or response playback integration has been imported. |
 | On-device inference | Not implemented | No local model runtime, model metadata, or inference routing has been imported. |
 
 The imported baseline should be treated as hardware evidence for the display

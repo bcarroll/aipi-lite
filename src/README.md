@@ -22,6 +22,8 @@ ESP32-S3 image by the repository installer.
 | `capture_probe.py` | Opt-in serial microphone probe that initializes ES8311 input, captures a short PCM buffer, and reports level metrics. |
 | `audio_playback.py` | Bounded 16 kHz 16-bit mono I2S speaker playback, WAV parsing, and test-tone generation helpers. |
 | `playback_probe.py` | Opt-in serial speaker probe that initializes ES8311 output, plays a generated test tone, and reports write metrics. |
+| `service_contract.py` | Local assistant service endpoint constants, URL helpers, status names, and contract version. |
+| `service_client.py` | Local-only client for `/health`, `/session`, `/audio`, `/response/{session_id}`, and response WAV downloads. |
 | `wifi_config.py` | Loader for ignored local Wi-Fi and local-service configuration. |
 | `local_endpoint.py` | Local-only endpoint parser and validator for configured service URLs. |
 | `wifi_probe.py` | Explicit Wi-Fi/local-service probe that validates endpoint policy, connects Wi-Fi, calls `/health`, and reports status. |
@@ -162,6 +164,23 @@ tone, unmutes the DAC only for playback, enables GPIO9 only while I2S samples
 are being written, then mutes the DAC and disables GPIO9 before returning. It
 prints byte count, sample count, write calls, and underrun count to serial.
 
+## Local Service Client
+
+`service_client.py` implements the local assistant service contract used by the
+future push-to-talk flow. It rejects public service endpoints through
+`local_endpoint.py` before issuing any HTTP request.
+
+The client methods map to the current contract:
+
+- `health()` calls `GET /health`.
+- `start_session()` calls `POST /session`.
+- `upload_audio(session_id, audio_bytes)` calls `POST /audio`.
+- `get_response(session_id)` calls `GET /response/{session_id}`.
+- `download_audio(audio_url)` downloads a local response WAV URL.
+
+See [../service/README.md](../service/README.md) for the host-side mock service,
+payloads, and error responses.
+
 ## Wi-Fi and Local Service Probe
 
 Create an ignored `src/local_wifi_config.py` file before uploading `src/` to the
@@ -209,6 +228,9 @@ status, and updates the status LED and display when those modules initialize.
   should remain independent of Wi-Fi, audio, and GPIO10 board-power control.
 - `wifi_probe.py` is opt-in. It validates endpoint policy before network
   connection attempts and should remain local-only by default.
+- `service_client.py` validates endpoint policy before every configured service
+  base URL is used. It should remain local-only by default and must not add
+  cloud, telemetry, analytics, OTA, or vendor service calls.
 - `capture_probe.py` is opt-in. It initializes the ES8311 input and I2S
   microphone path, keeps speaker output disabled, and should remain bounded so
   a capture test cannot exhaust heap.

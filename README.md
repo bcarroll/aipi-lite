@@ -115,8 +115,8 @@ See [tools/README.md](tools/README.md) for lower-level setup tooling.
 
 ## MicroPython Application Skeleton
 
-The MicroPython source under `src/` now provides the first safe application
-skeleton, GPIO probe, and display status probe:
+The MicroPython source under `src/` now provides the safe application skeleton
+and opt-in hardware/service probes:
 
 - `src/boot.py`
 - `src/main.py`
@@ -133,6 +133,8 @@ skeleton, GPIO probe, and display status probe:
 - `src/capture_probe.py`
 - `src/audio_playback.py`
 - `src/playback_probe.py`
+- `src/service_contract.py`
+- `src/service_client.py`
 - `src/wifi_config.py`
 - `src/local_endpoint.py`
 - `src/wifi_probe.py`
@@ -149,8 +151,10 @@ the opt-in ES8311 hardware probe. `audio_capture.py` and `capture_probe.py`
 add bounded 16 kHz 16-bit mono microphone capture and WAV packaging helpers for
 the ES8311/I2S path. `audio_playback.py` and `playback_probe.py` add bounded
 16 kHz 16-bit mono PCM/WAV speaker playback and a generated low-volume tone
-probe. `wifi_probe.py` connects only to configured local Wi-Fi and calls only a
-local `/health` endpoint after endpoint policy validation passes.
+probe. `service_contract.py` and `service_client.py` define the local assistant
+service API and client. `wifi_probe.py` connects only to configured local Wi-Fi
+and calls only a local `/health` endpoint after endpoint policy validation
+passes.
 
 The GPIO status/input probe remains opt-in so normal boot stays recoverable. To
 cycle the GPIO46 WS2812/NeoPixel status LED states and print debounced GPIO42
@@ -204,6 +208,19 @@ The playback helper currently supports bounded 16 kHz, 16-bit, mono PCM and
 WAV input. The probe unmutes the DAC only for playback, enables GPIO9 only
 while I2S samples are being written, then mutes the DAC and disables GPIO9
 before returning.
+
+The local service client is available for later push-to-talk integration. It
+validates that the configured service URL is local-only before calling
+`/health`, `/session`, `/audio`, `/response/{session_id}`, or response WAV URLs.
+For development, run the stdlib-only mock service on the host:
+
+```bash
+python3 -m service.mock_service --host 127.0.0.1 --port 8080
+```
+
+Use a LAN address instead of `127.0.0.1` only when testing from the device on an
+operator-controlled local network. See [service/README.md](service/README.md)
+for request and response payloads.
 
 The Wi-Fi/local-service probe requires an ignored `src/local_wifi_config.py`
 file on the device. After uploading `src/`, run:

@@ -37,7 +37,7 @@ the checklist does not rely on color alone.
 6. 🟡 Pending hardware validation - `feat/06-es8311-codec-control`
 7. 🟡 Pending hardware validation - `feat/07-audio-capture`
 8. 🟡 Pending hardware validation - `feat/08-audio-playback`
-9. 🟡 Pending implementation - `feat/09-local-service-contract`
+9. ✅ Complete - `feat/09-local-service-contract`
 10. 🟡 Pending implementation - `feat/10-push-to-talk-flow`
 11. 🟡 Pending implementation - `feat/11-reliability-power-errors`
 12. 🟡 Pending implementation - `feat/12-mvp-release`
@@ -76,7 +76,7 @@ tooling directories.
 | `feat/06-es8311-codec-control` | Implemented, hardware validation pending | `src/es8311.py`, `src/audio_probe.py`, `src/main.py`, and `tests/test_es8311_codec.py` add ES8311 I2C detection, register setup, GPIO9 speaker gate defaults, and host-side regression coverage. | Run `audio_probe.run_probe()` on physical hardware and record the observed scan and audio behavior. |
 | `feat/07-audio-capture` | Implemented, hardware validation pending | `src/audio_capture.py`, `src/capture_probe.py`, and `tests/test_audio_capture.py` add bounded 16 kHz 16-bit mono I2S capture, WAV packaging, capture metrics, an opt-in capture probe, and host-side coverage. | Run `capture_probe.run_probe()` on physical hardware and record gain, clipping, noise floor, dropped-sample behavior, and whether MicroPython MCLK output works on GPIO6. |
 | `feat/08-audio-playback` | Implemented, hardware validation pending | `src/audio_playback.py`, `src/playback_probe.py`, and `tests/test_audio_playback.py` add bounded 16 kHz 16-bit mono PCM/WAV playback, generated low-volume test tone output, I2S TX setup on GPIO6/GPIO11/GPIO12/GPIO14, GPIO9 speaker enable timing, DAC mute/unmute safety, and host-side coverage for format rejection and write metrics. | Run `playback_probe.run_probe()` on physical hardware and record volume, output noise, underruns, and whether MicroPython MCLK output works on GPIO6 for playback. |
-| `feat/09-local-service-contract` | Not started | No imported LAN service contract or mock service. | Define API, mock service, client, and tests. |
+| `feat/09-local-service-contract` | Implemented | `src/service_contract.py`, `src/service_client.py`, `service/mock_service.py`, `service/README.md`, and `tests/test_local_service_contract.py` define the local-only API, stdlib mock service, firmware client, request/response payloads, error handling, and host-side contract coverage. | Use the client during `feat/10-push-to-talk-flow` integration and validate it against the mock service from device hardware. |
 | `feat/10-push-to-talk-flow` | Not started | No imported assistant state machine. | Integrate button, audio, local service, display, and speaker. |
 | `feat/11-reliability-power-errors` | Not started | No imported reconnect, retry, power, or diagnostics logic. | Add recovery behavior and hardware troubleshooting docs. |
 | `feat/12-mvp-release` | Not started | No imported release checklist. | Package repeatable MVP validation and version metadata. |
@@ -510,6 +510,23 @@ Acceptance criteria:
 - Firmware can talk to the mock local service without cloud access.
 - Mock service returns deterministic text/audio for firmware testing.
 - Contract tests pass.
+
+Implementation notes:
+
+- `service_contract.py` defines contract version
+  `aipi-lite-local-service-v1`, endpoint paths, status names, content types, and
+  path-safe URL helpers.
+- `service_client.py` validates the configured base URL with
+  `local_endpoint.validate_local_endpoint()` before requests and supports
+  `/health`, `/session`, `/audio`, `/response/{session_id}`, and local response
+  WAV downloads. All HTTP responses are closed after processing.
+- `service/mock_service.py` is a development-only Python standard-library HTTP
+  service. It accepts sessions and audio uploads, returns deterministic response
+  text, and serves a deterministic 16 kHz, 16-bit, mono WAV response.
+- `service/README.md` documents request payloads, response payloads, headers,
+  error responses, and the local runbook. The mock service has no production
+  authentication or hardening and must stay on an operator-controlled local
+  network.
 
 ### `feat/10-push-to-talk-flow`
 
