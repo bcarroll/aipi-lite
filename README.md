@@ -29,6 +29,22 @@ specific GitHub issue artifact path is needed. The generated file redacts common
 secrets, credentials, SSIDs, tokens, and MAC-like identifiers before writing the
 transcript.
 
+Use `--trace` when a hardware or firmware install run needs deeper feedback for
+improvement. Trace mode enables `--debug` and writes a separate redacted trace
+artifact under `tools/.local/debug/` with installer phase transitions,
+firmware path/size/checksum metadata, prerequisite status, best-effort esptool
+target identity probes, MicroPython/mpremote runtime probes after flashing,
+source upload inventory, command exit statuses, and reset status:
+
+```bash
+./install.sh --trace --port /dev/cu.usbmodem31101
+```
+
+Use `--trace-file FILE` when a specific local trace path is needed. Trace files
+remain ignored local artifacts and must be reviewed before sharing; the
+installer redacts common secrets, credentials, SSIDs, tokens, and MAC-like
+identifiers but does not commit or copy firmware dumps.
+
 Use `--clean-tools` when you need to remove downloaded prerequisite artifacts
 before a fresh setup run:
 
@@ -60,7 +76,10 @@ GitHub tooling is missing, unauthenticated, or `--prepare-only` is supplied, the
 script leaves the issue body locally for inspection or manual submission. The
 wrapper returns the installer exit status so capture or posting problems do not
 mask install failures. The same cleanup option can be captured with
-`./dev_install.sh --clean-tools`.
+`./dev_install.sh --clean-tools`. For deeper hardware feedback, run
+`./dev_install.sh --trace -- ...` so the visible transcript records the local
+trace artifact path while the installer writes detailed trace data under
+`tools/.local/debug/`.
 
 If local prerequisites are missing, the installer prompts before downloading or
 installing components under ignored `tools/.local/`, then continues with the

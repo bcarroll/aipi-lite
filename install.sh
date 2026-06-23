@@ -27,6 +27,8 @@ CONF_FILE="${AIPI_INSTALL_CONF:-${SCRIPT_DIR}/.conf}"
 SKIP_SELF_UPDATE="${AIPI_SKIP_SELF_UPDATE:-0}"
 DEBUG_ENABLED="${AIPI_INSTALL_DEBUG:-0}"
 DEBUG_FILE="${AIPI_INSTALL_DEBUG_FILE:-}"
+TRACE_ENABLED="${AIPI_INSTALL_TRACE:-0}"
+TRACE_FILE="${AIPI_INSTALL_TRACE_FILE:-}"
 ASSUME_YES=0
 SKIP_ERASE=0
 RESTORE_MODE=0
@@ -66,6 +68,9 @@ Options:
                           debug logs, and dev install captures.
   --debug                 Write a sanitized installer debug file for issues.
   --debug-file FILE       Write --debug output to this file.
+  --trace                 Enable --debug and write detailed install/device
+                          trace data for hardware feedback analysis.
+  --trace-file FILE       Write --trace output to this file.
   -y, --yes               Approve prerequisite setup and flashing prompts.
   -h, --help              Show this help.
 
@@ -84,6 +89,8 @@ Environment overrides:
   AIPI_SKIP_SELF_UPDATE
   AIPI_INSTALL_DEBUG
   AIPI_INSTALL_DEBUG_FILE
+  AIPI_INSTALL_TRACE
+  AIPI_INSTALL_TRACE_FILE
 USAGE
 }
 
@@ -137,6 +144,23 @@ preparse_preflight_flags() {
         DEBUG_FILE="${1#*=}"
         shift
         ;;
+      --trace)
+        DEBUG_ENABLED=1
+        TRACE_ENABLED=1
+        shift
+        ;;
+      --trace-file)
+        DEBUG_ENABLED=1
+        TRACE_ENABLED=1
+        TRACE_FILE="${2:?--trace-file requires a value}"
+        shift 2
+        ;;
+      --trace-file=*)
+        DEBUG_ENABLED=1
+        TRACE_ENABLED=1
+        TRACE_FILE="${1#*=}"
+        shift
+        ;;
       --)
         return
         ;;
@@ -174,6 +198,13 @@ default_debug_file() {
   printf '%s/debug/install-debug-%s.txt\n' "${TOOLS_ROOT}" "${timestamp}"
 }
 
+default_trace_file() {
+  local timestamp
+
+  timestamp="$(date -u +%Y%m%d-%H%M%S)"
+  printf '%s/debug/install-trace-%s.txt\n' "${TOOLS_ROOT}" "${timestamp}"
+}
+
 quote_args() {
   local arg
 
@@ -181,6 +212,36 @@ quote_args() {
     printf '%q ' "${arg}"
   done
   printf '\n'
+}
+
+trace_enabled() {
+  is_truthy_value "${TRACE_ENABLED}" && [[ -n "${TRACE_FILE:-}" ]]
+}
+
+trace_line() {
+  if ! trace_enabled; then
+    return
+  fi
+
+  printf '%s\n' "$*" | redact_stream >>"${TRACE_FILE}"
+}
+
+trace_event() {
+  local event="$1"
+  shift
+  local field
+
+  if ! trace_enabled; then
+    return
+  fi
+
+  {
+    printf 'ts=%s event=%s' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "${event}"
+    for field in "$@"; do
+      printf ' %s' "${field}"
+    done
+    printf '\n'
+  } | redact_stream >>"${TRACE_FILE}"
 }
 
 debug_command_output() {
@@ -213,6 +274,168 @@ debug_command_output() {
   } | redact_stream >>"${DEBUG_FILE}"
 }
 
+trace_command_output() {
+  local label="$1"
+  shift
+  local output
+  local status
+  local command_line
+
+  if ! trace_enabled; then
+    return
+  fi
+
+  command_line="$(quote_args "$@" | redact_stream)"
+  trace_event "probe_start" "label=${label}"
+  {
+    printf '\n### %s\n' "${label}"
+    printf '$ %s\n' "${command_line}"
+  } >>"${TRACE_FILE}"
+
+  set +e
+  output="$("$@" 2>&1)"
+  status=$?
+  set -e
+
+  {
+    printf '%s\n' "${output}"
+    printf '(exit %s)\n' "${status}"
+  } | redact_stream >>"${TRACE_FILE}"
+  trace_event "probe_end" "label=${label}" "status=${status}"
+}
+
+run_with_trace() {
+  local phase="$1"
+  shift
+  local status
+  local command_line
+
+  command_line="$(quote_args "$@" | redact_stream)"
+  trace_event "command_start" "phase=${phase}"
+  trace_line "command=${command_line}"
+
+  set +e
+  "$@"
+  status=$?
+  set -e
+
+  trace_event "command_end" "phase=${phase}" "status=${status}"
+  return "${status}"
+}
+
+sha256_file() {
+  local path="$1"
+
+  if command -v shasum >/dev/null 2>&1; then
+    shasum -a 256 "${path}" | awk '{print $1}'
+  elif command -v sha256sum >/dev/null 2>&1; then
+    sha256sum "${path}" | awk '{print $1}'
+  elif command -v openssl >/dev/null 2>&1; then
+    openssl dgst -sha256 "${path}" | awk '{print $NF}'
+  else
+    python3 - "${path}" <<'PY'
+import hashlib
+import sys
+
+with open(sys.argv[1], "rb") as handle:
+    digest = hashlib.sha256()
+    for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+        digest.update(chunk)
+print(digest.hexdigest())
+PY
+  fi
+}
+
+trace_file_metadata() {
+  local label="$1"
+  local path="$2"
+  local bytes
+  local digest
+
+  if ! trace_enabled; then
+    return
+  fi
+
+  if [[ ! -f "${path}" ]]; then
+    trace_event "file" "label=${label}" "path=${path}" "status=missing"
+    return
+  fi
+
+  bytes="$(file_size_bytes "${path}")"
+  digest="$(sha256_file "${path}")"
+  trace_event "file" "label=${label}" "path=${path}" "status=present" "bytes=${bytes}" "sha256=${digest}"
+}
+
+trace_source_inventory() {
+  local label="$1"
+  local root="$2"
+  local file
+  local relative
+  local bytes
+  local digest
+  local file_count=0
+  local byte_count=0
+
+  if ! trace_enabled; then
+    return
+  fi
+
+  if [[ ! -d "${root}" ]]; then
+    trace_event "source_inventory" "label=${label}" "path=${root}" "status=missing"
+    return
+  fi
+
+  while IFS= read -r file; do
+    file_count=$((file_count + 1))
+    bytes="$(file_size_bytes "${file}")"
+    byte_count=$((byte_count + bytes))
+  done < <(find "${root}" -type d \
+    -name __pycache__ -prune -o \
+    -type f ! -name '*.pyc' ! -name '.DS_Store' -print)
+
+  trace_event "source_inventory" "label=${label}" "path=${root}" "status=present" "files=${file_count}" "bytes=${byte_count}"
+
+  while IFS= read -r file; do
+    relative="${file#"${root}"}"
+    relative="${relative#/}"
+    bytes="$(file_size_bytes "${file}")"
+    digest="$(sha256_file "${file}")"
+    trace_event "source_file" "label=${label}" "path=${relative}" "bytes=${bytes}" "sha256=${digest}"
+  done < <(find "${root}" -type d \
+    -name __pycache__ -prune -o \
+    -type f ! -name '*.pyc' ! -name '.DS_Store' -print)
+}
+
+trace_device_probe() {
+  local esptool_py="$1"
+  shift
+  local port_args=("$@")
+
+  if ! trace_enabled; then
+    return
+  fi
+
+  trace_event "device_probe" "tool=esptool" "status=start"
+  trace_command_output "esptool chip id" "${esptool_py}" -m esptool --chip esp32s3 "${port_args[@]}" --before no_reset --after no_reset chip_id
+  trace_command_output "esptool flash id" "${esptool_py}" -m esptool --chip esp32s3 "${port_args[@]}" --before no_reset --after no_reset flash_id
+  trace_command_output "esptool read mac" "${esptool_py}" -m esptool --chip esp32s3 "${port_args[@]}" --before no_reset --after no_reset read_mac
+  trace_event "device_probe" "tool=esptool" "status=complete"
+}
+
+trace_micropython_probe() {
+  local mpremote_bin="$1"
+  local connect_target="$2"
+
+  if ! trace_enabled; then
+    return
+  fi
+
+  trace_event "device_probe" "tool=mpremote" "status=start"
+  trace_command_output "mpremote runtime info" "${mpremote_bin}" connect "${connect_target}" exec 'import sys, os, gc; print("sys.platform=%s" % getattr(sys, "platform", "unknown")); print("sys.implementation=%s" % (sys.implementation,)); print("os.uname=%s" % (os.uname(),)); print("gc.mem_free=%s" % gc.mem_free())'
+  trace_command_output "mpremote root listing" "${mpremote_bin}" connect "${connect_target}" fs ls ":"
+  trace_event "device_probe" "tool=mpremote" "status=complete"
+}
+
 start_debug_logging() {
   local debug_pipe
 
@@ -226,6 +449,7 @@ start_debug_logging() {
 
   export AIPI_INSTALL_DEBUG=1
   export AIPI_INSTALL_DEBUG_FILE="${DEBUG_FILE}"
+  export AIPI_INSTALL_TRACE="${TRACE_ENABLED}"
 
   if is_truthy_value "${AIPI_INSTALL_DEBUG_ACTIVE:-0}"; then
     return
@@ -241,6 +465,23 @@ start_debug_logging() {
     printf 'redaction=common secrets tokens passwords ssids credentials and MAC-like identifiers are redacted\n'
   } >>"${DEBUG_FILE}"
 
+  if is_truthy_value "${TRACE_ENABLED}"; then
+    if [[ -z "${TRACE_FILE}" ]]; then
+      TRACE_FILE="$(default_trace_file)"
+    fi
+    export AIPI_INSTALL_TRACE_FILE="${TRACE_FILE}"
+    mkdir -p "$(dirname "${TRACE_FILE}")"
+    : >"${TRACE_FILE}"
+    chmod 600 "${TRACE_FILE}"
+    {
+      printf '# AIPI-Lite installer trace log\n'
+      printf 'created_utc=%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+      printf 'redaction=common secrets tokens passwords ssids credentials and MAC-like identifiers are redacted\n'
+      printf 'debug_file=%s\n' "${DEBUG_FILE}"
+    } >>"${TRACE_FILE}"
+    trace_event "installer_start" "script_dir=${SCRIPT_DIR}" "working_dir=$(pwd)"
+  fi
+
   export AIPI_INSTALL_DEBUG_ACTIVE=1
   debug_pipe="${DEBUG_FILE}.pipe.$$"
   rm -f "${debug_pipe}"
@@ -249,6 +490,9 @@ start_debug_logging() {
   exec >"${debug_pipe}" 2>&1
   rm -f "${debug_pipe}"
   echo "Installer debug file: ${DEBUG_FILE}"
+  if trace_enabled; then
+    echo "Installer trace file: ${TRACE_FILE}"
+  fi
 }
 
 finish_debug_logging() {
@@ -256,6 +500,10 @@ finish_debug_logging() {
 
   if is_truthy_value "${DEBUG_ENABLED}" && [[ -n "${DEBUG_FILE:-}" ]]; then
     echo "Installer debug file: ${DEBUG_FILE}"
+  fi
+  if trace_enabled; then
+    echo "Installer trace file: ${TRACE_FILE}"
+    trace_event "installer_finish" "status=${status}"
   fi
 
   return "${status}"
@@ -295,6 +543,9 @@ write_debug_context() {
     printf 'skip_self_update=%s\n' "${SKIP_SELF_UPDATE}"
   } | redact_stream >>"${DEBUG_FILE}"
 
+  trace_event "run_context" "serial_port=${PORT:-auto}" "app_dir=${APP_DIR:-${SCRIPT_DIR}/src}" "firmware_url=${FIRMWARE_URL}" "baud=${BAUD}" "flash_size=${FLASH_SIZE}" "reset_after_upload=${RESET_AFTER_UPLOAD}" "skip_self_update=${SKIP_SELF_UPDATE}"
+  trace_file_metadata "conf_file" "${CONF_FILE}"
+
   debug_command_output "uname" uname -a
   debug_command_output "git version" git --version
   debug_command_output "python version" python3 --version
@@ -305,18 +556,23 @@ write_debug_context() {
     debug_command_output "git commit" git -C "${worktree_root}" rev-parse HEAD
     debug_command_output "git status" git -C "${worktree_root}" status --short --branch
     debug_command_output "git remotes" git -C "${worktree_root}" remote -v
+    trace_command_output "git status" git -C "${worktree_root}" status --short --branch
   fi
 
   if [[ -x "${VENV_DIR}/bin/python" ]]; then
     debug_command_output "esptool version" "${VENV_DIR}/bin/python" -m esptool version
+    trace_command_output "esptool version" "${VENV_DIR}/bin/python" -m esptool version
   else
     printf '\n### esptool version\nnot staged at %s\n' "${VENV_DIR}/bin/python" >>"${DEBUG_FILE}"
+    trace_event "tool" "name=esptool" "status=missing" "path=${VENV_DIR}/bin/python"
   fi
 
   if [[ -x "${VENV_DIR}/bin/mpremote" ]]; then
     debug_command_output "mpremote help header" "${VENV_DIR}/bin/mpremote" --help
+    trace_command_output "mpremote help header" "${VENV_DIR}/bin/mpremote" --help
   else
     printf '\n### mpremote help header\nnot staged at %s\n' "${VENV_DIR}/bin/mpremote" >>"${DEBUG_FILE}"
+    trace_event "tool" "name=mpremote" "status=missing" "path=${VENV_DIR}/bin/mpremote"
   fi
 }
 
@@ -354,6 +610,9 @@ self_update_from_git() {
 }
 
 preparse_preflight_flags "$@"
+if is_truthy_value "${TRACE_ENABLED}"; then
+  DEBUG_ENABLED=1
+fi
 start_debug_logging
 trap finish_debug_logging EXIT
 self_update_from_git "$@"
@@ -435,6 +694,23 @@ while [[ $# -gt 0 ]]; do
       DEBUG_FILE="${1#*=}"
       shift
       ;;
+    --trace)
+      DEBUG_ENABLED=1
+      TRACE_ENABLED=1
+      shift
+      ;;
+    --trace-file)
+      DEBUG_ENABLED=1
+      TRACE_ENABLED=1
+      TRACE_FILE="${2:?--trace-file requires a value}"
+      shift 2
+      ;;
+    --trace-file=*)
+      DEBUG_ENABLED=1
+      TRACE_ENABLED=1
+      TRACE_FILE="${1#*=}"
+      shift
+      ;;
     -y|--yes)
       ASSUME_YES=1
       shift
@@ -448,11 +724,13 @@ while [[ $# -gt 0 ]]; do
       usage >&2
       exit 2
       ;;
-  esac
+    esac
 done
 
 if [[ "${CLEAN_TOOLS}" -eq 1 ]]; then
+  trace_event "phase" "name=clean_tools" "status=start"
   clean_prerequisite_artifacts
+  trace_event "phase" "name=clean_tools" "status=complete"
   exit 0
 fi
 
@@ -821,7 +1099,7 @@ EOF
   setup_app_dir="${APP_DIR:-${SCRIPT_DIR}/src}"
   setup_args+=(--app-dir "${setup_app_dir}")
 
-  bash "${SETUP_SCRIPT}" "${setup_args[@]}"
+  run_with_trace "setup_prerequisites" bash "${SETUP_SCRIPT}" "${setup_args[@]}"
 }
 
 ensure_restore_prerequisites() {
@@ -856,7 +1134,7 @@ EOF
   setup_app_dir="${APP_DIR:-${SCRIPT_DIR}/src}"
   setup_args+=(--app-dir "${setup_app_dir}")
 
-  bash "${SETUP_SCRIPT}" "${setup_args[@]}"
+  run_with_trace "setup_restore_prerequisites" bash "${SETUP_SCRIPT}" "${setup_args[@]}"
 }
 
 print_bootloader_instructions() {
@@ -985,12 +1263,14 @@ backup_stock_firmware() {
 
   if backup_file_is_complete "${BACKUP_PATH}" "${flash_size_bytes}"; then
     echo "Using existing complete stock firmware backup: ${BACKUP_PATH}"
+    trace_file_metadata "stock_backup" "${BACKUP_PATH}"
     return
   fi
 
   if [[ -f "${BACKUP_PATH}" ]]; then
     actual_bytes="$(file_size_bytes "${BACKUP_PATH}")"
     echo "Existing stock firmware backup is incomplete (${actual_bytes}/${flash_size_bytes} bytes); replacing it."
+    trace_event "stock_backup" "status=incomplete" "path=${BACKUP_PATH}" "bytes=${actual_bytes}" "expected_bytes=${flash_size_bytes}"
   fi
 
   mkdir -p "$(dirname "${BACKUP_PATH}")"
@@ -1013,7 +1293,7 @@ backup_stock_firmware() {
     offset_arg="$(format_hex_size "${offset}")"
     read_size_arg="$(format_hex_size "${read_size}")"
     echo "Backing up flash chunk ${offset_arg}+${read_size_arg}"
-    if ! "${esptool_py}" -m esptool --chip esp32s3 "${port_args[@]}" \
+    if ! run_with_trace "backup_read_flash" "${esptool_py}" -m esptool --chip esp32s3 "${port_args[@]}" \
       --before no_reset --after no_reset \
       read_flash "${offset_arg}" "${read_size_arg}" "${chunk_path}"; then
       rm -f "${chunk_path}"
@@ -1053,6 +1333,7 @@ backup_stock_firmware() {
 
   mv "${tmp_path}" "${BACKUP_PATH}"
   echo "Stock firmware backup complete: ${BACKUP_PATH}"
+  trace_file_metadata "stock_backup" "${BACKUP_PATH}"
 }
 
 resolve_restore_backup_path() {
@@ -1095,10 +1376,11 @@ EOF
   fi
 
   if [[ "${SKIP_ERASE}" -eq 0 ]]; then
-    "${esptool_py}" -m esptool --chip esp32s3 "${port_args[@]}" erase_flash
+    run_with_trace "restore_erase_flash" "${esptool_py}" -m esptool --chip esp32s3 "${port_args[@]}" erase_flash
   fi
 
-  "${esptool_py}" -m esptool --chip esp32s3 "${port_args[@]}" --baud "${BAUD}" write_flash 0 "${RESTORE_BACKUP_PATH}"
+  trace_file_metadata "restore_backup" "${RESTORE_BACKUP_PATH}"
+  run_with_trace "restore_write_flash" "${esptool_py}" -m esptool --chip esp32s3 "${port_args[@]}" --baud "${BAUD}" write_flash 0 "${RESTORE_BACKUP_PATH}"
   echo "Stock firmware restore complete. Power-cycle or reset the device."
 }
 
@@ -1117,7 +1399,7 @@ upload_file() {
   local remote_file="$4"
 
   echo "Uploading ${local_file} -> :${remote_file}"
-  "${mpremote_bin}" connect "${connect_target}" fs cp "${local_file}" ":${remote_file}"
+  run_with_trace "upload_file" "${mpremote_bin}" connect "${connect_target}" fs cp "${local_file}" ":${remote_file}"
 }
 
 upload_tree() {
@@ -1171,11 +1453,13 @@ upload_application() {
   local connect_target="$2"
 
   if [[ -n "${APP_DIR}" ]]; then
+    trace_source_inventory "application" "${APP_DIR}"
     upload_tree "${mpremote_bin}" "${connect_target}" "${APP_DIR}" ""
     return
   fi
 
   if [[ -d "${SCRIPT_DIR}/src" ]]; then
+    trace_source_inventory "application" "${SCRIPT_DIR}/src"
     upload_tree "${mpremote_bin}" "${connect_target}" "${SCRIPT_DIR}/src" ""
     return
   fi
@@ -1194,7 +1478,7 @@ reset_device() {
   fi
 
   echo "Resetting device..."
-  if ! "${mpremote_bin}" connect "${connect_target}" reset; then
+  if ! run_with_trace "reset_device" "${mpremote_bin}" connect "${connect_target}" reset; then
     echo "warning: automatic reset failed; reset or power-cycle the device manually." >&2
   fi
 }
@@ -1209,15 +1493,18 @@ main() {
   local port_args=()
 
   require_command python3
+  trace_event "phase" "name=main" "status=start"
   [[ -f "${SETUP_SCRIPT}" ]] || {
     echo "error: setup script not found: ${SETUP_SCRIPT}" >&2
     exit 1
   }
 
+  trace_event "phase" "name=config" "status=start"
   apply_config_defaults
   prompt_serial_port
   persist_config_defaults
   write_debug_context "$@"
+  trace_event "phase" "name=config" "status=complete" "port=${PORT:-auto}" "baud=${BAUD}" "firmware_url=${FIRMWARE_URL}" "restore_mode=${RESTORE_MODE}"
 
   if [[ -n "${PORT}" ]]; then
     port_args=(--port "${PORT}")
@@ -1225,24 +1512,36 @@ main() {
   fi
 
   if [[ "${RESTORE_MODE}" -eq 1 ]]; then
+    trace_event "phase" "name=restore" "status=start"
     ensure_restore_prerequisites
     esptool_py="${VENV_DIR}/bin/python"
     ensure_bootloader_ready
+    trace_device_probe "${esptool_py}" "${port_args[@]}"
     restore_stock_firmware "${esptool_py}" "${port_args[@]}"
+    trace_event "phase" "name=restore" "status=complete"
     return
   fi
 
+  trace_event "phase" "name=firmware_resolve" "status=start"
   firmware_url="$(resolve_firmware_url)"
   firmware_name="$(firmware_filename "${firmware_url}")"
   firmware_path="${DOWNLOAD_DIR}/${firmware_name}"
+  trace_event "phase" "name=firmware_resolve" "status=complete" "firmware_url=${firmware_url}" "firmware_name=${firmware_name}" "firmware_path=${firmware_path}"
 
+  trace_event "phase" "name=prerequisites" "status=start"
   ensure_prerequisites "${firmware_url}" "${firmware_path}"
+  trace_event "phase" "name=prerequisites" "status=complete"
+  trace_file_metadata "micropython_firmware" "${firmware_path}"
+  trace_source_inventory "staged_libraries" "${LIB_DIR}"
 
   esptool_py="${VENV_DIR}/bin/python"
   mpremote_bin="${VENV_DIR}/bin/mpremote"
 
   ensure_bootloader_ready
+  trace_device_probe "${esptool_py}" "${port_args[@]}"
+  trace_event "phase" "name=stock_backup" "status=start"
   backup_stock_firmware "${esptool_py}" "${port_args[@]}"
+  trace_event "phase" "name=stock_backup" "status=complete"
 
   cat <<EOF
 
@@ -1259,23 +1558,36 @@ EOF
   fi
 
   if [[ "${SKIP_ERASE}" -eq 0 ]]; then
-    "${esptool_py}" -m esptool --chip esp32s3 "${port_args[@]}" erase_flash
+    run_with_trace "install_erase_flash" "${esptool_py}" -m esptool --chip esp32s3 "${port_args[@]}" erase_flash
+  else
+    trace_event "command_skip" "phase=install_erase_flash" "reason=skip_erase"
   fi
 
-  "${esptool_py}" -m esptool --chip esp32s3 "${port_args[@]}" --baud "${BAUD}" write_flash 0 "${firmware_path}"
+  run_with_trace "install_write_flash" "${esptool_py}" -m esptool --chip esp32s3 "${port_args[@]}" --baud "${BAUD}" write_flash 0 "${firmware_path}"
 
   echo "Waiting for MicroPython USB serial to reconnect..."
+  trace_event "phase" "name=micropython_reconnect_wait" "status=start" "seconds=3"
   sleep 3
+  trace_event "phase" "name=micropython_reconnect_wait" "status=complete"
+  trace_micropython_probe "${mpremote_bin}" "${connect_target}"
 
   if [[ -d "${LIB_DIR}/drivers" ]]; then
+    trace_source_inventory "driver_libraries" "${LIB_DIR}/drivers"
+    trace_event "phase" "name=upload_libraries" "status=start"
     remote_mkdir "${mpremote_bin}" "${connect_target}" "lib"
     upload_tree "${mpremote_bin}" "${connect_target}" "${LIB_DIR}/drivers" "lib/drivers"
+    trace_event "phase" "name=upload_libraries" "status=complete"
+  else
+    trace_event "phase" "name=upload_libraries" "status=skipped" "reason=no_driver_directory"
   fi
 
+  trace_event "phase" "name=upload_application" "status=start"
   upload_application "${mpremote_bin}" "${connect_target}"
+  trace_event "phase" "name=upload_application" "status=complete"
   reset_device "${mpremote_bin}" "${connect_target}"
 
   echo "Install complete."
+  trace_event "phase" "name=main" "status=complete"
 }
 
 main "$@"

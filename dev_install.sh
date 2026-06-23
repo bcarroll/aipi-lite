@@ -37,6 +37,8 @@ Developer options:
   --clean-tools, --clean-prereqs
                           Pass the installer cleanup option through and capture
                           the cleanup transcript.
+  --trace                 Pass installer tracing through and capture the trace
+                          file path in the transcript.
   -h, --help              Show this help.
 
 All remaining arguments are passed through to install.sh unchanged. Use -- when
@@ -119,7 +121,7 @@ parse_args() {
         HARDWARE_NOTES+=("${1#*=}")
         shift
         ;;
-      --clean-tools|--clean-prereqs)
+      --clean-tools|--clean-prereqs|--trace)
         INSTALL_ARGS+=("$1")
         shift
         ;;

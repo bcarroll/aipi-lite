@@ -35,6 +35,19 @@ GitHub-ready Markdown issue body. Posting requires an explicit issue target and
 an already-authenticated `gh` CLI; otherwise the local issue body remains
 available for manual review.
 
+For deeper hardware feedback, pass installer tracing through the wrapper:
+
+```bash
+./dev_install.sh --trace -- --port /dev/cu.usbmodem31101
+```
+
+Trace mode enables installer debug logging and writes a separate redacted trace
+file under `tools/.local/debug/`. The trace records phase transitions,
+firmware metadata and checksum, prerequisite state, best-effort esptool target
+identity, post-flash MicroPython/mpremote probes, upload inventory, command
+exit statuses, and reset status. It does not commit firmware dumps or local
+secrets.
+
 To force a clean prerequisite setup without deleting operational artifacts, run:
 
 ```bash

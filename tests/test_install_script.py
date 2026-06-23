@@ -69,6 +69,56 @@ class InstallScriptTests(unittest.TestCase):
         self.assertIn("tools/.local/", gitignore_text)
         self.assertLess(debug_index, self_update_index)
 
+    def test_trace_mode_writes_device_and_install_status_artifact(self):
+        """Trace mode should add detailed sanitized install and target diagnostics."""
+        self.assertIn("--trace", self.script_text)
+        self.assertIn("--trace-file FILE", self.script_text)
+        self.assertIn("AIPI_INSTALL_TRACE", self.script_text)
+        self.assertIn("AIPI_INSTALL_TRACE_FILE", self.script_text)
+        self.assertIn("debug/install-trace-%s.txt", self.script_text)
+        self.assertIn("trace_event()", self.script_text)
+        self.assertIn("trace_file_metadata()", self.script_text)
+        self.assertIn("trace_source_inventory()", self.script_text)
+        self.assertIn("trace_device_probe()", self.script_text)
+        self.assertIn("trace_micropython_probe()", self.script_text)
+        self.assertIn("run_with_trace()", self.script_text)
+        self.assertIn("chip_id", self.script_text)
+        self.assertIn("flash_id", self.script_text)
+        self.assertIn("read_mac", self.script_text)
+        self.assertIn("micropython_firmware", self.script_text)
+        self.assertIn("install_write_flash", self.script_text)
+        self.assertIn("upload_application", self.script_text)
+        self.assertIn("sha256_file()", self.script_text)
+
+    def test_trace_mode_creates_ignored_artifact_for_cleanup_run(self):
+        """A trace cleanup run should create debug and trace artifacts only under tools/.local."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            repo_root = Path(tmpdir)
+            tmp_install = repo_root / "install.sh"
+            shutil.copy2(INSTALL_SCRIPT, tmp_install)
+            tmp_install.chmod(0o755)
+
+            result = subprocess.run(
+                [str(tmp_install), "--trace", "--clean-tools"],
+                cwd=repo_root,
+                text=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                check=False,
+            )
+
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertIn("Installer debug file:", result.stdout)
+            self.assertIn("Installer trace file:", result.stdout)
+
+            trace_files = list((repo_root / "tools" / ".local" / "debug").glob("install-trace-*.txt"))
+            self.assertEqual(len(trace_files), 1)
+            trace_text = trace_files[0].read_text(encoding="utf-8")
+            self.assertIn("AIPI-Lite installer trace log", trace_text)
+            self.assertIn("event=installer_start", trace_text)
+            self.assertIn("name=clean_tools", trace_text)
+            self.assertEqual(trace_files[0].stat().st_mode & 0o777, 0o600)
+
     def test_clean_tools_removes_downloaded_prerequisites_only(self):
         """The cleanup option should preserve backups and diagnostic artifacts."""
         with tempfile.TemporaryDirectory() as tmpdir:

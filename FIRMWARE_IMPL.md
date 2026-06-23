@@ -67,7 +67,7 @@ tooling directories.
 | Branch / component | Status | Evidence | Remaining work |
 | --- | --- | --- | --- |
 | `feat/01-backup-recovery` | Implemented | `install.sh` self-updates with `git pull --ff-only`, can write sanitized debug artifacts for GitHub issues, can clean downloaded prerequisite artifacts while preserving backups/debug/captures, prompts for bootloader readiness, stores answers in `.conf`, backs up stock flash to ignored tooling storage with exact-size validation, no-reset chunked reads, and smaller-chunk retries, restores saved stock backups, and `RECOVERY.md` documents backup, restore, expected recovery output, and the flashing safety checklist. | Validate the restore flow on physical hardware and record exact stock serial logs. |
-| `tooling/dev-install-capture` | Implemented | `dev_install.sh`, `tests/test_dev_install_capture.py`, `README.md`, and `tools/README.md` add a host-only installer wrapper that captures raw and redacted transcripts, run metadata, hardware validation notes, and a GitHub-ready issue body under ignored local storage, then optionally posts to an explicit issue target with an existing `gh` CLI. | Use it during physical hardware validation runs and refine collected metadata if real bench analysis needs more fields. |
+| `tooling/dev-install-capture` | Implemented | `dev_install.sh`, `install.sh --trace`, `tests/test_dev_install_capture.py`, `tests/test_install_script.py`, `README.md`, and `tools/README.md` add host-only installer capture plus deeper trace diagnostics. Captures include raw/redacted transcripts, run metadata, hardware validation notes, GitHub-ready issue bodies, installer phase transitions, firmware metadata, best-effort target probes, upload inventory, and command status under ignored local storage. | Use it during physical hardware validation runs and refine collected metadata if real bench analysis needs more fields. |
 | `feat/02-micropython-skeleton` | Implemented | `src/boot.py`, `src/main.py`, `src/pins.py`, `src/README.md`, and host tests provide safe startup defaults, grouped pin constants, serial-visible bring-up status, and hardware-free regression coverage. | Validate the serial output and display baseline on physical hardware. |
 | `feat/04-display-bringup` | Implemented, hardware validation pending | `src/display.py`, `src/display_probe.py`, `src/aipi_lite_config.py`, `src/main.py`, and `tests/test_aipi_lite_display.py` add an ST7735 wrapper, PWM backlight control, named status screens, an opt-in display probe, and host-side layout coverage. | Run `display_probe.run_probe()` on physical hardware and record final orientation, color order, and readability observations. |
 | LCD pin constants | Implemented | `src/pins.py` includes display, button, status LED, ES8311 audio, speaker enable, charge input, and board power constants from `SPEC.md`. | Verify unconfirmed GPIO10 power behavior before any branch attempts to drive it. |
@@ -166,6 +166,13 @@ Implementation notes:
   with `--prepare-only`, the issue body remains local for manual review.
 - The wrapper exits with the installer status even if GitHub posting fails, so
   capture/reporting problems do not hide installer failures.
+- `install.sh --trace` enables `--debug` and writes a separate redacted trace
+  artifact under `tools/.local/debug/` with installer phase transitions,
+  firmware path/size/checksum metadata, prerequisite status, best-effort
+  esptool target identity probes, post-flash MicroPython/mpremote probes,
+  source upload inventory, command exit statuses, and reset status.
+- `dev_install.sh --trace` passes tracing through to the installer while keeping
+  the visible transcript and GitHub issue body behavior unchanged.
 
 ### `feat/02-micropython-skeleton`
 

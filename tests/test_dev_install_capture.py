@@ -182,6 +182,23 @@ class DevInstallCaptureTests(unittest.TestCase):
         self.assertIn("cleanup transcript", artifacts["install-transcript-redacted.txt"])
         self.assertIn("--clean-tools", artifacts["github-issue-body.md"])
 
+    def test_trace_option_is_passed_to_installer(self):
+        """The wrapper should accept tracing directly and preserve trace path output."""
+        result, artifacts, _modes = self.run_dev_install(
+            ["--prepare-only", "--trace"],
+            """
+            #!/usr/bin/env bash
+            printf 'args:%s\\n' "$*"
+            printf 'Installer trace file: tools/.local/debug/install-trace-test.txt\\n'
+            exit 0
+            """,
+        )
+
+        self.assertEqual(result.returncode, 0)
+        self.assertIn("args:--trace", result.stdout)
+        self.assertIn("Installer trace file:", artifacts["install-transcript-redacted.txt"])
+        self.assertIn("--trace", artifacts["github-issue-body.md"])
+
     def test_missing_gh_leaves_issue_body_without_changing_installer_status(self):
         """A missing gh binary should leave local artifacts and preserve status."""
         result, artifacts, modes = self.run_dev_install(
@@ -211,6 +228,7 @@ class DevInstallCaptureTests(unittest.TestCase):
         self.assertIn('TOOLS_ROOT="${SCRIPT_DIR}/tools/.local"', script_text)
         self.assertIn("--clean-tools", script_text)
         self.assertIn("--clean-prereqs", script_text)
+        self.assertIn("--trace", script_text)
         self.assertIn("tools/.local/", gitignore_text)
 
 
