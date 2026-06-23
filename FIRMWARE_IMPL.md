@@ -26,34 +26,35 @@ keep each branch focused, and merge only after its acceptance criteria pass.
 
 ## Merge Order Checklist
 
-Legend: ✅ Complete, 🟡 Pending, ❌ Failed. Each icon is paired with text so
-the checklist does not rely on color alone.
+Legend: implementation status uses ✅ Complete, 🟡 Pending, or ❌ Failed.
+Validation status uses ✅ Validated or 🟡 Not Validated. Each icon is paired
+with text so the checklist does not rely on color alone.
 
-1. ✅ Complete - `feat/01-backup-recovery`
-2. ✅ Complete - `feat/02-micropython-skeleton`
-3. 🟡 Pending hardware validation - `feat/03-gpio-status-input`
-4. 🟡 Pending hardware validation - `feat/04-display-bringup`
-5. 🟡 Pending hardware validation - `feat/05-local-wifi-policy`
-6. 🟡 Pending hardware validation - `feat/06-es8311-codec-control`
-7. 🟡 Pending hardware validation - `feat/07-audio-capture`
-8. 🟡 Pending hardware validation - `feat/08-audio-playback`
-9. ✅ Complete - `feat/09-local-service-contract`
-10. 🟡 Pending hardware validation - `feat/10-push-to-talk-flow`
-11. 🟡 Pending hardware validation - `feat/11-reliability-power-errors`
-12. 🟡 Pending hardware validation - `feat/12-mvp-release`
+1. ✅ Complete | 🟡 Not Validated - `feat/01-backup-recovery`
+2. ✅ Complete | 🟡 Not Validated - `feat/02-micropython-skeleton`
+3. ✅ Complete | 🟡 Not Validated - `feat/03-gpio-status-input`
+4. ✅ Complete | 🟡 Not Validated - `feat/04-display-bringup`
+5. ✅ Complete | 🟡 Not Validated - `feat/05-local-wifi-policy`
+6. ✅ Complete | 🟡 Not Validated - `feat/06-es8311-codec-control`
+7. ✅ Complete | 🟡 Not Validated - `feat/07-audio-capture`
+8. ✅ Complete | 🟡 Not Validated - `feat/08-audio-playback`
+9. ✅ Complete | ✅ Validated - `feat/09-local-service-contract`
+10. ✅ Complete | 🟡 Not Validated - `feat/10-push-to-talk-flow`
+11. ✅ Complete | 🟡 Not Validated - `feat/11-reliability-power-errors`
+12. ✅ Complete | 🟡 Not Validated - `feat/12-mvp-release`
 
 Support tooling branch:
 
-- ✅ Complete - `tooling/dev-install-capture`
+- ✅ Complete | ✅ Validated - `tooling/dev-install-capture`
 
 Optional on-device inference branches:
 
-13. 🟡 Pending feasibility check - `spike/13-on-device-inference-feasibility`
-14. 🟡 Pending feasibility result - `feat/14-on-device-inference`
+13. 🟡 Pending | 🟡 Not Validated - `spike/13-on-device-inference-feasibility`
+14. 🟡 Pending | 🟡 Not Validated - `feat/14-on-device-inference`
 
 Conditional runtime fallback branch:
 
-- 🟡 Pending fallback criterion - `fallback/esp-idf-audio-runtime`
+- 🟡 Pending | 🟡 Not Validated - `fallback/esp-idf-audio-runtime`
 
 ## Current Implementation Status
 
