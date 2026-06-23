@@ -165,6 +165,82 @@ class DevInstallCaptureTests(unittest.TestCase):
             self.assertIn("Posted redacted install capture to owner/repo#42", result.stdout)
             self.assertIn("issue comment 42 --repo owner/repo --body-file", gh_log.read_text())
 
+    def test_creates_github_issue_when_gh_option_is_available(self):
+        """The --gh option should create a new issue from the redacted body."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmp_path = Path(tmpdir)
+            capture_dir = tmp_path / "capture"
+            installer = self.make_script(
+                tmp_path,
+                "stub_install.sh",
+                """
+                #!/usr/bin/env bash
+                printf 'args:%s\\n' "$*"
+                printf 'install ok\\n'
+                exit 0
+                """,
+            )
+            gh_log = tmp_path / "gh-create-args.txt"
+            gh = self.make_script(
+                tmp_path,
+                "gh",
+                f"""
+                #!/usr/bin/env bash
+                printf '%s\\n' "$*" > {gh_log}
+                printf 'https://github.com/owner/repo/issues/77\\n'
+                exit 0
+                """,
+            )
+            env = os.environ.copy()
+            env.update(
+                {
+                    "AIPI_DEV_INSTALL_SCRIPT": str(installer),
+                    "AIPI_DEV_GH_BIN": str(gh),
+                    "HOME": str(tmp_path),
+                }
+            )
+
+            result = subprocess.run(
+                [
+                    str(DEV_INSTALL_SCRIPT),
+                    "--capture-dir",
+                    str(capture_dir),
+                    "--gh",
+                    "owner/repo",
+                    "--gh-title",
+                    "Bench validation",
+                    "--device-label",
+                    "bench-a",
+                    "--",
+                    "--trace",
+                ],
+                cwd=REPO_ROOT,
+                env=env,
+                text=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                check=False,
+            )
+
+            self.assertEqual(result.returncode, 0)
+            self.assertIn(
+                "Created GitHub issue: https://github.com/owner/repo/issues/77",
+                result.stdout,
+            )
+            gh_args = gh_log.read_text(encoding="utf-8")
+            self.assertIn(
+                "issue create --repo owner/repo --title Bench validation --body-file",
+                gh_args,
+            )
+            self.assertEqual(
+                (capture_dir / "github-created-issue.txt").read_text(encoding="utf-8"),
+                "https://github.com/owner/repo/issues/77\n",
+            )
+            self.assertIn(
+                "Installer arguments: `--trace `",
+                (capture_dir / "github-issue-body.md").read_text(encoding="utf-8"),
+            )
+
     def test_clean_tools_option_is_passed_to_installer(self):
         """The wrapper should accept cleanup directly and capture its transcript."""
         result, artifacts, _modes = self.run_dev_install(
@@ -219,6 +295,65 @@ class DevInstallCaptureTests(unittest.TestCase):
         self.assertEqual(modes["install-transcript-redacted.txt"], 0o600)
         self.assertEqual(modes["github-issue-body.md"], 0o600)
 
+    def test_missing_gh_for_create_leaves_issue_body_without_changing_status(self):
+        """A missing gh binary for --gh should preserve the installer status."""
+        result, artifacts, _modes = self.run_dev_install(
+            ["--gh", "owner/repo", "--", "--restore"],
+            """
+            #!/usr/bin/env bash
+            printf 'create issue fallback secret=localvalue\\n'
+            exit 4
+            """,
+        )
+
+        self.assertEqual(result.returncode, 4)
+        self.assertIn("gh CLI not available", result.stderr)
+        self.assertIn("GitHub issue body:", result.stdout)
+        self.assertIn("Installer exit status: 4", result.stdout)
+        self.assertIn("secret=<redacted>", artifacts["github-issue-body.md"])
+        self.assertNotIn("github-created-issue.txt", artifacts)
+
+    def test_gh_and_issue_options_are_mutually_exclusive(self):
+        """The wrapper should reject simultaneous create and comment targets."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmp_path = Path(tmpdir)
+            capture_dir = tmp_path / "capture"
+            marker = tmp_path / "installer-ran.txt"
+            installer = self.make_script(
+                tmp_path,
+                "stub_install.sh",
+                f"""
+                #!/usr/bin/env bash
+                printf ran > {marker}
+                exit 0
+                """,
+            )
+            env = os.environ.copy()
+            env.update({"AIPI_DEV_INSTALL_SCRIPT": str(installer)})
+
+            result = subprocess.run(
+                [
+                    str(DEV_INSTALL_SCRIPT),
+                    "--capture-dir",
+                    str(capture_dir),
+                    "--gh",
+                    "owner/repo",
+                    "--issue",
+                    "owner/repo#42",
+                ],
+                cwd=REPO_ROOT,
+                env=env,
+                text=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                check=False,
+            )
+
+            self.assertEqual(result.returncode, 2)
+            self.assertIn("use either --gh", result.stderr)
+            self.assertFalse(marker.exists())
+            self.assertFalse(capture_dir.exists())
+
     def test_capture_artifacts_remain_under_ignored_local_tooling_by_default(self):
         """Default capture output should live under the ignored tools/.local tree."""
         script_text = DEV_INSTALL_SCRIPT.read_text(encoding="utf-8")
@@ -229,6 +364,8 @@ class DevInstallCaptureTests(unittest.TestCase):
         self.assertIn("--clean-tools", script_text)
         self.assertIn("--clean-prereqs", script_text)
         self.assertIn("--trace", script_text)
+        self.assertIn("--gh", script_text)
+        self.assertIn("issue create", script_text)
         self.assertIn("tools/.local/", gitignore_text)
 
 

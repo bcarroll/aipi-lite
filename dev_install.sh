@@ -10,6 +10,8 @@ MAX_ISSUE_TRANSCRIPT_BYTES="${AIPI_DEV_INSTALL_MAX_ISSUE_BYTES:-45000}"
 
 CAPTURE_DIR=""
 GITHUB_ISSUE=""
+GITHUB_CREATE_REPO=""
+GITHUB_ISSUE_TITLE=""
 DEVICE_LABEL=""
 PREPARE_ONLY=0
 INSTALL_ARGS=()
@@ -24,6 +26,10 @@ and capture a redacted transcript for GitHub issue inspection or hardware
 validation analysis.
 
 Developer options:
+  --gh REPOSITORY          Create a new GitHub issue from the redacted issue
+                          body when gh is available. REPOSITORY must be
+                          OWNER/REPO or HOST/OWNER/REPO.
+  --gh-title TITLE         Optional title for a new issue created with --gh.
   --issue TARGET, --github-issue TARGET
                           Post the redacted issue body to TARGET when gh is
                           available. TARGET must be OWNER/REPO#NUMBER or a
@@ -85,6 +91,22 @@ quote_args() {
 parse_args() {
   while [[ $# -gt 0 ]]; do
     case "$1" in
+      --gh)
+        GITHUB_CREATE_REPO="${2:?--gh requires a value}"
+        shift 2
+        ;;
+      --gh=*)
+        GITHUB_CREATE_REPO="${1#*=}"
+        shift
+        ;;
+      --gh-title)
+        GITHUB_ISSUE_TITLE="${2:?--gh-title requires a value}"
+        shift 2
+        ;;
+      --gh-title=*)
+        GITHUB_ISSUE_TITLE="${1#*=}"
+        shift
+        ;;
       --issue|--github-issue)
         GITHUB_ISSUE="${2:?$1 requires a value}"
         shift 2
@@ -140,6 +162,15 @@ parse_args() {
         ;;
     esac
   done
+}
+
+validate_dev_options() {
+  if [[ -n "${GITHUB_CREATE_REPO}" && -n "${GITHUB_ISSUE}" ]]; then
+    echo "error: use either --gh to create a new issue or --issue to comment on an existing issue" >&2
+    return 2
+  fi
+
+  return 0
 }
 
 ensure_capture_dir() {
@@ -277,6 +308,63 @@ parse_issue_target() {
   return 1
 }
 
+parse_repository_target() {
+  local target="$1"
+
+  CREATE_REPO=""
+
+  if [[ "${target}" =~ ^([A-Za-z0-9._-]+/)?[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$ ]]; then
+    CREATE_REPO="${target}"
+    return 0
+  fi
+
+  return 1
+}
+
+default_github_issue_title() {
+  local install_status="$1"
+  local title
+
+  title="AIPI-Lite install capture: ${DEVICE_LABEL:-unspecified-device} status ${install_status} $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+  printf '%s\n' "${title}" | redact_stream
+}
+
+create_github_issue() {
+  local issue_body="$1"
+  local install_status="$2"
+  local created_issue_file="${CAPTURE_DIR}/github-created-issue.txt"
+  local issue_url
+  local title
+
+  if [[ "${PREPARE_ONLY}" -eq 1 ]]; then
+    echo "GitHub issue body prepared without creating an issue: ${issue_body}"
+    return 0
+  fi
+
+  if ! parse_repository_target "${GITHUB_CREATE_REPO}"; then
+    echo "warning: unsupported GitHub repository target: ${GITHUB_CREATE_REPO}" >&2
+    echo "GitHub issue body prepared for manual posting: ${issue_body}"
+    return 1
+  fi
+
+  if ! command -v "${GH_BIN}" >/dev/null 2>&1; then
+    echo "warning: gh CLI not available; GitHub issue body prepared: ${issue_body}" >&2
+    return 1
+  fi
+
+  title="${GITHUB_ISSUE_TITLE:-$(default_github_issue_title "${install_status}")}"
+  if issue_url="$("${GH_BIN}" issue create --repo "${CREATE_REPO}" --title "${title}" --body-file "${issue_body}" 2>&1)"; then
+    printf '%s\n' "${issue_url}" >"${created_issue_file}"
+    chmod 600 "${created_issue_file}"
+    echo "Created GitHub issue: ${issue_url}"
+    return 0
+  fi
+
+  echo "warning: gh failed to create issue: ${issue_url}" >&2
+  echo "GitHub issue body prepared for manual posting: ${issue_body}"
+  return 1
+}
+
 post_issue_body() {
   local issue_body="$1"
 
@@ -308,6 +396,18 @@ post_issue_body() {
 
   echo "warning: gh failed; GitHub issue body remains at: ${issue_body}" >&2
   return 1
+}
+
+report_issue_body() {
+  local issue_body="$1"
+  local install_status="$2"
+
+  if [[ -n "${GITHUB_CREATE_REPO}" ]]; then
+    create_github_issue "${issue_body}" "${install_status}"
+    return
+  fi
+
+  post_issue_body "${issue_body}"
 }
 
 run_installer() {
@@ -345,6 +445,9 @@ main() {
   local install_status=0
 
   parse_args "$@"
+  if ! validate_dev_options; then
+    return 2
+  fi
   validate_max_issue_bytes
   ensure_capture_dir
 
@@ -365,7 +468,7 @@ main() {
   chmod 600 "${redacted_transcript}"
   write_metadata "${metadata_file}" "${install_status}"
   write_issue_body "${issue_body}" "${metadata_file}" "${redacted_transcript}" "${install_status}"
-  post_issue_body "${issue_body}" || true
+  report_issue_body "${issue_body}" "${install_status}" || true
 
   echo "Raw transcript: ${raw_transcript}"
   echo "Redacted transcript: ${redacted_transcript}"

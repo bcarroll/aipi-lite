@@ -35,13 +35,16 @@ gh auth status
   For Windows, Linux, or non-Homebrew macOS installs, use the official
   installation instructions at <https://cli.github.com/>.
 
-- Choose the issue that should receive the report:
+- Choose the repository that should receive new install capture issues:
 
 ```bash
-export AIPI_GITHUB_ISSUE="OWNER/REPO#123"
+export AIPI_GITHUB_REPO="OWNER/REPO"
 export AIPI_PORT="/dev/cu.usbmodem31101"
 export AIPI_DEVICE_LABEL="bench-a"
 ```
+
+  To comment on an existing issue instead of creating a new one, set
+  `AIPI_GITHUB_ISSUE="OWNER/REPO#123"` and use `--issue` in place of `--gh`.
 
 ## Install, Trace, And Report
 
@@ -51,7 +54,8 @@ installer tracing, redacts common secrets, and posts the issue body to GitHub.
 
 ```bash
 ./dev_install.sh \
-  --issue "${AIPI_GITHUB_ISSUE}" \
+  --gh "${AIPI_GITHUB_REPO}" \
+  --gh-title "AIPI-Lite ${AIPI_DEVICE_LABEL} install capture" \
   --device-label "${AIPI_DEVICE_LABEL}" \
   --hardware-note "connected device install and trace run" \
   --trace \
@@ -67,6 +71,10 @@ tools/.local/debug/
 
 Do not commit or manually attach stock firmware backups, firmware dumps,
 credentials, `.conf`, Wi-Fi settings, or device tokens.
+
+The wrapper prints the created issue URL and stores it in the local capture
+directory as `github-created-issue.txt`. For follow-up probe comments, set
+`AIPI_GITHUB_ISSUE` to the created issue target, such as `OWNER/REPO#123`.
 
 ## Optional Post-Install Probes
 
@@ -117,7 +125,8 @@ If a run fails, rerun the traced capture with a short non-secret note:
 
 ```bash
 ./dev_install.sh \
-  --issue "${AIPI_GITHUB_ISSUE}" \
+  --gh "${AIPI_GITHUB_REPO}" \
+  --gh-title "AIPI-Lite ${AIPI_DEVICE_LABEL} failed install capture" \
   --device-label "${AIPI_DEVICE_LABEL}" \
   --hardware-note "failure observed: describe visible LED/display/serial symptom" \
   --trace \

@@ -71,16 +71,18 @@ redacted, metadata, and GitHub issue-body artifacts under ignored
 ```
 
 Add `--issue OWNER/REPO#NUMBER` or a GitHub issue URL to post the redacted issue
-body as a comment when the `gh` CLI is already installed and authenticated. If
-GitHub tooling is missing, unauthenticated, or `--prepare-only` is supplied, the
-script leaves the issue body locally for inspection or manual submission. The
-wrapper returns the installer exit status so capture or posting problems do not
-mask install failures. The same cleanup option can be captured with
-`./dev_install.sh --clean-tools`. For deeper hardware feedback, run
-`./dev_install.sh --trace -- ...` so the visible transcript records the local
-trace artifact path while the installer writes detailed trace data under
-`tools/.local/debug/`. See [DEVELOPER.md](DEVELOPER.md) for the concise
-connected-device test and GitHub reporting workflow.
+body as a comment when the `gh` CLI is already installed and authenticated. Use
+`--gh OWNER/REPO` to create a new GitHub issue from the same redacted body, and
+`--gh-title TITLE` when a specific issue title is useful. If GitHub tooling is
+missing, unauthenticated, or `--prepare-only` is supplied, the script leaves the
+issue body locally for inspection or manual submission. The wrapper returns the
+installer exit status so capture or posting problems do not mask install
+failures. The same cleanup option can be captured by running
+`./dev_install.sh --clean-tools`. For deeper hardware feedback, run the wrapper
+with `--trace -- ...` so the visible transcript records the local trace artifact
+path while the installer writes detailed trace data under `tools/.local/debug/`.
+See [DEVELOPER.md](DEVELOPER.md) for the concise connected-device test and
+GitHub reporting workflow.
 
 If local prerequisites are missing, the installer prompts before downloading or
 installing components under ignored `tools/.local/`, then continues with the

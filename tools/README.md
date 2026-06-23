@@ -22,7 +22,8 @@ transcript for GitHub issue review or hardware validation analysis:
 
 ```bash
 ./dev_install.sh \
-  --issue OWNER/REPO#123 \
+  --gh OWNER/REPO \
+  --gh-title "AIPI-Lite bench-a install capture" \
   --device-label bench-a \
   --hardware-note "captured serial-visible install behavior" \
   -- --port /dev/cu.usbmodem31101
@@ -31,9 +32,10 @@ transcript for GitHub issue review or hardware validation analysis:
 `dev_install.sh` stores generated artifacts under
 `tools/.local/dev-install/`, which is ignored by Git. Each run includes the raw
 visible installer transcript, a redacted transcript, run metadata, and a
-GitHub-ready Markdown issue body. Posting requires an explicit issue target and
-an already-authenticated `gh` CLI; otherwise the local issue body remains
-available for manual review.
+GitHub-ready Markdown issue body. `--gh OWNER/REPO` creates a new issue through
+an already-authenticated `gh` CLI; `--issue OWNER/REPO#123` comments on an
+existing issue instead. If GitHub tooling is missing or unauthenticated, the
+local issue body remains available for manual review.
 
 For deeper hardware feedback, pass installer tracing through the wrapper:
 

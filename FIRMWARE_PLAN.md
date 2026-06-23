@@ -225,11 +225,12 @@ would see, and capture the visible stdout/stderr transcript for later review.
 The captured transcript is intended to be added to a GitHub issue for ChatGPT
 inspection, but it must be treated as an external sharing step rather than
 firmware behavior. The wrapper should save redacted issue-ready output under an
-ignored local path, require an explicit GitHub issue target before posting, and
-avoid committing logs, credentials, device identifiers, Wi-Fi settings, tokens,
-firmware dumps, or other local-only artifacts. If GitHub upload tooling is not
-available or authenticated, the wrapper should leave a local issue body artifact
-that a developer can inspect and submit manually.
+ignored local path, support creating a new explicit repository issue or
+commenting on an explicit existing issue target, and avoid committing logs,
+credentials, device identifiers, Wi-Fi settings, tokens, firmware dumps, or
+other local-only artifacts. If GitHub upload tooling is not available or
+authenticated, the wrapper should leave a local issue body artifact that a
+developer can inspect and submit manually.
 
 The same capture path is also the preferred host-side collection mechanism for
 future hardware validation runs. Developers can add non-secret device labels and
