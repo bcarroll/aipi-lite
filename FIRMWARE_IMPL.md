@@ -14,6 +14,8 @@ keep each branch focused, and merge only after its acceptance criteria pass.
 
 - Use `feat/<number>-<topic>` for implementation work.
 - Use `docs/<topic>` for documentation-only updates.
+- Use `tooling/<topic>` for host-only developer utilities that do not change
+  firmware runtime behavior.
 - Use `spike/<topic>` for disposable hardware experiments that should not be
   merged as production firmware.
 - Use `fallback/<topic>` only if the MicroPython path fails a documented
@@ -40,6 +42,10 @@ the checklist does not rely on color alone.
 11. 🟡 Pending implementation - `feat/11-reliability-power-errors`
 12. 🟡 Pending implementation - `feat/12-mvp-release`
 
+Support tooling branch:
+
+- 🟡 Pending implementation - `tooling/dev-install-capture`
+
 Optional on-device inference branches:
 
 13. 🟡 Pending feasibility check - `spike/13-on-device-inference-feasibility`
@@ -61,6 +67,7 @@ tooling directories.
 | Branch / component | Status | Evidence | Remaining work |
 | --- | --- | --- | --- |
 | `feat/01-backup-recovery` | Implemented | `install.sh` self-updates with `git pull --ff-only`, can write sanitized debug artifacts for GitHub issues, prompts for bootloader readiness, stores answers in `.conf`, backs up stock flash to ignored tooling storage with exact-size validation, no-reset chunked reads, and smaller-chunk retries, restores saved stock backups, and `RECOVERY.md` documents backup, restore, expected recovery output, and the flashing safety checklist. | Validate the restore flow on physical hardware and record exact stock serial logs. |
+| `tooling/dev-install-capture` | Not started | No `dev_install.sh` wrapper exists for developer issue-capture runs. | Add a host-only wrapper that runs `install.sh` with provided CLI arguments, captures the user-visible transcript, writes redacted issue-ready output to ignored local storage, and posts or prepares it for an explicit GitHub issue target. |
 | `feat/02-micropython-skeleton` | Implemented | `src/boot.py`, `src/main.py`, `src/pins.py`, `src/README.md`, and host tests provide safe startup defaults, grouped pin constants, serial-visible bring-up status, and hardware-free regression coverage. | Validate the serial output and display baseline on physical hardware. |
 | `feat/04-display-bringup` | Implemented, hardware validation pending | `src/display.py`, `src/display_probe.py`, `src/aipi_lite_config.py`, `src/main.py`, and `tests/test_aipi_lite_display.py` add an ST7735 wrapper, PWM backlight control, named status screens, an opt-in display probe, and host-side layout coverage. | Run `display_probe.run_probe()` on physical hardware and record final orientation, color order, and readability observations. |
 | LCD pin constants | Implemented | `src/pins.py` includes display, button, status LED, ES8311 audio, speaker enable, charge input, and board power constants from `SPEC.md`. | Verify unconfirmed GPIO10 power behavior before any branch attempts to drive it. |
@@ -103,6 +110,47 @@ Acceptance criteria:
 - A user can back up the stock firmware before flashing replacement firmware.
 - A user can restore stock firmware from the documented backup.
 - No binary firmware dumps or secrets are committed.
+
+### `tooling/dev-install-capture`
+
+Purpose: give developers a repeatable way to run the normal installer, capture
+exactly what an operator could see, and attach the sanitized transcript to a
+GitHub issue for ChatGPT inspection.
+
+Expected commits:
+
+- `tooling: add developer install wrapper`
+  - Add `dev_install.sh` as a host-only wrapper around `install.sh`.
+  - Pass installer CLI arguments through to `install.sh` without changing the
+    normal install, backup, restore, prompt, or exit-code behavior.
+  - Capture combined stdout/stderr while still showing output interactively.
+
+- `tooling: add issue-ready transcript handling`
+  - Store captured logs and issue bodies only under ignored local tooling paths.
+  - Redact common secrets, tokens, Wi-Fi values, and local-only identifiers
+    before preparing any GitHub issue content.
+  - Require an explicit issue target before posting, and leave a local issue
+    body artifact when GitHub upload tooling is unavailable or unauthenticated.
+
+- `tests: add developer installer wrapper checks`
+  - Verify pass-through argument handling with a stub installer.
+  - Verify transcript capture preserves visible installer output.
+  - Verify redaction runs before any issue body is posted or written.
+
+- `docs: document developer issue capture`
+  - Explain how developers run `dev_install.sh` with installer arguments.
+  - Explain where local logs are stored and why they remain ignored.
+  - Explain GitHub issue posting prerequisites and manual fallback behavior.
+
+Acceptance criteria:
+
+- `dev_install.sh` runs the same installer path a normal operator would run.
+- The script preserves prompts, visible output, and the installer exit status.
+- A redacted transcript is added to, or prepared for, an explicit GitHub issue.
+- Missing GitHub tooling does not lose the local transcript or mask installer
+  failures.
+- No credentials, device tokens, firmware dumps, or local-only artifacts are
+  committed.
 
 ### `feat/02-micropython-skeleton`
 
@@ -686,6 +734,8 @@ Acceptance criteria:
   approval.
 - Keep on-device inference optional until feasibility measurements show it is
   stable on the target device.
+- Keep developer install transcripts and GitHub issue payloads redacted, and
+  post them only to an explicit issue target chosen by the operator.
 - Keep all generated Python methods documented with docstrings.
 - Add host-side tests for Python logic whenever code is generated.
 - Update `SPEC.md` when hardware behavior is verified or corrected.

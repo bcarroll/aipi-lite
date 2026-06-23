@@ -215,6 +215,22 @@ is worth the added firmware complexity.
   accessibility, supply-chain, and procurement requirements for the complete
   system, including the local service and device hardware.
 
+## Developer Install Capture
+
+Add a host-only `dev_install.sh` wrapper for the development team. The wrapper
+should run the normal `install.sh` flow with the installer arguments supplied on
+the command line, preserve the interactive prompts and exit status an operator
+would see, and capture the visible stdout/stderr transcript for later review.
+
+The captured transcript is intended to be added to a GitHub issue for ChatGPT
+inspection, but it must be treated as an external sharing step rather than
+firmware behavior. The wrapper should save redacted issue-ready output under an
+ignored local path, require an explicit GitHub issue target before posting, and
+avoid committing logs, credentials, device identifiers, Wi-Fi settings, tokens,
+firmware dumps, or other local-only artifacts. If GitHub upload tooling is not
+available or authenticated, the wrapper should leave a local issue body artifact
+that a developer can inspect and submit manually.
+
 ## Documentation to Maintain
 
 - `SPEC.md`: hardware facts, pinout, verified source links, and electrical
