@@ -36,7 +36,7 @@ the checklist does not rely on color alone.
 5. 🟡 Pending hardware validation - `feat/05-local-wifi-policy`
 6. 🟡 Pending hardware validation - `feat/06-es8311-codec-control`
 7. 🟡 Pending hardware validation - `feat/07-audio-capture`
-8. 🟡 Pending implementation - `feat/08-audio-playback`
+8. 🟡 Pending hardware validation - `feat/08-audio-playback`
 9. 🟡 Pending implementation - `feat/09-local-service-contract`
 10. 🟡 Pending implementation - `feat/10-push-to-talk-flow`
 11. 🟡 Pending implementation - `feat/11-reliability-power-errors`
@@ -75,7 +75,7 @@ tooling directories.
 | `feat/05-local-wifi-policy` | Implemented, hardware validation pending | `src/wifi_config.py`, `src/local_endpoint.py`, `src/wifi_probe.py`, `.gitignore`, and `tests/test_wifi_policy.py` add ignored local config loading, local-only endpoint validation, a Wi-Fi `/health` probe, and host-side policy coverage. | Run `wifi_probe.run_probe()` on physical hardware with a local service and record connection, endpoint, LED, and display behavior. |
 | `feat/06-es8311-codec-control` | Implemented, hardware validation pending | `src/es8311.py`, `src/audio_probe.py`, `src/main.py`, and `tests/test_es8311_codec.py` add ES8311 I2C detection, register setup, GPIO9 speaker gate defaults, and host-side regression coverage. | Run `audio_probe.run_probe()` on physical hardware and record the observed scan and audio behavior. |
 | `feat/07-audio-capture` | Implemented, hardware validation pending | `src/audio_capture.py`, `src/capture_probe.py`, and `tests/test_audio_capture.py` add bounded 16 kHz 16-bit mono I2S capture, WAV packaging, capture metrics, an opt-in capture probe, and host-side coverage. | Run `capture_probe.run_probe()` on physical hardware and record gain, clipping, noise floor, dropped-sample behavior, and whether MicroPython MCLK output works on GPIO6. |
-| `feat/08-audio-playback` | Not started | No imported I2S speaker playback code. | Implement playback and speaker enable timing. |
+| `feat/08-audio-playback` | Implemented, hardware validation pending | `src/audio_playback.py`, `src/playback_probe.py`, and `tests/test_audio_playback.py` add bounded 16 kHz 16-bit mono PCM/WAV playback, generated low-volume test tone output, I2S TX setup on GPIO6/GPIO11/GPIO12/GPIO14, GPIO9 speaker enable timing, DAC mute/unmute safety, and host-side coverage for format rejection and write metrics. | Run `playback_probe.run_probe()` on physical hardware and record volume, output noise, underruns, and whether MicroPython MCLK output works on GPIO6 for playback. |
 | `feat/09-local-service-contract` | Not started | No imported LAN service contract or mock service. | Define API, mock service, client, and tests. |
 | `feat/10-push-to-talk-flow` | Not started | No imported assistant state machine. | Integrate button, audio, local service, display, and speaker. |
 | `feat/11-reliability-power-errors` | Not started | No imported reconnect, retry, power, or diagnostics logic. | Add recovery behavior and hardware troubleshooting docs. |
@@ -455,6 +455,23 @@ Acceptance criteria:
 - Speaker enable is not left on after playback.
 - Playback remains stable while display/status updates run.
 - Host tests pass.
+
+Implementation notes:
+
+- `audio_playback.py` supports bounded 16 kHz, 16-bit, mono PCM and RIFF/WAVE
+  payloads with matching format fields. Unsupported sample rates, channel
+  counts, bit depths, non-PCM formats, oversized payloads, and unaligned PCM
+  fail before I2S writes.
+- I2S TX uses GPIO6 MCLK, GPIO11 DOUT, GPIO12 LRCLK/WS, and GPIO14 BCLK with
+  bounded write chunks. Partial frame writes are rejected; partial aligned
+  writes are retried and counted as underruns for serial diagnostics.
+- `playback_probe.py` initializes the ES8311 output path, generates a short
+  low-volume test tone, unmutes the DAC only during playback, enables GPIO9
+  only while I2S samples are being written, and always disables GPIO9 plus
+  mutes the DAC before returning.
+- Physical validation still needs to confirm audible output, safe volume,
+  output noise, underrun behavior, and MicroPython MCLK behavior on the target
+  firmware image.
 
 ### `feat/09-local-service-contract`
 

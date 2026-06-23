@@ -131,6 +131,8 @@ skeleton, GPIO probe, and display status probe:
 - `src/audio_probe.py`
 - `src/audio_capture.py`
 - `src/capture_probe.py`
+- `src/audio_playback.py`
+- `src/playback_probe.py`
 - `src/wifi_config.py`
 - `src/local_endpoint.py`
 - `src/wifi_probe.py`
@@ -145,9 +147,10 @@ remains as a compatibility shim for the imported display baseline. `es8311.py`
 provides codec I2C control and the speaker amplifier gate; `audio_probe.py` is
 the opt-in ES8311 hardware probe. `audio_capture.py` and `capture_probe.py`
 add bounded 16 kHz 16-bit mono microphone capture and WAV packaging helpers for
-the ES8311/I2S path. `wifi_probe.py` connects only to configured local Wi-Fi
-and calls only a local `/health` endpoint after endpoint policy validation
-passes.
+the ES8311/I2S path. `audio_playback.py` and `playback_probe.py` add bounded
+16 kHz 16-bit mono PCM/WAV speaker playback and a generated low-volume tone
+probe. `wifi_probe.py` connects only to configured local Wi-Fi and calls only a
+local `/health` endpoint after endpoint policy validation passes.
 
 The GPIO status/input probe remains opt-in so normal boot stays recoverable. To
 cycle the GPIO46 WS2812/NeoPixel status LED states and print debounced GPIO42
@@ -189,6 +192,18 @@ mpremote connect /dev/cu.usbmodem31101 exec "import capture_probe; capture_probe
 
 The capture probe keeps GPIO9 speaker enable disabled and does not write audio
 to flash by default.
+
+The speaker playback probe is opt-in. To initialize ES8311 output, play a
+generated low-volume test tone, and print write/underrun metrics, run:
+
+```bash
+mpremote connect /dev/cu.usbmodem31101 exec "import playback_probe; playback_probe.run_probe()"
+```
+
+The playback helper currently supports bounded 16 kHz, 16-bit, mono PCM and
+WAV input. The probe unmutes the DAC only for playback, enables GPIO9 only
+while I2S samples are being written, then mutes the DAC and disables GPIO9
+before returning.
 
 The Wi-Fi/local-service probe requires an ignored `src/local_wifi_config.py`
 file on the device. After uploading `src/`, run:

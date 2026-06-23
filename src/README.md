@@ -20,6 +20,8 @@ ESP32-S3 image by the repository installer.
 | `audio_probe.py` | Opt-in serial codec probe that scans I2C, initializes the ES8311, and briefly pulses the muted speaker gate. |
 | `audio_capture.py` | Bounded 16 kHz 16-bit mono I2S microphone capture and WAV packaging helpers. |
 | `capture_probe.py` | Opt-in serial microphone probe that initializes ES8311 input, captures a short PCM buffer, and reports level metrics. |
+| `audio_playback.py` | Bounded 16 kHz 16-bit mono I2S speaker playback, WAV parsing, and test-tone generation helpers. |
+| `playback_probe.py` | Opt-in serial speaker probe that initializes ES8311 output, plays a generated test tone, and reports write metrics. |
 | `wifi_config.py` | Loader for ignored local Wi-Fi and local-service configuration. |
 | `local_endpoint.py` | Local-only endpoint parser and validator for configured service URLs. |
 | `wifi_probe.py` | Explicit Wi-Fi/local-service probe that validates endpoint policy, connects Wi-Fi, calls `/health`, and reports status. |
@@ -141,6 +143,25 @@ count, peak level, and clipping count to serial. It does not write captured
 audio to flash by default; use `audio_capture.wav_bytes()` from a REPL or later
 service upload code when an off-device WAV artifact is needed.
 
+## Speaker Playback Probe
+
+The playback milestone adds bounded I2S speaker output on the ES8311 audio path
+using GPIO6 MCLK, GPIO11 DOUT, GPIO12 LRCLK/WS, and GPIO14 BCLK. The supported
+format is 16 kHz, 16-bit, mono PCM, either as raw PCM bytes or as a RIFF/WAVE
+file with matching format fields.
+
+Run the probe explicitly when the device is ready to validate speaker output:
+
+```python
+import playback_probe
+playback_probe.run_probe()
+```
+
+The probe initializes the ES8311 output path, generates a short low-volume test
+tone, unmutes the DAC only for playback, enables GPIO9 only while I2S samples
+are being written, then mutes the DAC and disables GPIO9 before returning. It
+prints byte count, sample count, write calls, and underrun count to serial.
+
 ## Wi-Fi and Local Service Probe
 
 Create an ignored `src/local_wifi_config.py` file before uploading `src/` to the
@@ -178,9 +199,8 @@ status, and updates the status LED and display when those modules initialize.
 
 - `boot.py` must remain safe to run before hardware probes. It should not
   instantiate `machine.Pin`, start Wi-Fi, configure audio, or toggle GPIO10.
-- Normal `main.py` startup drives GPIO9 speaker enable low. The DAC remains
-  muted after codec initialization until later playback code explicitly unmutes
-  it.
+- Normal `main.py` startup drives GPIO9 speaker enable low. Playback helpers
+  must explicitly unmute the DAC for output and mute it again before returning.
 - `pins.py` is declarative only. Later branches should import constants from it
   instead of repeating numeric GPIO assignments.
 - `io_probe.py` is opt-in. Keep normal boot behavior safe and serial-visible so
@@ -192,6 +212,9 @@ status, and updates the status LED and display when those modules initialize.
 - `capture_probe.py` is opt-in. It initializes the ES8311 input and I2S
   microphone path, keeps speaker output disabled, and should remain bounded so
   a capture test cannot exhaust heap.
+- `playback_probe.py` is opt-in. It initializes the ES8311 output and I2S
+  speaker path, keeps the test tone bounded and low volume, and must leave the
+  DAC muted plus GPIO9 speaker enable disabled before returning.
 - Local Wi-Fi credentials, service URLs, and operator overrides belong in
   ignored local configuration files, not in source control.
 - Replacement firmware must remain local-only by default. Do not add cloud,
