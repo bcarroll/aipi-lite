@@ -54,7 +54,7 @@ installer tracing, redacts common secrets, and posts the issue body to GitHub.
 
 ```bash
 ./dev_install.sh \
-  --gh "${AIPI_GITHUB_REPO}" \
+  --gh \
   --gh-title "AIPI-Lite ${AIPI_DEVICE_LABEL} install capture" \
   --device-label "${AIPI_DEVICE_LABEL}" \
   --hardware-note "connected device install and trace run" \
@@ -125,7 +125,7 @@ If a run fails, rerun the traced capture with a short non-secret note:
 
 ```bash
 ./dev_install.sh \
-  --gh "${AIPI_GITHUB_REPO}" \
+  --gh \
   --gh-title "AIPI-Lite ${AIPI_DEVICE_LABEL} failed install capture" \
   --device-label "${AIPI_DEVICE_LABEL}" \
   --hardware-note "failure observed: describe visible LED/display/serial symptom" \

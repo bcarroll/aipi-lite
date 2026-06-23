@@ -147,8 +147,8 @@ Acceptance criteria:
 - `dev_install.sh` runs the same installer path a normal operator would run.
 - The script preserves prompts, visible output, and the installer exit status.
 - A redacted transcript is added to, or prepared for, an explicit GitHub issue.
-- A redacted transcript can create a new GitHub issue for an explicit
-  repository, or comment on an explicit existing issue.
+- A redacted transcript can create a new GitHub issue for an explicit or
+  inferred repository, or comment on an explicit existing issue.
 - Missing GitHub tooling does not lose the local transcript or mask installer
   failures.
 - No credentials, device tokens, firmware dumps, or local-only artifacts are
@@ -167,9 +167,11 @@ Implementation notes:
   body through an already-installed and authenticated `gh` CLI. Without `gh`, or
   with `--prepare-only`, the issue body remains local for manual review.
 - `--gh OWNER/REPO` creates a new GitHub issue from the redacted issue body
-  through the same authenticated `gh` CLI, and `--gh-title TITLE` overrides the
-  generated install-capture title. `--gh` and `--issue` are mutually exclusive
-  so one capture run cannot create and comment on issues at the same time.
+  through the same authenticated `gh` CLI, and bare `--gh` uses
+  `AIPI_GITHUB_REPO` or the local `origin` remote when possible.
+  `--gh-title TITLE` overrides the generated install-capture title. `--gh` and
+  `--issue` are mutually exclusive so one capture run cannot create and comment
+  on issues at the same time.
 - The wrapper exits with the installer status even if GitHub posting fails, so
   capture/reporting problems do not hide installer failures.
 - `install.sh --trace` enables `--debug` and writes a separate redacted trace

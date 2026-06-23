@@ -72,12 +72,13 @@ redacted, metadata, and GitHub issue-body artifacts under ignored
 
 Add `--issue OWNER/REPO#NUMBER` or a GitHub issue URL to post the redacted issue
 body as a comment when the `gh` CLI is already installed and authenticated. Use
-`--gh OWNER/REPO` to create a new GitHub issue from the same redacted body, and
-`--gh-title TITLE` when a specific issue title is useful. If GitHub tooling is
-missing, unauthenticated, or `--prepare-only` is supplied, the script leaves the
-issue body locally for inspection or manual submission. The wrapper returns the
-installer exit status so capture or posting problems do not mask install
-failures. The same cleanup option can be captured by running
+`--gh OWNER/REPO` to create a new GitHub issue from the same redacted body, or
+use bare `--gh` to read the repository from `AIPI_GITHUB_REPO` or the local
+`origin` remote. Add `--gh-title TITLE` when a specific issue title is useful.
+If GitHub tooling is missing, unauthenticated, or `--prepare-only` is supplied,
+the script leaves the issue body locally for inspection or manual submission.
+The wrapper returns the installer exit status so capture or posting problems do
+not mask install failures. The same cleanup option can be captured by running
 `./dev_install.sh --clean-tools`. For deeper hardware feedback, run the wrapper
 with `--trace -- ...` so the visible transcript records the local trace artifact
 path while the installer writes detailed trace data under `tools/.local/debug/`.

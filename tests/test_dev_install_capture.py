@@ -241,6 +241,69 @@ class DevInstallCaptureTests(unittest.TestCase):
                 (capture_dir / "github-issue-body.md").read_text(encoding="utf-8"),
             )
 
+    def test_bare_gh_option_uses_repository_environment(self):
+        """Bare --gh should create an issue using AIPI_GITHUB_REPO."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmp_path = Path(tmpdir)
+            capture_dir = tmp_path / "capture"
+            installer = self.make_script(
+                tmp_path,
+                "stub_install.sh",
+                """
+                #!/usr/bin/env bash
+                printf 'install ok\\n'
+                exit 0
+                """,
+            )
+            gh_log = tmp_path / "gh-bare-args.txt"
+            gh = self.make_script(
+                tmp_path,
+                "gh",
+                f"""
+                #!/usr/bin/env bash
+                printf '%s\\n' "$*" > {gh_log}
+                printf 'https://github.com/owner/repo/issues/78\\n'
+                exit 0
+                """,
+            )
+            env = os.environ.copy()
+            env.update(
+                {
+                    "AIPI_DEV_INSTALL_SCRIPT": str(installer),
+                    "AIPI_DEV_GH_BIN": str(gh),
+                    "AIPI_GITHUB_REPO": "owner/repo",
+                }
+            )
+
+            result = subprocess.run(
+                [
+                    str(DEV_INSTALL_SCRIPT),
+                    "--capture-dir",
+                    str(capture_dir),
+                    "--gh",
+                    "--gh-title",
+                    "Bare GitHub issue",
+                    "--",
+                    "--skip-self-update",
+                ],
+                cwd=REPO_ROOT,
+                env=env,
+                text=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                check=False,
+            )
+
+            self.assertEqual(result.returncode, 0)
+            self.assertIn(
+                "Created GitHub issue: https://github.com/owner/repo/issues/78",
+                result.stdout,
+            )
+            self.assertIn(
+                "issue create --repo owner/repo --title Bare GitHub issue --body-file",
+                gh_log.read_text(encoding="utf-8"),
+            )
+
     def test_clean_tools_option_is_passed_to_installer(self):
         """The wrapper should accept cleanup directly and capture its transcript."""
         result, artifacts, _modes = self.run_dev_install(
@@ -365,6 +428,7 @@ class DevInstallCaptureTests(unittest.TestCase):
         self.assertIn("--clean-prereqs", script_text)
         self.assertIn("--trace", script_text)
         self.assertIn("--gh", script_text)
+        self.assertIn("AIPI_GITHUB_REPO", script_text)
         self.assertIn("issue create", script_text)
         self.assertIn("tools/.local/", gitignore_text)
 

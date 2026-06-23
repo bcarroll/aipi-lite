@@ -10,6 +10,7 @@ MAX_ISSUE_TRANSCRIPT_BYTES="${AIPI_DEV_INSTALL_MAX_ISSUE_BYTES:-45000}"
 
 CAPTURE_DIR=""
 GITHUB_ISSUE=""
+GITHUB_CREATE_REQUESTED=0
 GITHUB_CREATE_REPO=""
 GITHUB_ISSUE_TITLE=""
 DEVICE_LABEL=""
@@ -26,9 +27,11 @@ and capture a redacted transcript for GitHub issue inspection or hardware
 validation analysis.
 
 Developer options:
-  --gh REPOSITORY          Create a new GitHub issue from the redacted issue
-                          body when gh is available. REPOSITORY must be
-                          OWNER/REPO or HOST/OWNER/REPO.
+  --gh [REPOSITORY]        Create a new GitHub issue from the redacted issue
+                          body when gh is available. REPOSITORY may be
+                          OWNER/REPO or HOST/OWNER/REPO. If omitted, the
+                          script uses AIPI_GITHUB_REPO or the local origin
+                          remote when possible.
   --gh-title TITLE         Optional title for a new issue created with --gh.
   --issue TARGET, --github-issue TARGET
                           Post the redacted issue body to TARGET when gh is
@@ -51,6 +54,7 @@ All remaining arguments are passed through to install.sh unchanged. Use -- when
 an installer option could be confused with a developer option.
 
 Environment overrides:
+  AIPI_GITHUB_REPO
   AIPI_DEV_INSTALL_SCRIPT
   AIPI_DEV_GH_BIN
   AIPI_DEV_INSTALL_MAX_ISSUE_BYTES
@@ -92,10 +96,18 @@ parse_args() {
   while [[ $# -gt 0 ]]; do
     case "$1" in
       --gh)
-        GITHUB_CREATE_REPO="${2:?--gh requires a value}"
-        shift 2
+        GITHUB_CREATE_REQUESTED=1
+        if [[ $# -gt 1 && -z "${2}" ]]; then
+          shift 2
+        elif [[ $# -gt 1 && "${2}" != --* ]]; then
+          GITHUB_CREATE_REPO="$2"
+          shift 2
+        else
+          shift
+        fi
         ;;
       --gh=*)
+        GITHUB_CREATE_REQUESTED=1
         GITHUB_CREATE_REPO="${1#*=}"
         shift
         ;;
@@ -165,7 +177,7 @@ parse_args() {
 }
 
 validate_dev_options() {
-  if [[ -n "${GITHUB_CREATE_REPO}" && -n "${GITHUB_ISSUE}" ]]; then
+  if [[ "${GITHUB_CREATE_REQUESTED}" -eq 1 && -n "${GITHUB_ISSUE}" ]]; then
     echo "error: use either --gh to create a new issue or --issue to comment on an existing issue" >&2
     return 2
   fi
@@ -321,6 +333,66 @@ parse_repository_target() {
   return 1
 }
 
+repository_from_remote_url() {
+  local remote_url="$1"
+  local host
+  local owner
+  local repo
+
+  if [[ "${remote_url}" =~ ^git@([^:]+):([^/]+)/([^/[:space:]]+)$ ]]; then
+    host="${BASH_REMATCH[1]}"
+    owner="${BASH_REMATCH[2]}"
+    repo="${BASH_REMATCH[3]}"
+  elif [[ "${remote_url}" =~ ^ssh://git@([^/]+)/([^/]+)/([^/[:space:]]+)$ ]]; then
+    host="${BASH_REMATCH[1]}"
+    owner="${BASH_REMATCH[2]}"
+    repo="${BASH_REMATCH[3]}"
+  elif [[ "${remote_url}" =~ ^https?://([^/]+)/([^/]+)/([^/?#[:space:]]+)([/?#].*)?$ ]]; then
+    host="${BASH_REMATCH[1]}"
+    owner="${BASH_REMATCH[2]}"
+    repo="${BASH_REMATCH[3]}"
+  else
+    return 1
+  fi
+
+  repo="${repo%.git}"
+  if [[ -z "${host}" || -z "${owner}" || -z "${repo}" ]]; then
+    return 1
+  fi
+
+  if [[ "${host}" == "github.com" ]]; then
+    printf '%s/%s\n' "${owner}" "${repo}"
+  else
+    printf '%s/%s/%s\n' "${host}" "${owner}" "${repo}"
+  fi
+}
+
+resolve_create_repository() {
+  local candidate="${GITHUB_CREATE_REPO}"
+  local remote_url
+
+  if [[ -z "${candidate}" && -n "${AIPI_GITHUB_REPO:-}" ]]; then
+    candidate="${AIPI_GITHUB_REPO}"
+  fi
+
+  if [[ -z "${candidate}" ]]; then
+    if remote_url="$(git -C "${SCRIPT_DIR}" remote get-url origin 2>/dev/null)" &&
+      candidate="$(repository_from_remote_url "${remote_url}")"; then
+      :
+    else
+      echo "warning: --gh could not infer a GitHub repository; set AIPI_GITHUB_REPO or pass --gh OWNER/REPO" >&2
+      return 1
+    fi
+  fi
+
+  if parse_repository_target "${candidate}"; then
+    return 0
+  fi
+
+  echo "warning: unsupported GitHub repository target: ${candidate}" >&2
+  return 1
+}
+
 default_github_issue_title() {
   local install_status="$1"
   local title
@@ -341,8 +413,7 @@ create_github_issue() {
     return 0
   fi
 
-  if ! parse_repository_target "${GITHUB_CREATE_REPO}"; then
-    echo "warning: unsupported GitHub repository target: ${GITHUB_CREATE_REPO}" >&2
+  if ! resolve_create_repository; then
     echo "GitHub issue body prepared for manual posting: ${issue_body}"
     return 1
   fi
@@ -402,7 +473,7 @@ report_issue_body() {
   local issue_body="$1"
   local install_status="$2"
 
-  if [[ -n "${GITHUB_CREATE_REPO}" ]]; then
+  if [[ "${GITHUB_CREATE_REQUESTED}" -eq 1 ]]; then
     create_github_issue "${issue_body}" "${install_status}"
     return
   fi
