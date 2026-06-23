@@ -17,6 +17,50 @@ downloading missing local prerequisites, stores answers in the ignored root
 `.conf` file, backs up stock firmware, flashes the connected device, copies
 application source with `mpremote`, and resets the device when possible.
 
+Use the development wrapper when an install run should produce a shareable
+transcript for GitHub issue review or hardware validation analysis:
+
+```bash
+./dev_install.sh \
+  --issue OWNER/REPO#123 \
+  --device-label bench-a \
+  --hardware-note "captured serial-visible install behavior" \
+  -- --port /dev/cu.usbmodem31101
+```
+
+`dev_install.sh` stores generated artifacts under
+`tools/.local/dev-install/`, which is ignored by Git. Each run includes the raw
+visible installer transcript, a redacted transcript, run metadata, and a
+GitHub-ready Markdown issue body. Posting requires an explicit issue target and
+an already-authenticated `gh` CLI; otherwise the local issue body remains
+available for manual review.
+
+For deeper hardware feedback, pass installer tracing through the wrapper:
+
+```bash
+./dev_install.sh --trace -- --port /dev/cu.usbmodem31101
+```
+
+Trace mode enables installer debug logging and writes a separate redacted trace
+file under `tools/.local/debug/`. The trace records phase transitions,
+firmware metadata and checksum, prerequisite state, best-effort esptool target
+identity, post-flash MicroPython/mpremote probes, upload inventory, command
+exit statuses, and reset status. It does not commit firmware dumps or local
+secrets.
+
+To force a clean prerequisite setup without deleting operational artifacts, run:
+
+```bash
+./install.sh --clean-tools
+```
+
+The cleanup removes `tools/.local/micropython-venv/`,
+`tools/.local/downloads/firmware/`, and `tools/.local/micropython-libs/`.
+It preserves stock backups in `tools/.local/backups/`, debug logs in
+`tools/.local/debug/`, and developer install captures in
+`tools/.local/dev-install/`. Use `./dev_install.sh --clean-tools` when the
+cleanup transcript should be captured for issue review.
+
 Use the setup script directly when you only want to stage tools, firmware, and
 libraries without flashing:
 

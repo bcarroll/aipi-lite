@@ -28,6 +28,8 @@ class RecoveryDocumentationTests(unittest.TestCase):
         self.assertIn("tools/.local/backups/", self.recovery_text)
         self.assertIn("--backup-chunk-size", self.recovery_text)
         self.assertIn("1048576/16777216", self.recovery_text)
+        self.assertIn("0x00100000", self.recovery_text)
+        self.assertIn("4 KiB", self.recovery_text)
         self.assertIn("exactly matches `AIPI_FLASH_SIZE`", self.recovery_text)
 
     def test_documents_stock_restore_procedure(self):
@@ -51,7 +53,7 @@ class RecoveryDocumentationTests(unittest.TestCase):
         self.assertIn("[RECOVERY.md](RECOVERY.md)", self.readme_text)
         self.assertIn("exact-size backup", self.readme_text)
         self.assertIn("`feat/01-backup-recovery` | Implemented", self.impl_text)
-        self.assertIn("chunked reads", self.impl_text)
+        self.assertIn("smaller-chunk retries", self.impl_text)
 
 
 if __name__ == "__main__":

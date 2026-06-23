@@ -215,6 +215,27 @@ is worth the added firmware complexity.
   accessibility, supply-chain, and procurement requirements for the complete
   system, including the local service and device hardware.
 
+## Developer Install Capture
+
+Add a host-only `dev_install.sh` wrapper for the development team. The wrapper
+should run the normal `install.sh` flow with the installer arguments supplied on
+the command line, preserve the interactive prompts and exit status an operator
+would see, and capture the visible stdout/stderr transcript for later review.
+
+The captured transcript is intended to be added to a GitHub issue for ChatGPT
+inspection, but it must be treated as an external sharing step rather than
+firmware behavior. The wrapper should save redacted issue-ready output under an
+ignored local path, require an explicit GitHub issue target before posting, and
+avoid committing logs, credentials, device identifiers, Wi-Fi settings, tokens,
+firmware dumps, or other local-only artifacts. If GitHub upload tooling is not
+available or authenticated, the wrapper should leave a local issue body artifact
+that a developer can inspect and submit manually.
+
+The same capture path is also the preferred host-side collection mechanism for
+future hardware validation runs. Developers can add non-secret device labels and
+hardware notes to the issue body while preserving the installer transcript,
+metadata, and redacted local artifacts for later analysis.
+
 ## Documentation to Maintain
 
 - `SPEC.md`: hardware facts, pinout, verified source links, and electrical
@@ -252,14 +273,16 @@ baseline:
 
 | Plan component | Imported status | Evidence |
 | --- | --- | --- |
-| Flashing support | Implemented for backup/recovery milestone | `install.sh`, `RECOVERY.md`, `tools/setup_micropython_tools.sh`, `tools/README.md`, and `README.md` document and automate exact-size chunked stock backup, MicroPython install, source upload, and stock restore using ignored local artifacts. |
+| Flashing support | Implemented for backup/recovery milestone | `install.sh`, `RECOVERY.md`, `tools/setup_micropython_tools.sh`, `tools/README.md`, and `README.md` document and automate installer self-update, sanitized debug artifacts, exact-size adaptive stock backup, prerequisite cleanup, MicroPython install, source upload, and stock restore using ignored local artifacts. |
 | MicroPython source skeleton | Partially implemented | `src/main.py` renders a boot status screen through the reusable display wrapper. |
 | Pin mapping | Partially implemented | `src/display.py` uses GPIO3 backlight, GPIO15 CS, GPIO7 D/C, GPIO18 reset, GPIO16 SCLK, and GPIO17 MOSI, matching the LCD pins in `SPEC.md`. |
 | Display bring-up | Implemented, hardware validation pending | `src/display.py` wraps ST7735 setup, PWM backlight control, text layout, and named status screens; `src/display_probe.py` cycles boot, Wi-Fi, ready, recording, processing, speaking, and error screens. |
-| GPIO status LED and side button | Not implemented | No GPIO46 WS2812 or GPIO42 button handling has been imported. |
+| GPIO status LED and side button | Implemented, hardware validation pending | `src/status_led.py`, `src/button.py`, `src/io_probe.py`, and `tests/test_gpio_status_input.py` add GPIO46 status states, GPIO42 active-low debounce events, and an opt-in GPIO-only serial probe. |
 | Wi-Fi and local-only service policy | Implemented, hardware validation pending | `src/wifi_config.py`, `src/local_endpoint.py`, and `src/wifi_probe.py` load ignored local Wi-Fi config, reject public service endpoints by default, call only local `/health`, and report health state through serial plus available LED/display modules. |
-| ES8311 audio control and I2S audio | Codec control implemented; I2S audio not implemented | `src/es8311.py` and `src/audio_probe.py` configure the ES8311 over I2C at expected address `0x18`, keep the DAC muted, and default GPIO9 speaker enable off. Microphone capture and speaker playback remain later milestones. |
-| Push-to-talk assistant flow | Not implemented | No recording lifecycle, local service exchange, response display, or response playback has been imported. |
+| ES8311 audio control and I2S audio | Codec control, microphone capture, and speaker playback implemented; hardware validation pending | `src/es8311.py` and `src/audio_probe.py` configure the ES8311 over I2C at expected address `0x18`, keep the DAC muted, and default GPIO9 speaker enable off. `src/audio_capture.py` and `src/capture_probe.py` add bounded 16 kHz 16-bit mono capture, WAV packaging, and serial level metrics. `src/audio_playback.py` and `src/playback_probe.py` add bounded 16 kHz 16-bit mono PCM/WAV speaker playback, generated tone output, GPIO9 gate timing, and write/underrun metrics. |
+| Local service contract | Implemented | `src/service_contract.py`, `src/service_client.py`, `service/mock_service.py`, `service/README.md`, and `tests/test_local_service_contract.py` define `/health`, `/session`, `/audio`, `/response/{session_id}`, and `/audio/{response_id}.wav` with a local-only firmware client and deterministic mock service. |
+| Push-to-talk assistant flow | Implemented, hardware validation pending | `src/assistant_state.py`, `src/push_to_talk.py`, `src/reliability.py`, and `tests/test_push_to_talk_flow.py` add a local-only state machine, GPIO42 press/release handling, bounded capture handoff, local service exchange, response text/audio handling, playback, bounded retries, diagnostics, and recoverable error states. |
+| MVP release packaging | Implemented, hardware validation pending | `src/version.py`, `MVP.md`, `README.md`, `src/README.md`, and `tests/test_mvp_release.py` add local-only version metadata, install/configuration guidance, validation checklist, no-cloud network verification, and a validation report template. |
 | On-device inference | Not implemented | No local model runtime, model metadata, or inference routing has been imported. |
 
 The imported baseline should be treated as hardware evidence for the display

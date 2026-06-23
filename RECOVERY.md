@@ -55,6 +55,12 @@ use a smaller chunk size:
   --backup-chunk-size 0x40000
 ```
 
+During installer backups, failed chunks are retried at smaller sizes down to
+`0x1000` / 4 KiB, and the installer avoids resetting the chip between backup
+chunks. If a failure repeats at `0x00100000` after those smaller retries, treat
+it as an address-specific failure at the stock app region or as evidence that
+the USB transport is still unstable.
+
 Manual backup is also possible after staging tools:
 
 ```bash
@@ -75,6 +81,8 @@ Expected backup indicators:
 - `flash_id` reports a flash chip without connection errors.
 - `read_flash` reaches 100 percent for every chunk and writes a complete
   16 MB / `16777216` byte `.bin` file.
+- A repeated failure at the same chunk offset is reported with the offset and
+  the minimum retry size that was attempted.
 - The backup file remains under ignored `tools/.local/` or another location
   outside source control.
 
@@ -146,6 +154,8 @@ Before any erase, write, or restore operation:
 - Backs up full 16 MB stock flash in chunks before installing MicroPython.
 - Rejects partial stock backups whose byte count does not match the configured
   flash size.
+- Retries failed backup chunks at smaller sizes without resetting the chip
+  between chunk reads.
 - Restores a saved stock firmware backup with `--restore` or
   `--restore-backup`.
 - Keeps generated tools, downloads, and backups under ignored `tools/.local/`

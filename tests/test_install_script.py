@@ -1,6 +1,9 @@
 """Tests for the root install.sh firmware installer."""
 
 from pathlib import Path
+import shutil
+import subprocess
+import tempfile
 import unittest
 
 
@@ -33,6 +36,129 @@ class InstallScriptTests(unittest.TestCase):
         self.assertIn("bash \"${SETUP_SCRIPT}\"", self.script_text)
         self.assertIn("-y|--yes", self.script_text)
 
+    def test_self_updates_from_git_before_installer_actions(self):
+        """The installer should pull the latest script before parsing normal actions."""
+        self_update_index = self.script_text.index('self_update_from_git "$@"')
+        parser_index = self.script_text.index("while [[ $# -gt 0 ]]", self_update_index)
+
+        self.assertIn('git -C "${worktree_root}" pull --ff-only', self.script_text)
+        self.assertIn('exec env AIPI_INSTALL_SELF_UPDATED=1 "${SCRIPT_DIR}/install.sh" "$@"', self.script_text)
+        self.assertIn("--skip-self-update", self.script_text)
+        self.assertIn("AIPI_SKIP_SELF_UPDATE", self.script_text)
+        self.assertIn("git pull failed; installer stopped before device operations", self.script_text)
+        self.assertLess(self_update_index, parser_index)
+
+    def test_debug_mode_writes_sanitized_issue_artifact(self):
+        """Debug mode should write an ignored, sanitized issue-ready artifact."""
+        gitignore_text = GITIGNORE.read_text(encoding="utf-8")
+        debug_index = self.script_text.index("start_debug_logging")
+        self_update_index = self.script_text.index('self_update_from_git "$@"')
+
+        self.assertIn("--debug", self.script_text)
+        self.assertIn("--debug-file FILE", self.script_text)
+        self.assertIn("AIPI_INSTALL_DEBUG", self.script_text)
+        self.assertIn("AIPI_INSTALL_DEBUG_FILE", self.script_text)
+        self.assertIn('TOOLS_ROOT="${TOOLS_DIR}/.local"', self.script_text)
+        self.assertIn('debug/install-debug-%s.txt', self.script_text)
+        self.assertIn("redact_stream()", self.script_text)
+        self.assertIn("mkfifo", self.script_text)
+        self.assertIn("redacted-mac", self.script_text)
+        self.assertIn("Sanitized run context", self.script_text)
+        self.assertIn("status --short --branch", self.script_text)
+        self.assertIn("Installer debug file:", self.script_text)
+        self.assertIn("tools/.local/", gitignore_text)
+        self.assertLess(debug_index, self_update_index)
+
+    def test_trace_mode_writes_device_and_install_status_artifact(self):
+        """Trace mode should add detailed sanitized install and target diagnostics."""
+        self.assertIn("--trace", self.script_text)
+        self.assertIn("--trace-file FILE", self.script_text)
+        self.assertIn("AIPI_INSTALL_TRACE", self.script_text)
+        self.assertIn("AIPI_INSTALL_TRACE_FILE", self.script_text)
+        self.assertIn("debug/install-trace-%s.txt", self.script_text)
+        self.assertIn("trace_event()", self.script_text)
+        self.assertIn("trace_file_metadata()", self.script_text)
+        self.assertIn("trace_source_inventory()", self.script_text)
+        self.assertIn("trace_device_probe()", self.script_text)
+        self.assertIn("trace_micropython_probe()", self.script_text)
+        self.assertIn("run_with_trace()", self.script_text)
+        self.assertIn("chip_id", self.script_text)
+        self.assertIn("flash_id", self.script_text)
+        self.assertIn("read_mac", self.script_text)
+        self.assertIn("micropython_firmware", self.script_text)
+        self.assertIn("install_write_flash", self.script_text)
+        self.assertIn("upload_application", self.script_text)
+        self.assertIn("sha256_file()", self.script_text)
+
+    def test_trace_mode_creates_ignored_artifact_for_cleanup_run(self):
+        """A trace cleanup run should create debug and trace artifacts only under tools/.local."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            repo_root = Path(tmpdir)
+            tmp_install = repo_root / "install.sh"
+            shutil.copy2(INSTALL_SCRIPT, tmp_install)
+            tmp_install.chmod(0o755)
+
+            result = subprocess.run(
+                [str(tmp_install), "--trace", "--clean-tools"],
+                cwd=repo_root,
+                text=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                check=False,
+            )
+
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertIn("Installer debug file:", result.stdout)
+            self.assertIn("Installer trace file:", result.stdout)
+
+            trace_files = list((repo_root / "tools" / ".local" / "debug").glob("install-trace-*.txt"))
+            self.assertEqual(len(trace_files), 1)
+            trace_text = trace_files[0].read_text(encoding="utf-8")
+            self.assertIn("AIPI-Lite installer trace log", trace_text)
+            self.assertIn("event=installer_start", trace_text)
+            self.assertIn("name=clean_tools", trace_text)
+            self.assertEqual(trace_files[0].stat().st_mode & 0o777, 0o600)
+
+    def test_clean_tools_removes_downloaded_prerequisites_only(self):
+        """The cleanup option should preserve backups and diagnostic artifacts."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            repo_root = Path(tmpdir)
+            tmp_install = repo_root / "install.sh"
+            shutil.copy2(INSTALL_SCRIPT, tmp_install)
+            tmp_install.chmod(0o755)
+
+            tools_root = repo_root / "tools" / ".local"
+            prerequisite_paths = [
+                tools_root / "micropython-venv",
+                tools_root / "downloads" / "firmware",
+                tools_root / "micropython-libs",
+            ]
+            preserved_paths = [
+                tools_root / "backups",
+                tools_root / "debug",
+                tools_root / "dev-install",
+            ]
+            for path in prerequisite_paths + preserved_paths:
+                path.mkdir(parents=True)
+                (path / "marker.txt").write_text("keep scope visible", encoding="utf-8")
+
+            result = subprocess.run(
+                [str(tmp_install), "--clean-tools"],
+                cwd=repo_root,
+                text=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                check=False,
+            )
+
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertIn("Cleaning downloaded prerequisite artifacts", result.stdout)
+            self.assertIn("Prerequisite cleanup complete.", result.stdout)
+            for path in prerequisite_paths:
+                self.assertFalse(path.exists(), f"{path} should have been removed")
+            for path in preserved_paths:
+                self.assertTrue((path / "marker.txt").exists(), f"{path} should be preserved")
+
     def test_answers_are_persisted_in_conf(self):
         """The installer should read and write task answers from .conf."""
         gitignore_text = GITIGNORE.read_text(encoding="utf-8")
@@ -46,6 +172,7 @@ class InstallScriptTests(unittest.TestCase):
         self.assertIn("AIPI_CONFIRM_FLASH", self.script_text)
         self.assertIn("AIPI_CONFIRM_RESTORE", self.script_text)
         self.assertIn("AIPI_BACKUP_CHUNK_SIZE", self.script_text)
+        self.assertIn("AIPI_BACKUP_MIN_CHUNK_SIZE", self.script_text)
         self.assertIn(".conf", gitignore_text)
 
     def test_flashes_firmware_at_offset_zero(self):
@@ -87,10 +214,18 @@ class InstallScriptTests(unittest.TestCase):
         """The stock backup should be chunked and exact-size validated."""
         self.assertIn('BACKUP_CHUNK_SIZE="${AIPI_BACKUP_CHUNK_SIZE:-}"', self.script_text)
         self.assertIn("--backup-chunk-size SIZE", self.script_text)
+        self.assertIn("--backup-min-chunk-size SIZE", self.script_text)
+        self.assertIn("--clean-tools", self.script_text)
+        self.assertIn("--clean-prereqs", self.script_text)
         self.assertIn('BACKUP_CHUNK_SIZE="${BACKUP_CHUNK_SIZE:-0x80000}"', self.script_text)
+        self.assertIn('BACKUP_MIN_CHUNK_SIZE="${BACKUP_MIN_CHUNK_SIZE:-0x1000}"', self.script_text)
         self.assertIn("positive_size_to_bytes()", self.script_text)
         self.assertIn("file_size_bytes()", self.script_text)
         self.assertIn("backup_file_is_complete()", self.script_text)
+        self.assertIn("--before no_reset --after no_reset", self.script_text)
+        self.assertIn("Retrying failed chunks down to", self.script_text)
+        self.assertIn("retrying down to", self.script_text)
+        self.assertIn("read-protected", self.script_text)
         self.assertIn("Existing stock firmware backup is incomplete", self.script_text)
         self.assertIn("backup chunk size mismatch", self.script_text)
         self.assertNotIn('read_flash 0 "${FLASH_SIZE}" "${BACKUP_PATH}"', self.script_text)

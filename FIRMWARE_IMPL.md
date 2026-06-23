@@ -14,6 +14,8 @@ keep each branch focused, and merge only after its acceptance criteria pass.
 
 - Use `feat/<number>-<topic>` for implementation work.
 - Use `docs/<topic>` for documentation-only updates.
+- Use `tooling/<topic>` for host-only developer utilities that do not change
+  firmware runtime behavior.
 - Use `spike/<topic>` for disposable hardware experiments that should not be
   merged as production firmware.
 - Use `fallback/<topic>` only if the MicroPython path fails a documented
@@ -33,12 +35,16 @@ the checklist does not rely on color alone.
 4. 🟡 Pending hardware validation - `feat/04-display-bringup`
 5. 🟡 Pending hardware validation - `feat/05-local-wifi-policy`
 6. 🟡 Pending hardware validation - `feat/06-es8311-codec-control`
-7. 🟡 Pending implementation - `feat/07-audio-capture`
-8. 🟡 Pending implementation - `feat/08-audio-playback`
-9. 🟡 Pending implementation - `feat/09-local-service-contract`
-10. 🟡 Pending implementation - `feat/10-push-to-talk-flow`
-11. 🟡 Pending implementation - `feat/11-reliability-power-errors`
-12. 🟡 Pending implementation - `feat/12-mvp-release`
+7. 🟡 Pending hardware validation - `feat/07-audio-capture`
+8. 🟡 Pending hardware validation - `feat/08-audio-playback`
+9. ✅ Complete - `feat/09-local-service-contract`
+10. 🟡 Pending hardware validation - `feat/10-push-to-talk-flow`
+11. 🟡 Pending hardware validation - `feat/11-reliability-power-errors`
+12. 🟡 Pending hardware validation - `feat/12-mvp-release`
+
+Support tooling branch:
+
+- ✅ Complete - `tooling/dev-install-capture`
 
 Optional on-device inference branches:
 
@@ -60,19 +66,20 @@ tooling directories.
 
 | Branch / component | Status | Evidence | Remaining work |
 | --- | --- | --- | --- |
-| `feat/01-backup-recovery` | Implemented | `install.sh` prompts for bootloader readiness, stores answers in `.conf`, backs up stock flash to ignored tooling storage with exact-size validation and chunked reads, restores saved stock backups, and `RECOVERY.md` documents backup, restore, expected recovery output, and the flashing safety checklist. | Validate the restore flow on physical hardware and record exact stock serial logs. |
+| `feat/01-backup-recovery` | Implemented | `install.sh` self-updates with `git pull --ff-only`, can write sanitized debug artifacts for GitHub issues, can clean downloaded prerequisite artifacts while preserving backups/debug/captures, prompts for bootloader readiness, stores answers in `.conf`, backs up stock flash to ignored tooling storage with exact-size validation, no-reset chunked reads, and smaller-chunk retries, restores saved stock backups, and `RECOVERY.md` documents backup, restore, expected recovery output, and the flashing safety checklist. | Validate the restore flow on physical hardware and record exact stock serial logs. |
+| `tooling/dev-install-capture` | Implemented | `dev_install.sh`, `install.sh --trace`, `tests/test_dev_install_capture.py`, `tests/test_install_script.py`, `README.md`, and `tools/README.md` add host-only installer capture plus deeper trace diagnostics. Captures include raw/redacted transcripts, run metadata, hardware validation notes, GitHub-ready issue bodies, installer phase transitions, firmware metadata, best-effort target probes, upload inventory, and command status under ignored local storage. | Use it during physical hardware validation runs and refine collected metadata if real bench analysis needs more fields. |
 | `feat/02-micropython-skeleton` | Implemented | `src/boot.py`, `src/main.py`, `src/pins.py`, `src/README.md`, and host tests provide safe startup defaults, grouped pin constants, serial-visible bring-up status, and hardware-free regression coverage. | Validate the serial output and display baseline on physical hardware. |
 | `feat/04-display-bringup` | Implemented, hardware validation pending | `src/display.py`, `src/display_probe.py`, `src/aipi_lite_config.py`, `src/main.py`, and `tests/test_aipi_lite_display.py` add an ST7735 wrapper, PWM backlight control, named status screens, an opt-in display probe, and host-side layout coverage. | Run `display_probe.run_probe()` on physical hardware and record final orientation, color order, and readability observations. |
 | LCD pin constants | Implemented | `src/pins.py` includes display, button, status LED, ES8311 audio, speaker enable, charge input, and board power constants from `SPEC.md`. | Verify unconfirmed GPIO10 power behavior before any branch attempts to drive it. |
 | `feat/03-gpio-status-input` | Implemented, hardware validation pending | `src/status_led.py`, `src/button.py`, `src/io_probe.py`, and `tests/test_gpio_status_input.py` add GPIO46 status states, GPIO42 active-low debounce events, a GPIO-only serial probe, and host regression coverage. | Validate LED colors and button press/release serial output on physical hardware. |
 | `feat/05-local-wifi-policy` | Implemented, hardware validation pending | `src/wifi_config.py`, `src/local_endpoint.py`, `src/wifi_probe.py`, `.gitignore`, and `tests/test_wifi_policy.py` add ignored local config loading, local-only endpoint validation, a Wi-Fi `/health` probe, and host-side policy coverage. | Run `wifi_probe.run_probe()` on physical hardware with a local service and record connection, endpoint, LED, and display behavior. |
 | `feat/06-es8311-codec-control` | Implemented, hardware validation pending | `src/es8311.py`, `src/audio_probe.py`, `src/main.py`, and `tests/test_es8311_codec.py` add ES8311 I2C detection, register setup, GPIO9 speaker gate defaults, and host-side regression coverage. | Run `audio_probe.run_probe()` on physical hardware and record the observed scan and audio behavior. |
-| `feat/07-audio-capture` | Not started | No imported I2S microphone capture code. | Implement bounded PCM capture and WAV/PCM packaging. |
-| `feat/08-audio-playback` | Not started | No imported I2S speaker playback code. | Implement playback and speaker enable timing. |
-| `feat/09-local-service-contract` | Not started | No imported LAN service contract or mock service. | Define API, mock service, client, and tests. |
-| `feat/10-push-to-talk-flow` | Not started | No imported assistant state machine. | Integrate button, audio, local service, display, and speaker. |
-| `feat/11-reliability-power-errors` | Not started | No imported reconnect, retry, power, or diagnostics logic. | Add recovery behavior and hardware troubleshooting docs. |
-| `feat/12-mvp-release` | Not started | No imported release checklist. | Package repeatable MVP validation and version metadata. |
+| `feat/07-audio-capture` | Implemented, hardware validation pending | `src/audio_capture.py`, `src/capture_probe.py`, and `tests/test_audio_capture.py` add bounded 16 kHz 16-bit mono I2S capture, WAV packaging, capture metrics, an opt-in capture probe, and host-side coverage. | Run `capture_probe.run_probe()` on physical hardware and record gain, clipping, noise floor, dropped-sample behavior, and whether MicroPython MCLK output works on GPIO6. |
+| `feat/08-audio-playback` | Implemented, hardware validation pending | `src/audio_playback.py`, `src/playback_probe.py`, and `tests/test_audio_playback.py` add bounded 16 kHz 16-bit mono PCM/WAV playback, generated low-volume test tone output, I2S TX setup on GPIO6/GPIO11/GPIO12/GPIO14, GPIO9 speaker enable timing, DAC mute/unmute safety, and host-side coverage for format rejection and write metrics. | Run `playback_probe.run_probe()` on physical hardware and record volume, output noise, underruns, and whether MicroPython MCLK output works on GPIO6 for playback. |
+| `feat/09-local-service-contract` | Implemented | `src/service_contract.py`, `src/service_client.py`, `service/mock_service.py`, `service/README.md`, and `tests/test_local_service_contract.py` define the local-only API, stdlib mock service, firmware client, request/response payloads, error handling, and host-side contract coverage. | Use the client during `feat/10-push-to-talk-flow` integration and validate it against the mock service from device hardware. |
+| `feat/10-push-to-talk-flow` | Implemented, hardware validation pending | `src/assistant_state.py`, `src/push_to_talk.py`, and `tests/test_push_to_talk_flow.py` add the assistant state machine, shared LED/display/serial state output, button press/release handling, bounded capture handoff, local service exchange, response playback, recoverable error states, and host-side flow coverage. | Run one complete exchange on physical hardware against the mock service and record capture, upload, response text, playback, and visible state behavior. |
+| `feat/11-reliability-power-errors` | Implemented, hardware validation pending | `src/reliability.py`, `src/push_to_talk.py`, `MVP.md`, and `tests/test_reliability.py` add bounded retry/backoff, retry diagnostics, reconnect helper, runtime diagnostics formatting, GPIO21 charge-pulse observation, and GPIO10 board-power guarding. | Validate repeated sessions, Wi-Fi/service recovery, serial diagnostics, GPIO21 observations, and that GPIO10 remains unchanged on hardware. |
+| `feat/12-mvp-release` | Implemented, hardware validation pending | `src/version.py`, `MVP.md`, `README.md`, `src/README.md`, and `tests/test_mvp_release.py` add local-only MVP version metadata, install/configuration guidance, validation checklist, report template, and no-cloud verification expectations. | Complete the MVP validation report from a physical hardware run and record tested MicroPython/runtime versions. |
 | `spike/13-on-device-inference-feasibility` | Not started | No imported on-device inference experiment. | Measure feasibility after core I/O is reliable. |
 | `feat/14-on-device-inference` | Not started | No imported inference runtime integration. | Add only after feasibility is proven. |
 
@@ -103,6 +110,69 @@ Acceptance criteria:
 - A user can back up the stock firmware before flashing replacement firmware.
 - A user can restore stock firmware from the documented backup.
 - No binary firmware dumps or secrets are committed.
+
+### `tooling/dev-install-capture`
+
+Purpose: give developers a repeatable way to run the normal installer, capture
+exactly what an operator could see, and attach the sanitized transcript to a
+GitHub issue for ChatGPT inspection.
+
+Expected commits:
+
+- `tooling: add developer install wrapper`
+  - Add `dev_install.sh` as a host-only wrapper around `install.sh`.
+  - Pass installer CLI arguments through to `install.sh` without changing the
+    normal install, backup, restore, prompt, or exit-code behavior.
+  - Capture combined stdout/stderr while still showing output interactively.
+
+- `tooling: add issue-ready transcript handling`
+  - Store captured logs and issue bodies only under ignored local tooling paths.
+  - Redact common secrets, tokens, Wi-Fi values, and local-only identifiers
+    before preparing any GitHub issue content.
+  - Require an explicit issue target before posting, and leave a local issue
+    body artifact when GitHub upload tooling is unavailable or unauthenticated.
+
+- `tests: add developer installer wrapper checks`
+  - Verify pass-through argument handling with a stub installer.
+  - Verify transcript capture preserves visible installer output.
+  - Verify redaction runs before any issue body is posted or written.
+
+- `docs: document developer issue capture`
+  - Explain how developers run `dev_install.sh` with installer arguments.
+  - Explain where local logs are stored and why they remain ignored.
+  - Explain GitHub issue posting prerequisites and manual fallback behavior.
+
+Acceptance criteria:
+
+- `dev_install.sh` runs the same installer path a normal operator would run.
+- The script preserves prompts, visible output, and the installer exit status.
+- A redacted transcript is added to, or prepared for, an explicit GitHub issue.
+- Missing GitHub tooling does not lose the local transcript or mask installer
+  failures.
+- No credentials, device tokens, firmware dumps, or local-only artifacts are
+  committed.
+
+Implementation notes:
+
+- `dev_install.sh` writes each run to `tools/.local/dev-install/` by default,
+  including `install-transcript-raw.txt`, `install-transcript-redacted.txt`,
+  `run-metadata.txt`, and `github-issue-body.md`.
+- Developer options are parsed before a `--` separator; all remaining arguments
+  are passed to `install.sh` unchanged.
+- `--device-label` and repeatable `--hardware-note` entries add non-secret
+  validation context for later device analysis.
+- `--issue OWNER/REPO#NUMBER` or a GitHub issue URL posts the redacted issue
+  body through an already-installed and authenticated `gh` CLI. Without `gh`, or
+  with `--prepare-only`, the issue body remains local for manual review.
+- The wrapper exits with the installer status even if GitHub posting fails, so
+  capture/reporting problems do not hide installer failures.
+- `install.sh --trace` enables `--debug` and writes a separate redacted trace
+  artifact under `tools/.local/debug/` with installer phase transitions,
+  firmware path/size/checksum metadata, prerequisite status, best-effort
+  esptool target identity probes, post-flash MicroPython/mpremote probes,
+  source upload inventory, command exit statuses, and reset status.
+- `dev_install.sh --trace` passes tracing through to the installer while keeping
+  the visible transcript and GitHub issue body behavior unchanged.
 
 ### `feat/02-micropython-skeleton`
 
@@ -349,6 +419,19 @@ Acceptance criteria:
 - Capture does not exhaust heap.
 - Host tests pass.
 
+Implementation notes:
+
+- `audio_capture.py` configures I2S RX for 16 kHz, 16-bit, mono PCM using
+  GPIO6 MCLK, GPIO13 DIN, GPIO12 LRCLK/WS, and GPIO14 BCLK.
+- Capture requests are bounded by `MAX_CAPTURE_BYTES` before allocation, and
+  `capture_pcm()` deinitializes owned I2S objects after reading.
+- WAV packaging is available through `wav_bytes()` for REPL extraction or later
+  local-service upload work; `capture_probe.py` keeps the speaker amplifier gate
+  disabled and reports byte count, sample count, peak level, and clipping count.
+- Physical validation still needs to confirm the MicroPython I2S constructor
+  accepts the `mck` pin on the target firmware image and to record microphone
+  gain, noise, clipping, and dropped-sample observations.
+
 ### `feat/08-audio-playback`
 
 Purpose: play local audio through the ES8311 speaker path.
@@ -379,6 +462,23 @@ Acceptance criteria:
 - Speaker enable is not left on after playback.
 - Playback remains stable while display/status updates run.
 - Host tests pass.
+
+Implementation notes:
+
+- `audio_playback.py` supports bounded 16 kHz, 16-bit, mono PCM and RIFF/WAVE
+  payloads with matching format fields. Unsupported sample rates, channel
+  counts, bit depths, non-PCM formats, oversized payloads, and unaligned PCM
+  fail before I2S writes.
+- I2S TX uses GPIO6 MCLK, GPIO11 DOUT, GPIO12 LRCLK/WS, and GPIO14 BCLK with
+  bounded write chunks. Partial frame writes are rejected; partial aligned
+  writes are retried and counted as underruns for serial diagnostics.
+- `playback_probe.py` initializes the ES8311 output path, generates a short
+  low-volume test tone, unmutes the DAC only during playback, enables GPIO9
+  only while I2S samples are being written, and always disables GPIO9 plus
+  mutes the DAC before returning.
+- Physical validation still needs to confirm audible output, safe volume,
+  output noise, underrun behavior, and MicroPython MCLK behavior on the target
+  firmware image.
 
 ### `feat/09-local-service-contract`
 
@@ -417,6 +517,23 @@ Acceptance criteria:
 - Firmware can talk to the mock local service without cloud access.
 - Mock service returns deterministic text/audio for firmware testing.
 - Contract tests pass.
+
+Implementation notes:
+
+- `service_contract.py` defines contract version
+  `aipi-lite-local-service-v1`, endpoint paths, status names, content types, and
+  path-safe URL helpers.
+- `service_client.py` validates the configured base URL with
+  `local_endpoint.validate_local_endpoint()` before requests and supports
+  `/health`, `/session`, `/audio`, `/response/{session_id}`, and local response
+  WAV downloads. All HTTP responses are closed after processing.
+- `service/mock_service.py` is a development-only Python standard-library HTTP
+  service. It accepts sessions and audio uploads, returns deterministic response
+  text, and serves a deterministic 16 kHz, 16-bit, mono WAV response.
+- `service/README.md` documents request payloads, response payloads, headers,
+  error responses, and the local runbook. The mock service has no production
+  authentication or hardening and must stay on an operator-controlled local
+  network.
 
 ### `feat/10-push-to-talk-flow`
 
@@ -459,6 +576,21 @@ Acceptance criteria:
 - Error states are visible and recoverable.
 - Host tests pass.
 
+Implementation notes:
+
+- `assistant_state.py` defines the shared assistant state names and maps each
+  state to existing LED/display status names. `StatusOutputs` updates serial,
+  GPIO46 LED, and LCD from the same state transition source.
+- `push_to_talk.py` adds `PushToTalkController`, which validates local service
+  health, moves to `recording` on debounced button press, captures bounded WAV
+  audio on release, starts a local service session, uploads audio, retrieves
+  response text/audio, plays response WAV audio, and returns to `ready`.
+- Capture, service, and playback dependencies are injectable so host tests can
+  cover normal flow, service failure, capture failure, playback failure, and
+  button polling without attached hardware.
+- Long-press behavior remains reserved until GPIO10 board-power behavior is
+  physically validated.
+
 ### `feat/11-reliability-power-errors`
 
 Purpose: harden the MVP for repeated local use.
@@ -499,6 +631,20 @@ Acceptance criteria:
 - Power-management behavior is documented conservatively.
 - Host tests pass.
 
+Implementation notes:
+
+- `reliability.py` adds `RetryPolicy` and `call_with_retries()` for bounded
+  attempts and backoff. The push-to-talk controller uses this policy for local
+  service health, session, upload, response, and audio download operations.
+- `DiagnosticsLog` emits serial-friendly state transitions, retry events,
+  failure types, heap observations when available, and runtime metrics such as
+  playback underruns.
+- `ReconnectManager` centralizes Wi-Fi reconnect attempts around the existing
+  local Wi-Fi connector without changing endpoint policy.
+- `ChargePulseReader` reads GPIO21 only as a charge-pulse observation and does
+  not infer battery percentage. `BoardPowerGuard` keeps GPIO10 blocked unless a
+  future hardware-validated safety flag explicitly allows control.
+
 ### `feat/12-mvp-release`
 
 Purpose: package the first local-only MVP for repeatable installation and use.
@@ -534,6 +680,16 @@ Acceptance criteria:
 - Version and runtime details are traceable.
 - No secrets or binary firmware dumps are committed.
 - Host tests and hardware checklist pass.
+
+Implementation notes:
+
+- `version.py` records firmware name, local-only MVP version, target model,
+  local-only profile, and service contract metadata for serial/reporting use.
+- `MVP.md` packages the stock-backup prerequisite, flashing workflow, ignored
+  local Wi-Fi/service configuration, MVP validation checklist, no-cloud network
+  verification, and a validation report template.
+- README files now reference the assistant flow, reliability helpers, MVP
+  metadata, and validation guide.
 
 ### `spike/13-on-device-inference-feasibility`
 
@@ -673,6 +829,8 @@ Acceptance criteria:
   approval.
 - Keep on-device inference optional until feasibility measurements show it is
   stable on the target device.
+- Keep developer install transcripts and GitHub issue payloads redacted, and
+  post them only to an explicit issue target chosen by the operator.
 - Keep all generated Python methods documented with docstrings.
 - Add host-side tests for Python logic whenever code is generated.
 - Update `SPEC.md` when hardware behavior is verified or corrected.
