@@ -79,7 +79,8 @@ mask install failures. The same cleanup option can be captured with
 `./dev_install.sh --clean-tools`. For deeper hardware feedback, run
 `./dev_install.sh --trace -- ...` so the visible transcript records the local
 trace artifact path while the installer writes detailed trace data under
-`tools/.local/debug/`.
+`tools/.local/debug/`. See [DEVELOPER.md](DEVELOPER.md) for the concise
+connected-device test and GitHub reporting workflow.
 
 If local prerequisites are missing, the installer prompts before downloading or
 installing components under ignored `tools/.local/`, then continues with the
