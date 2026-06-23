@@ -33,7 +33,7 @@ the checklist does not rely on color alone.
 4. 🟡 Pending hardware validation - `feat/04-display-bringup`
 5. 🟡 Pending hardware validation - `feat/05-local-wifi-policy`
 6. 🟡 Pending hardware validation - `feat/06-es8311-codec-control`
-7. 🟡 Pending implementation - `feat/07-audio-capture`
+7. 🟡 Pending hardware validation - `feat/07-audio-capture`
 8. 🟡 Pending implementation - `feat/08-audio-playback`
 9. 🟡 Pending implementation - `feat/09-local-service-contract`
 10. 🟡 Pending implementation - `feat/10-push-to-talk-flow`
@@ -67,7 +67,7 @@ tooling directories.
 | `feat/03-gpio-status-input` | Implemented, hardware validation pending | `src/status_led.py`, `src/button.py`, `src/io_probe.py`, and `tests/test_gpio_status_input.py` add GPIO46 status states, GPIO42 active-low debounce events, a GPIO-only serial probe, and host regression coverage. | Validate LED colors and button press/release serial output on physical hardware. |
 | `feat/05-local-wifi-policy` | Implemented, hardware validation pending | `src/wifi_config.py`, `src/local_endpoint.py`, `src/wifi_probe.py`, `.gitignore`, and `tests/test_wifi_policy.py` add ignored local config loading, local-only endpoint validation, a Wi-Fi `/health` probe, and host-side policy coverage. | Run `wifi_probe.run_probe()` on physical hardware with a local service and record connection, endpoint, LED, and display behavior. |
 | `feat/06-es8311-codec-control` | Implemented, hardware validation pending | `src/es8311.py`, `src/audio_probe.py`, `src/main.py`, and `tests/test_es8311_codec.py` add ES8311 I2C detection, register setup, GPIO9 speaker gate defaults, and host-side regression coverage. | Run `audio_probe.run_probe()` on physical hardware and record the observed scan and audio behavior. |
-| `feat/07-audio-capture` | Not started | No imported I2S microphone capture code. | Implement bounded PCM capture and WAV/PCM packaging. |
+| `feat/07-audio-capture` | Implemented, hardware validation pending | `src/audio_capture.py`, `src/capture_probe.py`, and `tests/test_audio_capture.py` add bounded 16 kHz 16-bit mono I2S capture, WAV packaging, capture metrics, an opt-in capture probe, and host-side coverage. | Run `capture_probe.run_probe()` on physical hardware and record gain, clipping, noise floor, dropped-sample behavior, and whether MicroPython MCLK output works on GPIO6. |
 | `feat/08-audio-playback` | Not started | No imported I2S speaker playback code. | Implement playback and speaker enable timing. |
 | `feat/09-local-service-contract` | Not started | No imported LAN service contract or mock service. | Define API, mock service, client, and tests. |
 | `feat/10-push-to-talk-flow` | Not started | No imported assistant state machine. | Integrate button, audio, local service, display, and speaker. |
@@ -348,6 +348,19 @@ Acceptance criteria:
 - Captured sample can be inspected off-device.
 - Capture does not exhaust heap.
 - Host tests pass.
+
+Implementation notes:
+
+- `audio_capture.py` configures I2S RX for 16 kHz, 16-bit, mono PCM using
+  GPIO6 MCLK, GPIO13 DIN, GPIO12 LRCLK/WS, and GPIO14 BCLK.
+- Capture requests are bounded by `MAX_CAPTURE_BYTES` before allocation, and
+  `capture_pcm()` deinitializes owned I2S objects after reading.
+- WAV packaging is available through `wav_bytes()` for REPL extraction or later
+  local-service upload work; `capture_probe.py` keeps the speaker amplifier gate
+  disabled and reports byte count, sample count, peak level, and clipping count.
+- Physical validation still needs to confirm the MicroPython I2S constructor
+  accepts the `mck` pin on the target firmware image and to record microphone
+  gain, noise, clipping, and dropped-sample observations.
 
 ### `feat/08-audio-playback`
 

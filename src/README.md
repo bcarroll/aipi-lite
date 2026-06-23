@@ -18,6 +18,8 @@ ESP32-S3 image by the repository installer.
 | `aipi_lite_config.py` | Compatibility shim for the imported ST7735 baseline. |
 | `es8311.py` | ES8311 I2C register driver and GPIO9 speaker amplifier gate helper. |
 | `audio_probe.py` | Opt-in serial codec probe that scans I2C, initializes the ES8311, and briefly pulses the muted speaker gate. |
+| `audio_capture.py` | Bounded 16 kHz 16-bit mono I2S microphone capture and WAV packaging helpers. |
+| `capture_probe.py` | Opt-in serial microphone probe that initializes ES8311 input, captures a short PCM buffer, and reports level metrics. |
 | `wifi_config.py` | Loader for ignored local Wi-Fi and local-service configuration. |
 | `local_endpoint.py` | Local-only endpoint parser and validator for configured service URLs. |
 | `wifi_probe.py` | Explicit Wi-Fi/local-service probe that validates endpoint policy, connects Wi-Fi, calls `/health`, and reports status. |
@@ -118,8 +120,26 @@ audio_probe.run_probe()
 
 The probe prints the I2C scan result, initializes the codec for 16 kHz 16-bit
 I2S with MCLK on GPIO6, keeps the DAC muted, briefly enables the GPIO9 speaker
-amplifier gate, and disables it again before returning. It does not capture or
-play I2S audio; those are separate later milestones.
+amplifier gate, and disables it again before returning.
+
+## Microphone Capture Probe
+
+The capture milestone adds bounded I2S microphone capture on the ES8311 audio
+path using GPIO6 MCLK, GPIO13 DIN, GPIO12 LRCLK/WS, and GPIO14 BCLK. The
+default capture format is 16 kHz, 16-bit, mono PCM with WAV packaging helpers.
+
+Run the probe explicitly when the device is ready to validate microphone input:
+
+```python
+import capture_probe
+capture_probe.run_probe()
+```
+
+The probe initializes the ES8311 input path, keeps GPIO9 speaker enable
+disabled, captures a short bounded PCM sample, and prints byte count, sample
+count, peak level, and clipping count to serial. It does not write captured
+audio to flash by default; use `audio_capture.wav_bytes()` from a REPL or later
+service upload code when an off-device WAV artifact is needed.
 
 ## Wi-Fi and Local Service Probe
 
@@ -169,6 +189,9 @@ status, and updates the status LED and display when those modules initialize.
   should remain independent of Wi-Fi, audio, and GPIO10 board-power control.
 - `wifi_probe.py` is opt-in. It validates endpoint policy before network
   connection attempts and should remain local-only by default.
+- `capture_probe.py` is opt-in. It initializes the ES8311 input and I2S
+  microphone path, keeps speaker output disabled, and should remain bounded so
+  a capture test cannot exhaust heap.
 - Local Wi-Fi credentials, service URLs, and operator overrides belong in
   ignored local configuration files, not in source control.
 - Replacement firmware must remain local-only by default. Do not add cloud,
