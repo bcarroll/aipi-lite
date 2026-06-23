@@ -416,9 +416,9 @@ trace_device_probe() {
   fi
 
   trace_event "device_probe" "tool=esptool" "status=start"
-  trace_command_output "esptool chip id" "${esptool_py}" -m esptool --chip esp32s3 "${port_args[@]}" --before no_reset --after no_reset chip_id
-  trace_command_output "esptool flash id" "${esptool_py}" -m esptool --chip esp32s3 "${port_args[@]}" --before no_reset --after no_reset flash_id
-  trace_command_output "esptool read mac" "${esptool_py}" -m esptool --chip esp32s3 "${port_args[@]}" --before no_reset --after no_reset read_mac
+  trace_command_output "esptool chip id" "${esptool_py}" -m esptool --chip esp32s3 "${port_args[@]}" --before no-reset --after no-reset chip-id
+  trace_command_output "esptool flash id" "${esptool_py}" -m esptool --chip esp32s3 "${port_args[@]}" --before no-reset --after no-reset flash-id
+  trace_command_output "esptool read mac" "${esptool_py}" -m esptool --chip esp32s3 "${port_args[@]}" --before no-reset --after no-reset read-mac
   trace_event "device_probe" "tool=esptool" "status=complete"
 }
 
@@ -1228,6 +1228,83 @@ backup_file_is_complete() {
   [[ "${actual_bytes}" -eq "${expected_bytes}" ]]
 }
 
+extract_esptool_connected_port() {
+  local output="$1"
+  local line
+  local serial_candidate=""
+  local detected_port=""
+
+  while IFS= read -r line || [[ -n "${line}" ]]; do
+    if [[ "${line}" =~ Connected[[:space:]]to[[:space:]].*[[:space:]]on[[:space:]]([^:[:space:]]+):? ]]; then
+      detected_port="${BASH_REMATCH[1]}"
+      break
+    fi
+
+    if [[ "${line}" =~ ^Serial[[:space:]]port[[:space:]]([^:[:space:]]+): ]]; then
+      serial_candidate="${BASH_REMATCH[1]}"
+      continue
+    fi
+
+    if [[ -n "${serial_candidate}" && "${line}" =~ ^(Chip[[:space:]]is|Detecting[[:space:]]chip[[:space:]]type) ]]; then
+      detected_port="${serial_candidate}"
+      break
+    fi
+  done <<<"${output}"
+
+  detected_port="${detected_port%:}"
+  if [[ -n "${detected_port}" ]]; then
+    printf '%s\n' "${detected_port}"
+  fi
+}
+
+lock_esptool_auto_port() {
+  local esptool_py="$1"
+  local output
+  local status
+  local detected_port
+  local command_line
+
+  if [[ -n "${PORT}" ]]; then
+    return
+  fi
+
+  echo "Auto-detecting ESP32-S3 serial port..."
+  command_line="$(quote_args "${esptool_py}" -m esptool --chip esp32s3 --before no-reset --after no-reset chip-id | redact_stream)"
+  trace_event "command_start" "phase=auto_port_detect"
+  trace_line "command=${command_line}"
+
+  set +e
+  output="$("${esptool_py}" -m esptool --chip esp32s3 --before no-reset --after no-reset chip-id 2>&1)"
+  status=$?
+  set -e
+
+  if trace_enabled; then
+    {
+      printf '\n### esptool auto port detection\n'
+      printf '$ %s\n' "${command_line}"
+      printf '%s\n' "${output}"
+      printf '(exit %s)\n' "${status}"
+    } | redact_stream >>"${TRACE_FILE}"
+  fi
+  trace_event "command_end" "phase=auto_port_detect" "status=${status}"
+
+  if [[ "${status}" -ne 0 ]]; then
+    echo "warning: esptool auto-detect probe failed; later commands will continue with esptool auto-detect." >&2
+    return
+  fi
+
+  detected_port="$(extract_esptool_connected_port "${output}")"
+  if [[ -z "${detected_port}" ]]; then
+    echo "warning: esptool auto-detect probe succeeded but did not report a serial port; later commands will continue with esptool auto-detect." >&2
+    return
+  fi
+
+  PORT="${detected_port}"
+  config_set "AIPI_SERIAL_PORT" "${PORT}"
+  trace_event "port_detect" "tool=esptool" "status=locked" "port=${PORT}"
+  echo "Detected ESP32-S3 serial port: ${PORT}"
+}
+
 backup_stock_firmware() {
   local esptool_py="$1"
   shift
@@ -1294,13 +1371,14 @@ backup_stock_firmware() {
     read_size_arg="$(format_hex_size "${read_size}")"
     echo "Backing up flash chunk ${offset_arg}+${read_size_arg}"
     if ! run_with_trace "backup_read_flash" "${esptool_py}" -m esptool --chip esp32s3 "${port_args[@]}" \
-      --before no_reset --after no_reset \
-      read_flash "${offset_arg}" "${read_size_arg}" "${chunk_path}"; then
+      --before no-reset --after no-reset \
+      read-flash "${offset_arg}" "${read_size_arg}" "${chunk_path}"; then
       rm -f "${chunk_path}"
       if [[ "${read_size}" -le "${minimum_chunk_size_bytes}" ]]; then
         rm -f "${tmp_path}"
         echo "error: failed to read stock firmware backup chunk at ${offset_arg} after retrying down to ${read_size_arg}" >&2
         echo "error: if this repeats at the same offset, the stock firmware region may be read-protected or the USB link is unstable." >&2
+        echo "hint: rerun with --port ${PORT:-PORT} --backup-chunk-size 0x40000 --backup-min-chunk-size 0x1000 after confirming the device is still in bootloader mode." >&2
         exit 1
       fi
 
@@ -1516,6 +1594,11 @@ main() {
     ensure_restore_prerequisites
     esptool_py="${VENV_DIR}/bin/python"
     ensure_bootloader_ready
+    lock_esptool_auto_port "${esptool_py}"
+    if [[ -n "${PORT}" ]]; then
+      port_args=(--port "${PORT}")
+      connect_target="${PORT}"
+    fi
     trace_device_probe "${esptool_py}" "${port_args[@]}"
     restore_stock_firmware "${esptool_py}" "${port_args[@]}"
     trace_event "phase" "name=restore" "status=complete"
@@ -1538,6 +1621,11 @@ main() {
   mpremote_bin="${VENV_DIR}/bin/mpremote"
 
   ensure_bootloader_ready
+  lock_esptool_auto_port "${esptool_py}"
+  if [[ -n "${PORT}" ]]; then
+    port_args=(--port "${PORT}")
+    connect_target="${PORT}"
+  fi
   trace_device_probe "${esptool_py}" "${port_args[@]}"
   trace_event "phase" "name=stock_backup" "status=start"
   backup_stock_firmware "${esptool_py}" "${port_args[@]}"

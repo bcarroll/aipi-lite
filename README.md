@@ -101,6 +101,10 @@ device:
 ./install.sh
 ```
 
+When `esptool` successfully auto-detects an ESP32-S3, the installer records
+that serial port in `.conf` and reuses it for backup retries, erase, and flash
+commands so later steps do not rescan every host serial device.
+
 Use a specific MicroPython firmware build when the latest standard
 ESP32_GENERIC_S3 image is not the right target:
 

@@ -24,7 +24,7 @@ class RecoveryDocumentationTests(unittest.TestCase):
         """Recovery docs should explain bootloader access and stock backup."""
         self.assertIn("Bootloader Mode", self.recovery_text)
         self.assertIn("Stock Firmware Backup", self.recovery_text)
-        self.assertIn("read_flash 0 0x1000000", self.recovery_text)
+        self.assertIn("read-flash 0 0x1000000", self.recovery_text)
         self.assertIn("tools/.local/backups/", self.recovery_text)
         self.assertIn("--backup-chunk-size", self.recovery_text)
         self.assertIn("1048576/16777216", self.recovery_text)

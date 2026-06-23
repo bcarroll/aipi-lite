@@ -82,9 +82,9 @@ class InstallScriptTests(unittest.TestCase):
         self.assertIn("trace_device_probe()", self.script_text)
         self.assertIn("trace_micropython_probe()", self.script_text)
         self.assertIn("run_with_trace()", self.script_text)
-        self.assertIn("chip_id", self.script_text)
-        self.assertIn("flash_id", self.script_text)
-        self.assertIn("read_mac", self.script_text)
+        self.assertIn("chip-id", self.script_text)
+        self.assertIn("flash-id", self.script_text)
+        self.assertIn("read-mac", self.script_text)
         self.assertIn("micropython_firmware", self.script_text)
         self.assertIn("install_write_flash", self.script_text)
         self.assertIn("upload_application", self.script_text)
@@ -196,6 +196,57 @@ class InstallScriptTests(unittest.TestCase):
         self.assertIn('write_flash 0 "${RESTORE_BACKUP_PATH}"', self.script_text)
         self.assertLess(restore_index, resolve_index)
 
+    def test_auto_detected_esptool_port_is_reused(self):
+        """Auto-detected esptool ports should be locked before backup retries."""
+        main_text = self.script_text[self.script_text.index("main()") :]
+        lock_index = main_text.index('lock_esptool_auto_port "${esptool_py}"')
+        probe_index = main_text.index('trace_device_probe "${esptool_py}"')
+        backup_index = main_text.index('backup_stock_firmware "${esptool_py}"')
+
+        self.assertIn("extract_esptool_connected_port()", self.script_text)
+        self.assertIn("lock_esptool_auto_port()", self.script_text)
+        self.assertIn("Connected[[:space:]]to", self.script_text)
+        self.assertIn('config_set "AIPI_SERIAL_PORT" "${PORT}"', self.script_text)
+        self.assertIn('port_args=(--port "${PORT}")', self.script_text)
+        self.assertIn("Detected ESP32-S3 serial port:", self.script_text)
+        self.assertIn("auto-detect probe failed", self.script_text)
+        self.assertIn("phase=auto_port_detect", self.script_text)
+        self.assertLess(lock_index, probe_index)
+        self.assertLess(lock_index, backup_index)
+
+    def test_esptool_port_parser_handles_v5_connected_output(self):
+        """The port parser should capture the successful esptool v5 port line."""
+        start = self.script_text.index("extract_esptool_connected_port()")
+        end = self.script_text.index("\n\nlock_esptool_auto_port()", start)
+        function_text = self.script_text[start:end]
+        sample_output = "\n".join(
+            [
+                "Serial port /dev/ttyS99:",
+                "/dev/ttyS99 failed to connect",
+                "Serial port /dev/ttyS7:",
+                "Connecting....",
+                "Connected to ESP32-S3 on /dev/ttyS7:",
+                "Chip type: ESP32-S3",
+            ]
+        )
+
+        result = subprocess.run(
+            [
+                "bash",
+                "-c",
+                f"{function_text}\nextract_esptool_connected_port \"$1\"",
+                "test-shell",
+                sample_output,
+            ],
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            check=False,
+        )
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(result.stdout.strip(), "/dev/ttyS7")
+
     def test_backs_up_stock_firmware_before_flashing(self):
         """The installer should read the stock flash before erase/write operations."""
         main_text = self.script_text[self.script_text.index("main()") :]
@@ -205,7 +256,7 @@ class InstallScriptTests(unittest.TestCase):
 
         self.assertIn('BACKUP_DIR="${TOOLS_ROOT}/backups"', self.script_text)
         self.assertIn("AIPI_STOCK_BACKUP_PATH", self.script_text)
-        self.assertIn('read_flash "${offset_arg}" "${read_size_arg}" "${chunk_path}"', self.script_text)
+        self.assertIn('read-flash "${offset_arg}" "${read_size_arg}" "${chunk_path}"', self.script_text)
         self.assertIn('mv "${tmp_path}" "${BACKUP_PATH}"', self.script_text)
         self.assertLess(backup_index, erase_index)
         self.assertLess(backup_index, write_index)
@@ -222,13 +273,14 @@ class InstallScriptTests(unittest.TestCase):
         self.assertIn("positive_size_to_bytes()", self.script_text)
         self.assertIn("file_size_bytes()", self.script_text)
         self.assertIn("backup_file_is_complete()", self.script_text)
-        self.assertIn("--before no_reset --after no_reset", self.script_text)
+        self.assertIn("--before no-reset --after no-reset", self.script_text)
         self.assertIn("Retrying failed chunks down to", self.script_text)
         self.assertIn("retrying down to", self.script_text)
         self.assertIn("read-protected", self.script_text)
+        self.assertIn("--backup-chunk-size 0x40000 --backup-min-chunk-size 0x1000", self.script_text)
         self.assertIn("Existing stock firmware backup is incomplete", self.script_text)
         self.assertIn("backup chunk size mismatch", self.script_text)
-        self.assertNotIn('read_flash 0 "${FLASH_SIZE}" "${BACKUP_PATH}"', self.script_text)
+        self.assertNotIn('read-flash 0 "${FLASH_SIZE}" "${BACKUP_PATH}"', self.script_text)
 
     def test_uploads_current_application_baseline(self):
         """The installer should copy the current app source when no app dir exists."""

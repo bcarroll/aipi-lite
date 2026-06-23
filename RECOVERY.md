@@ -68,18 +68,18 @@ tools/setup_micropython_tools.sh --skip-firmware --skip-libraries
 tools/.local/micropython-venv/bin/python -m esptool \
   --chip esp32s3 \
   --port /dev/cu.usbmodem31101 \
-  flash_id
+  flash-id
 tools/.local/micropython-venv/bin/python -m esptool \
   --chip esp32s3 \
   --port /dev/cu.usbmodem31101 \
-  read_flash 0 0x1000000 tools/.local/backups/aipi-lite-stock.bin
+  read-flash 0 0x1000000 tools/.local/backups/aipi-lite-stock.bin
 ```
 
 Expected backup indicators:
 
 - `esptool` detects an ESP32-S3.
-- `flash_id` reports a flash chip without connection errors.
-- `read_flash` reaches 100 percent for every chunk and writes a complete
+- `flash-id` reports a flash chip without connection errors.
+- `read-flash` reaches 100 percent for every chunk and writes a complete
   16 MB / `16777216` byte `.bin` file.
 - A repeated failure at the same chunk offset is reported with the offset and
   the minimum retry size that was attempted.
