@@ -133,8 +133,12 @@ and opt-in hardware/service probes:
 - `src/capture_probe.py`
 - `src/audio_playback.py`
 - `src/playback_probe.py`
+- `src/assistant_state.py`
+- `src/push_to_talk.py`
+- `src/reliability.py`
 - `src/service_contract.py`
 - `src/service_client.py`
+- `src/version.py`
 - `src/wifi_config.py`
 - `src/local_endpoint.py`
 - `src/wifi_probe.py`
@@ -152,9 +156,12 @@ add bounded 16 kHz 16-bit mono microphone capture and WAV packaging helpers for
 the ES8311/I2S path. `audio_playback.py` and `playback_probe.py` add bounded
 16 kHz 16-bit mono PCM/WAV speaker playback and a generated low-volume tone
 probe. `service_contract.py` and `service_client.py` define the local assistant
-service API and client. `wifi_probe.py` connects only to configured local Wi-Fi
-and calls only a local `/health` endpoint after endpoint policy validation
-passes.
+service API and client. `assistant_state.py`, `push_to_talk.py`, and
+`reliability.py` add the local-only assistant state machine, push-to-talk
+exchange flow, bounded retries, diagnostics, and conservative power
+observations. `version.py` records MVP metadata. `wifi_probe.py` connects only
+to configured local Wi-Fi and calls only a local `/health` endpoint after
+endpoint policy validation passes.
 
 The GPIO status/input probe remains opt-in so normal boot stays recoverable. To
 cycle the GPIO46 WS2812/NeoPixel status LED states and print debounced GPIO42
@@ -209,8 +216,8 @@ WAV input. The probe unmutes the DAC only for playback, enables GPIO9 only
 while I2S samples are being written, then mutes the DAC and disables GPIO9
 before returning.
 
-The local service client is available for later push-to-talk integration. It
-validates that the configured service URL is local-only before calling
+The local service client is used by the push-to-talk MVP flow. It validates
+that the configured service URL is local-only before calling
 `/health`, `/session`, `/audio`, `/response/{session_id}`, or response WAV URLs.
 For development, run the stdlib-only mock service on the host:
 
@@ -221,6 +228,14 @@ python3 -m service.mock_service --host 127.0.0.1 --port 8080
 Use a LAN address instead of `127.0.0.1` only when testing from the device on an
 operator-controlled local network. See [service/README.md](service/README.md)
 for request and response payloads.
+
+The push-to-talk controller is available for MVP validation after local Wi-Fi,
+audio capture, playback, LED, button, and display probes are ready. It keeps the
+same local-only endpoint policy, drives UI state from one assistant state
+machine, retries bounded local service calls, and returns to a visible error
+state on capture, network, service, or playback failures. The full MVP install,
+configuration, validation checklist, and report template are in
+[MVP.md](MVP.md).
 
 The Wi-Fi/local-service probe requires an ignored `src/local_wifi_config.py`
 file on the device. After uploading `src/`, run:

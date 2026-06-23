@@ -38,9 +38,9 @@ the checklist does not rely on color alone.
 7. 🟡 Pending hardware validation - `feat/07-audio-capture`
 8. 🟡 Pending hardware validation - `feat/08-audio-playback`
 9. ✅ Complete - `feat/09-local-service-contract`
-10. 🟡 Pending implementation - `feat/10-push-to-talk-flow`
-11. 🟡 Pending implementation - `feat/11-reliability-power-errors`
-12. 🟡 Pending implementation - `feat/12-mvp-release`
+10. 🟡 Pending hardware validation - `feat/10-push-to-talk-flow`
+11. 🟡 Pending hardware validation - `feat/11-reliability-power-errors`
+12. 🟡 Pending hardware validation - `feat/12-mvp-release`
 
 Support tooling branch:
 
@@ -77,9 +77,9 @@ tooling directories.
 | `feat/07-audio-capture` | Implemented, hardware validation pending | `src/audio_capture.py`, `src/capture_probe.py`, and `tests/test_audio_capture.py` add bounded 16 kHz 16-bit mono I2S capture, WAV packaging, capture metrics, an opt-in capture probe, and host-side coverage. | Run `capture_probe.run_probe()` on physical hardware and record gain, clipping, noise floor, dropped-sample behavior, and whether MicroPython MCLK output works on GPIO6. |
 | `feat/08-audio-playback` | Implemented, hardware validation pending | `src/audio_playback.py`, `src/playback_probe.py`, and `tests/test_audio_playback.py` add bounded 16 kHz 16-bit mono PCM/WAV playback, generated low-volume test tone output, I2S TX setup on GPIO6/GPIO11/GPIO12/GPIO14, GPIO9 speaker enable timing, DAC mute/unmute safety, and host-side coverage for format rejection and write metrics. | Run `playback_probe.run_probe()` on physical hardware and record volume, output noise, underruns, and whether MicroPython MCLK output works on GPIO6 for playback. |
 | `feat/09-local-service-contract` | Implemented | `src/service_contract.py`, `src/service_client.py`, `service/mock_service.py`, `service/README.md`, and `tests/test_local_service_contract.py` define the local-only API, stdlib mock service, firmware client, request/response payloads, error handling, and host-side contract coverage. | Use the client during `feat/10-push-to-talk-flow` integration and validate it against the mock service from device hardware. |
-| `feat/10-push-to-talk-flow` | Not started | No imported assistant state machine. | Integrate button, audio, local service, display, and speaker. |
-| `feat/11-reliability-power-errors` | Not started | No imported reconnect, retry, power, or diagnostics logic. | Add recovery behavior and hardware troubleshooting docs. |
-| `feat/12-mvp-release` | Not started | No imported release checklist. | Package repeatable MVP validation and version metadata. |
+| `feat/10-push-to-talk-flow` | Implemented, hardware validation pending | `src/assistant_state.py`, `src/push_to_talk.py`, and `tests/test_push_to_talk_flow.py` add the assistant state machine, shared LED/display/serial state output, button press/release handling, bounded capture handoff, local service exchange, response playback, recoverable error states, and host-side flow coverage. | Run one complete exchange on physical hardware against the mock service and record capture, upload, response text, playback, and visible state behavior. |
+| `feat/11-reliability-power-errors` | Implemented, hardware validation pending | `src/reliability.py`, `src/push_to_talk.py`, `MVP.md`, and `tests/test_reliability.py` add bounded retry/backoff, retry diagnostics, reconnect helper, runtime diagnostics formatting, GPIO21 charge-pulse observation, and GPIO10 board-power guarding. | Validate repeated sessions, Wi-Fi/service recovery, serial diagnostics, GPIO21 observations, and that GPIO10 remains unchanged on hardware. |
+| `feat/12-mvp-release` | Implemented, hardware validation pending | `src/version.py`, `MVP.md`, `README.md`, `src/README.md`, and `tests/test_mvp_release.py` add local-only MVP version metadata, install/configuration guidance, validation checklist, report template, and no-cloud verification expectations. | Complete the MVP validation report from a physical hardware run and record tested MicroPython/runtime versions. |
 | `spike/13-on-device-inference-feasibility` | Not started | No imported on-device inference experiment. | Measure feasibility after core I/O is reliable. |
 | `feat/14-on-device-inference` | Not started | No imported inference runtime integration. | Add only after feasibility is proven. |
 
@@ -569,6 +569,21 @@ Acceptance criteria:
 - Error states are visible and recoverable.
 - Host tests pass.
 
+Implementation notes:
+
+- `assistant_state.py` defines the shared assistant state names and maps each
+  state to existing LED/display status names. `StatusOutputs` updates serial,
+  GPIO46 LED, and LCD from the same state transition source.
+- `push_to_talk.py` adds `PushToTalkController`, which validates local service
+  health, moves to `recording` on debounced button press, captures bounded WAV
+  audio on release, starts a local service session, uploads audio, retrieves
+  response text/audio, plays response WAV audio, and returns to `ready`.
+- Capture, service, and playback dependencies are injectable so host tests can
+  cover normal flow, service failure, capture failure, playback failure, and
+  button polling without attached hardware.
+- Long-press behavior remains reserved until GPIO10 board-power behavior is
+  physically validated.
+
 ### `feat/11-reliability-power-errors`
 
 Purpose: harden the MVP for repeated local use.
@@ -609,6 +624,20 @@ Acceptance criteria:
 - Power-management behavior is documented conservatively.
 - Host tests pass.
 
+Implementation notes:
+
+- `reliability.py` adds `RetryPolicy` and `call_with_retries()` for bounded
+  attempts and backoff. The push-to-talk controller uses this policy for local
+  service health, session, upload, response, and audio download operations.
+- `DiagnosticsLog` emits serial-friendly state transitions, retry events,
+  failure types, heap observations when available, and runtime metrics such as
+  playback underruns.
+- `ReconnectManager` centralizes Wi-Fi reconnect attempts around the existing
+  local Wi-Fi connector without changing endpoint policy.
+- `ChargePulseReader` reads GPIO21 only as a charge-pulse observation and does
+  not infer battery percentage. `BoardPowerGuard` keeps GPIO10 blocked unless a
+  future hardware-validated safety flag explicitly allows control.
+
 ### `feat/12-mvp-release`
 
 Purpose: package the first local-only MVP for repeatable installation and use.
@@ -644,6 +673,16 @@ Acceptance criteria:
 - Version and runtime details are traceable.
 - No secrets or binary firmware dumps are committed.
 - Host tests and hardware checklist pass.
+
+Implementation notes:
+
+- `version.py` records firmware name, local-only MVP version, target model,
+  local-only profile, and service contract metadata for serial/reporting use.
+- `MVP.md` packages the stock-backup prerequisite, flashing workflow, ignored
+  local Wi-Fi/service configuration, MVP validation checklist, no-cloud network
+  verification, and a validation report template.
+- README files now reference the assistant flow, reliability helpers, MVP
+  metadata, and validation guide.
 
 ### `spike/13-on-device-inference-feasibility`
 

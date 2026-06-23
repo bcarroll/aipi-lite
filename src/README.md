@@ -22,8 +22,12 @@ ESP32-S3 image by the repository installer.
 | `capture_probe.py` | Opt-in serial microphone probe that initializes ES8311 input, captures a short PCM buffer, and reports level metrics. |
 | `audio_playback.py` | Bounded 16 kHz 16-bit mono I2S speaker playback, WAV parsing, and test-tone generation helpers. |
 | `playback_probe.py` | Opt-in serial speaker probe that initializes ES8311 output, plays a generated test tone, and reports write metrics. |
+| `assistant_state.py` | Assistant state names and shared LED/display/serial state output mapping. |
+| `push_to_talk.py` | Local-only push-to-talk controller that coordinates button events, capture, local service exchange, response display, and playback. |
+| `reliability.py` | Bounded retry policy, reconnect helper, serial diagnostics, GPIO21 charge observation, and GPIO10 board-power guard. |
 | `service_contract.py` | Local assistant service endpoint constants, URL helpers, status names, and contract version. |
 | `service_client.py` | Local-only client for `/health`, `/session`, `/audio`, `/response/{session_id}`, and response WAV downloads. |
+| `version.py` | MVP firmware name, version, target model, local-only profile, and service contract metadata. |
 | `wifi_config.py` | Loader for ignored local Wi-Fi and local-service configuration. |
 | `local_endpoint.py` | Local-only endpoint parser and validator for configured service URLs. |
 | `wifi_probe.py` | Explicit Wi-Fi/local-service probe that validates endpoint policy, connects Wi-Fi, calls `/health`, and reports status. |
@@ -167,7 +171,7 @@ prints byte count, sample count, write calls, and underrun count to serial.
 ## Local Service Client
 
 `service_client.py` implements the local assistant service contract used by the
-future push-to-talk flow. It rejects public service endpoints through
+push-to-talk flow. It rejects public service endpoints through
 `local_endpoint.py` before issuing any HTTP request.
 
 The client methods map to the current contract:
@@ -180,6 +184,43 @@ The client methods map to the current contract:
 
 See [../service/README.md](../service/README.md) for the host-side mock service,
 payloads, and error responses.
+
+## Push-To-Talk MVP Flow
+
+`assistant_state.py` defines the shared assistant states: `booting`,
+`connecting`, `ready`, `recording`, `uploading`, `processing`, `speaking`, and
+`error`. `StatusOutputs` maps each state to the existing LED and display status
+names so serial, LED, and display updates come from one state source.
+
+`push_to_talk.py` coordinates one local assistant exchange:
+
+1. Validate local service reachability with `GET /health`.
+2. Move to `recording` on a debounced GPIO42 press.
+3. On release, capture a bounded 16 kHz, 16-bit, mono WAV payload.
+4. Start a local service session and upload the audio.
+5. Retrieve response text and a local WAV response URL.
+6. Play the response while GPIO9 is enabled only for playback.
+7. Return to `ready` or enter visible `error` state on failure.
+
+The controller is dependency-injectable for host tests and hardware validation.
+It does not add public endpoints, cloud calls, telemetry, OTA behavior, or model
+downloads. Long-press behavior remains reserved until GPIO10 board-power
+behavior is physically validated.
+
+## Reliability and Diagnostics
+
+`reliability.py` adds conservative runtime helpers for the MVP:
+
+- `RetryPolicy` and `call_with_retries()` bound local service retries and
+  backoff.
+- `DiagnosticsLog` keeps serial-visible state transitions, retry events, heap
+  observations when available, playback underruns, and failure types.
+- `ReconnectManager` centralizes Wi-Fi reconnect attempts around the existing
+  local Wi-Fi connector.
+- `ChargePulseReader` reads GPIO21 only as `charge_pulse_high` or
+  `charge_pulse_low`; it does not infer battery percentage.
+- `BoardPowerGuard` keeps GPIO10 board-power control blocked unless a future
+  hardware-validated safety flag explicitly allows it.
 
 ## Wi-Fi and Local Service Probe
 
@@ -231,6 +272,10 @@ status, and updates the status LED and display when those modules initialize.
 - `service_client.py` validates endpoint policy before every configured service
   base URL is used. It should remain local-only by default and must not add
   cloud, telemetry, analytics, OTA, or vendor service calls.
+- `push_to_talk.py` should remain local-only and keep long-press behavior
+  reserved until board-power behavior is validated.
+- `reliability.py` may observe GPIO21 but must not claim battery percentage.
+  GPIO10 board-power control must remain behind an explicit guard.
 - `capture_probe.py` is opt-in. It initializes the ES8311 input and I2S
   microphone path, keeps speaker output disabled, and should remain bounded so
   a capture test cannot exhaust heap.
