@@ -303,6 +303,68 @@ class DevInstallCaptureTests(unittest.TestCase):
                 (capture_dir / "github-issue-body.md").read_text(encoding="utf-8"),
             )
 
+    def test_help_only_gh_create_keeps_capture_local(self):
+        """Help-only captures should not create automatic GitHub issues."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmp_path = Path(tmpdir)
+            capture_dir = tmp_path / "capture"
+            installer = self.make_script(
+                tmp_path,
+                "stub_install.sh",
+                """
+                #!/usr/bin/env bash
+                printf 'Usage: ./install.sh [options]\\n'
+                printf 'args:%s\\n' "$*"
+                exit 0
+                """,
+            )
+            gh_marker = tmp_path / "gh-called.txt"
+            gh = self.make_script(
+                tmp_path,
+                "gh",
+                f"""
+                #!/usr/bin/env bash
+                printf called > {gh_marker}
+                exit 0
+                """,
+            )
+            env = os.environ.copy()
+            env.update(
+                {
+                    "AIPI_DEV_INSTALL_SCRIPT": str(installer),
+                    "AIPI_DEV_GH_BIN": str(gh),
+                    "HOME": str(tmp_path),
+                }
+            )
+
+            result = subprocess.run(
+                [
+                    str(DEV_INSTALL_SCRIPT),
+                    "--capture-dir",
+                    str(capture_dir),
+                    "--gh",
+                    "owner/repo",
+                    "--",
+                    "--help",
+                ],
+                cwd=REPO_ROOT,
+                env=env,
+                text=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                check=False,
+            )
+
+            self.assertEqual(result.returncode, 0)
+            self.assertIn("Help-only capture kept local", result.stdout)
+            self.assertIn("Use --issue OWNER/REPO#NUMBER", result.stdout)
+            self.assertFalse(gh_marker.exists())
+            self.assertFalse((capture_dir / "github-created-issue.txt").exists())
+            self.assertIn(
+                "Installer arguments: `--help `",
+                (capture_dir / "github-issue-body.md").read_text(encoding="utf-8"),
+            )
+
     def test_bare_gh_option_uses_repository_environment(self):
         """Bare --gh should create an issue using AIPI_GITHUB_REPO."""
         with tempfile.TemporaryDirectory() as tmpdir:

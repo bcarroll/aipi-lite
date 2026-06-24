@@ -401,6 +401,20 @@ default_github_issue_title() {
   printf '%s\n' "${title}" | redact_stream
 }
 
+installer_help_requested() {
+  local arg
+
+  for arg in "${INSTALL_ARGS[@]}"; do
+    case "${arg}" in
+      -h|--help)
+        return 0
+        ;;
+    esac
+  done
+
+  return 1
+}
+
 create_github_issue() {
   local issue_body="$1"
   local install_status="$2"
@@ -410,6 +424,12 @@ create_github_issue() {
 
   if [[ "${PREPARE_ONLY}" -eq 1 ]]; then
     echo "GitHub issue body prepared without creating an issue: ${issue_body}"
+    return 0
+  fi
+
+  if [[ "${install_status}" -eq 0 ]] && installer_help_requested; then
+    echo "Help-only capture kept local instead of creating a GitHub issue: ${issue_body}"
+    echo "Use --issue OWNER/REPO#NUMBER to append this capture to a chosen tracking issue if needed."
     return 0
   fi
 

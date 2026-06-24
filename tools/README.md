@@ -37,10 +37,11 @@ visible installer transcript, a redacted transcript, run metadata, and a
 GitHub-ready Markdown issue body. `--gh OWNER/REPO` creates a new issue through
 an already-authenticated `gh` CLI; bare `--gh` uses `AIPI_GITHUB_REPO` or the
 local `origin` remote when possible. `--issue OWNER/REPO#123` comments on an
-existing issue instead. Known stock-backup-blocked captures are kept local
-instead of creating another automatic issue; use `--issue` after bench triage
-when one should be attached to a chosen tracker. If GitHub tooling is missing or
-unauthenticated, the local issue body remains available for manual review.
+existing issue instead. Installer help captures and known stock-backup-blocked
+captures are kept local instead of creating automatic issues; use `--issue`
+after bench triage when one should be attached to a chosen tracker. If GitHub
+tooling is missing or unauthenticated, the local issue body remains available
+for manual review.
 
 For deeper hardware feedback, pass installer tracing through the wrapper:
 
