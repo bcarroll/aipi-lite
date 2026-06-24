@@ -16,6 +16,8 @@ It resolves the latest stable ESP32-S3 MicroPython firmware, prompts before
 downloading missing local prerequisites, stores answers in the ignored root
 `.conf` file, backs up stock firmware, flashes the connected device, copies
 application source with `mpremote`, and resets the device when possible.
+Only use `--skip-backup` or `AIPI_SKIP_STOCK_BACKUP=1` when an explicit recovery
+decision accepts that stock firmware recovery may be unavailable.
 
 Use the development wrapper when an install run should produce a shareable
 transcript for GitHub issue review or hardware validation analysis:

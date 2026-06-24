@@ -132,6 +132,11 @@ before erase/write when this happens; re-enter bootloader mode, retry with the
 reported `--port` and smaller chunk options, and check the USB transport before
 attempting another install.
 
+If an operator explicitly accepts that stock firmware recovery may be
+unavailable, pass `--skip-backup` or set `AIPI_SKIP_STOCK_BACKUP=1` for that
+single install run. This bypasses only the stock backup read; it is not saved to
+`.conf`, and the installer still requires the normal erase/write confirmation.
+
 The user still needs to put the AIPI-Lite into ESP32-S3 bootloader mode and
 connect the device over USB-C because those are physical actions.
 

@@ -23,6 +23,7 @@ BACKUP_MIN_CHUNK_SIZE="${AIPI_BACKUP_MIN_CHUNK_SIZE:-}"
 BACKUP_PATH="${AIPI_STOCK_BACKUP_PATH:-}"
 RESTORE_BACKUP_PATH="${AIPI_RESTORE_BACKUP_PATH:-}"
 RESET_AFTER_UPLOAD="${AIPI_RESET_AFTER_UPLOAD:-}"
+SKIP_STOCK_BACKUP="${AIPI_SKIP_STOCK_BACKUP:-0}"
 CONF_FILE="${AIPI_INSTALL_CONF:-${SCRIPT_DIR}/.conf}"
 SKIP_SELF_UPDATE="${AIPI_SKIP_SELF_UPDATE:-0}"
 DEBUG_ENABLED="${AIPI_INSTALL_DEBUG:-0}"
@@ -54,6 +55,9 @@ Options:
                           Stock backup read chunk size. Default: 0x80000.
   --backup-min-chunk-size SIZE
                           Smallest retry chunk size. Default: 0x1000.
+  --skip-backup           Skip reading stock firmware before flashing. This is
+                          not saved to .conf and can make stock recovery
+                          unavailable.
   --baud RATE             Flash baud rate. Default: 460800.
   --no-reset              Do not reset the device after uploading source.
   --restore               Restore the backup path saved in .conf instead of
@@ -82,6 +86,7 @@ Environment overrides:
   AIPI_FLASH_SIZE
   AIPI_BACKUP_CHUNK_SIZE
   AIPI_BACKUP_MIN_CHUNK_SIZE
+  AIPI_SKIP_STOCK_BACKUP
   AIPI_STOCK_BACKUP_PATH
   AIPI_RESTORE_BACKUP_PATH
   AIPI_RESET_AFTER_UPLOAD
@@ -540,10 +545,11 @@ write_debug_context() {
     printf 'backup_path=%s\n' "${BACKUP_PATH:-auto}"
     printf 'restore_backup_path=%s\n' "${RESTORE_BACKUP_PATH:-none}"
     printf 'reset_after_upload=%s\n' "${RESET_AFTER_UPLOAD}"
+    printf 'skip_stock_backup=%s\n' "${SKIP_STOCK_BACKUP}"
     printf 'skip_self_update=%s\n' "${SKIP_SELF_UPDATE}"
   } | redact_stream >>"${DEBUG_FILE}"
 
-  trace_event "run_context" "serial_port=${PORT:-auto}" "app_dir=${APP_DIR:-${SCRIPT_DIR}/src}" "firmware_url=${FIRMWARE_URL}" "baud=${BAUD}" "flash_size=${FLASH_SIZE}" "reset_after_upload=${RESET_AFTER_UPLOAD}" "skip_self_update=${SKIP_SELF_UPDATE}"
+  trace_event "run_context" "serial_port=${PORT:-auto}" "app_dir=${APP_DIR:-${SCRIPT_DIR}/src}" "firmware_url=${FIRMWARE_URL}" "baud=${BAUD}" "flash_size=${FLASH_SIZE}" "reset_after_upload=${RESET_AFTER_UPLOAD}" "skip_stock_backup=${SKIP_STOCK_BACKUP}" "skip_self_update=${SKIP_SELF_UPDATE}"
   trace_file_metadata "conf_file" "${CONF_FILE}"
 
   debug_command_output "uname" uname -a
@@ -650,6 +656,10 @@ while [[ $# -gt 0 ]]; do
     --backup-min-chunk-size)
       BACKUP_MIN_CHUNK_SIZE="${2:?--backup-min-chunk-size requires a value}"
       shift 2
+      ;;
+    --skip-backup)
+      SKIP_STOCK_BACKUP=1
+      shift
       ;;
     --baud)
       BAUD="${2:?--baud requires a value}"
@@ -1438,6 +1448,12 @@ backup_stock_firmware() {
   trace_file_metadata "stock_backup" "${BACKUP_PATH}"
 }
 
+skip_stock_firmware_backup() {
+  echo "warning: stock firmware backup skipped by operator request." >&2
+  echo "warning: stock firmware recovery may be unavailable after flashing." >&2
+  trace_event "stock_backup" "status=skipped" "reason=operator_requested"
+}
+
 resolve_restore_backup_path() {
   local configured_value
 
@@ -1592,6 +1608,7 @@ main() {
   local esptool_py
   local mpremote_bin
   local connect_target="auto"
+  local stock_backup_summary
   local port_args=()
 
   require_command python3
@@ -1651,15 +1668,22 @@ main() {
     connect_target="${PORT}"
   fi
   trace_device_probe "${esptool_py}" "${port_args[@]}"
-  trace_event "phase" "name=stock_backup" "status=start"
-  backup_stock_firmware "${esptool_py}" "${port_args[@]}"
-  trace_event "phase" "name=stock_backup" "status=complete"
+  if is_truthy_value "${SKIP_STOCK_BACKUP}"; then
+    trace_event "phase" "name=stock_backup" "status=skipped" "reason=operator_requested"
+    skip_stock_firmware_backup
+    stock_backup_summary="skipped by operator request"
+  else
+    trace_event "phase" "name=stock_backup" "status=start"
+    backup_stock_firmware "${esptool_py}" "${port_args[@]}"
+    trace_event "phase" "name=stock_backup" "status=complete"
+    stock_backup_summary="${BACKUP_PATH}"
+  fi
 
   cat <<EOF
 
 Ready to install:
   Firmware: ${firmware_path}
-  Stock backup: ${BACKUP_PATH}
+  Stock backup: ${stock_backup_summary}
   Port: ${connect_target}
   Baud: ${BAUD}
 EOF

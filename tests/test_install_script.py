@@ -287,6 +287,19 @@ class InstallScriptTests(unittest.TestCase):
         self.assertIn("backup chunk size mismatch", self.script_text)
         self.assertNotIn('read-flash 0 "${FLASH_SIZE}" "${BACKUP_PATH}"', self.script_text)
 
+    def test_stock_backup_skip_requires_explicit_non_persistent_opt_in(self):
+        """Skipping the stock backup should be explicit and not saved to .conf."""
+        self.assertIn('SKIP_STOCK_BACKUP="${AIPI_SKIP_STOCK_BACKUP:-0}"', self.script_text)
+        self.assertIn("--skip-backup", self.script_text)
+        self.assertIn("AIPI_SKIP_STOCK_BACKUP", self.script_text)
+        self.assertIn('if is_truthy_value "${SKIP_STOCK_BACKUP}"; then', self.script_text)
+        self.assertIn("stock firmware backup skipped by operator request", self.script_text)
+        self.assertIn("stock firmware recovery may be unavailable", self.script_text)
+        self.assertIn('trace_event "stock_backup" "status=skipped" "reason=operator_requested"', self.script_text)
+        self.assertIn('stock_backup_summary="skipped by operator request"', self.script_text)
+        self.assertIn('Stock backup: ${stock_backup_summary}', self.script_text)
+        self.assertNotIn('config_set "AIPI_SKIP_STOCK_BACKUP"', self.script_text)
+
     def test_uploads_current_application_baseline(self):
         """The installer should copy the current app source when no app dir exists."""
         self.assertIn('${SCRIPT_DIR}/src', self.script_text)

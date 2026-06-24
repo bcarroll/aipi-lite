@@ -31,6 +31,9 @@ class RecoveryDocumentationTests(unittest.TestCase):
         self.assertIn("0x00100000", self.recovery_text)
         self.assertIn("4 KiB", self.recovery_text)
         self.assertIn("exactly matches `AIPI_FLASH_SIZE`", self.recovery_text)
+        self.assertIn("--skip-backup", self.recovery_text)
+        self.assertIn("AIPI_SKIP_STOCK_BACKUP=1", self.recovery_text)
+        self.assertIn("loss-of-recovery tradeoff", self.recovery_text)
 
     def test_documents_stock_restore_procedure(self):
         """Recovery docs should explain restore commands and expected signals."""
@@ -47,6 +50,7 @@ class RecoveryDocumentationTests(unittest.TestCase):
         self.assertIn("SPEC.md", self.recovery_text)
         self.assertIn("public cloud", self.recovery_text)
         self.assertIn("not staged in Git", self.recovery_text)
+        self.assertIn("operator accepts that stock firmware recovery may be unavailable", self.recovery_text)
 
     def test_roadmap_and_readme_reference_recovery(self):
         """Top-level docs should point users to recovery procedures."""

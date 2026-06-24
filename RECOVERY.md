@@ -71,6 +71,13 @@ plus `--backup-chunk-size 0x40000 --backup-min-chunk-size 0x1000`. On WSL,
 detach and reattach the USB device to WSL, then verify the `/dev/ttyS*` port
 before retrying.
 
+If a recovery decision explicitly approves flashing without a stock backup, use
+`./install.sh --skip-backup` or `AIPI_SKIP_STOCK_BACKUP=1 ./install.sh` for that
+single run. The skip is not stored in `.conf`; it bypasses only the stock
+firmware backup read and still requires the normal erase/write confirmation.
+Treat this as a loss-of-recovery tradeoff unless another complete stock backup
+already exists.
+
 Manual backup is also possible after staging tools:
 
 ```bash
@@ -143,6 +150,8 @@ Before any erase, write, or restore operation:
 
 - Confirm the stock firmware backup exists and is non-empty.
 - Confirm the backup is not staged in Git: `git status --short`.
+- If `--skip-backup` is used, record the explicit recovery decision and confirm
+  the operator accepts that stock firmware recovery may be unavailable.
 - Confirm the device is on stable USB power.
 - If using the battery module, confirm it has enough charge or remove it during
   bench flashing.
@@ -166,6 +175,9 @@ Before any erase, write, or restore operation:
   flash size.
 - Retries failed backup chunks at smaller sizes without resetting the chip
   between chunk reads.
+- Allows a non-persistent `--skip-backup` / `AIPI_SKIP_STOCK_BACKUP=1` operator
+  override for recovery-approved runs that intentionally accept the loss of a
+  fresh stock backup.
 - Restores a saved stock firmware backup with `--restore` or
   `--restore-backup`.
 - Keeps generated tools, downloads, and backups under ignored `tools/.local/`
