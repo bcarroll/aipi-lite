@@ -842,6 +842,24 @@ is_no() {
   esac
 }
 
+read_prompt_answer() {
+  local prompt="$1"
+  local default_value="${2:-}"
+  local answer
+
+  printf '%s [%s] ' "${prompt}" "${default_value}" >&2
+  if [[ ! -t 0 ]]; then
+    printf '\n' >&2
+    return 1
+  fi
+
+  if ! IFS= read -r answer; then
+    return 1
+  fi
+
+  printf '%s\n' "${answer}"
+}
+
 confirm_from_config() {
   local key="$1"
   local prompt="$2"
@@ -862,7 +880,10 @@ confirm_from_config() {
     fi
   fi
 
-  read -r -p "${prompt} [${default_answer}] " answer
+  if ! answer="$(read_prompt_answer "${prompt}" "${default_answer}")"; then
+    echo "warning: ${prompt} defaulting to ${default_answer} because prompt input is not available." >&2
+    answer="${default_answer}"
+  fi
   answer="${answer:-${default_answer}}"
   if is_yes "${answer}"; then
     config_set "${key}" "yes"
@@ -894,7 +915,14 @@ prompt_value_from_config() {
     return
   fi
 
-  read -r -p "${prompt} [${default_value}] " answer
+  if ! answer="$(read_prompt_answer "${prompt}" "${default_value}")"; then
+    if [[ -z "${default_value}" ]]; then
+      echo "error: ${key} must be set in ${CONF_FILE} or passed on the command line because prompt input is not available" >&2
+      exit 1
+    fi
+    echo "warning: ${prompt} defaulting to ${default_value} because prompt input is not available." >&2
+    answer="${default_value}"
+  fi
   answer="${answer:-${default_value}}"
   if [[ -z "${answer}" ]]; then
     echo "error: ${key} is required" >&2
@@ -923,7 +951,10 @@ prompt_serial_port() {
     return
   fi
 
-  read -r -p "Serial port, or blank for auto-detect [auto] " answer
+  if ! answer="$(read_prompt_answer "Serial port, or blank for auto-detect" "auto")"; then
+    echo "warning: Serial port prompt skipped because prompt input is not available; using auto-detect." >&2
+    answer=""
+  fi
   PORT="${answer}"
   config_set "AIPI_SERIAL_PORT" "${PORT:-auto}"
 }

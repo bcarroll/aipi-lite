@@ -91,6 +91,10 @@ GitHub reporting workflow.
 If local prerequisites are missing, the installer prompts before downloading or
 installing components under ignored `tools/.local/`, then continues with the
 flash and upload workflow after approval.
+Prompts are written explicitly so they remain visible through `dev_install.sh`
+captures. If stdin is not interactive, the installer uses safe defaults for
+optional prompts, treats confirmations as `no`, and exits instead of waiting
+silently.
 
 Installer answers are stored in a root `.conf` file, which is ignored by Git.
 The script reads that file on later runs for values such as serial port,

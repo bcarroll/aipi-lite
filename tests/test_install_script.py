@@ -124,6 +124,46 @@ class InstallScriptTests(unittest.TestCase):
             self.assertIn("name=clean_tools", trace_text)
             self.assertEqual(trace_files[0].stat().st_mode & 0o777, 0o600)
 
+    def test_noninteractive_prompts_default_safely(self):
+        """Closed stdin should not leave installer prompts hidden and waiting."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            repo_root = Path(tmpdir)
+            tmp_install = repo_root / "install.sh"
+            setup_script = repo_root / "tools" / "setup_micropython_tools.sh"
+            shutil.copy2(INSTALL_SCRIPT, tmp_install)
+            tmp_install.chmod(0o755)
+            setup_script.parent.mkdir(parents=True)
+            setup_script.write_text("#!/usr/bin/env bash\nexit 0\n", encoding="utf-8")
+            setup_script.chmod(0o755)
+
+            result = subprocess.run(
+                [
+                    str(tmp_install),
+                    "--skip-self-update",
+                    "--firmware-url",
+                    "https://example.invalid/ESP32_GENERIC_S3-test.bin",
+                    "--skip-backup",
+                ],
+                cwd=repo_root,
+                stdin=subprocess.DEVNULL,
+                text=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                check=False,
+            )
+
+            combined_output = result.stdout + result.stderr
+            self.assertEqual(result.returncode, 1)
+            self.assertIn("Serial port, or blank for auto-detect [auto]", combined_output)
+            self.assertIn("Serial port prompt skipped because prompt input is not available", combined_output)
+            self.assertIn("Download missing components and continue [no]", combined_output)
+            self.assertIn("defaulting to no because prompt input is not available", combined_output)
+            self.assertIn("aborted: prerequisites are missing", combined_output)
+            self.assertIn(
+                "AIPI_SERIAL_PORT=auto",
+                (repo_root / ".conf").read_text(encoding="utf-8"),
+            )
+
     def test_clean_tools_removes_downloaded_prerequisites_only(self):
         """The cleanup option should preserve backups and diagnostic artifacts."""
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -172,6 +212,8 @@ class InstallScriptTests(unittest.TestCase):
         self.assertIn("config_get()", self.script_text)
         self.assertIn("config_set()", self.script_text)
         self.assertIn("confirm_from_config()", self.script_text)
+        self.assertIn("read_prompt_answer()", self.script_text)
+        self.assertNotIn("read -r -p", self.script_text)
         self.assertIn("AIPI_SERIAL_PORT", self.script_text)
         self.assertIn("AIPI_BOOTLOADER_CONFIRMED", self.script_text)
         self.assertIn("AIPI_CONFIRM_FLASH", self.script_text)
