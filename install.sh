@@ -1305,6 +1305,32 @@ lock_esptool_auto_port() {
   echo "Detected ESP32-S3 serial port: ${PORT}"
 }
 
+report_stock_backup_blocked() {
+  local offset_arg="$1"
+  local final_chunk_arg="$2"
+  local flash_size_bytes="$3"
+  local backup_path="$4"
+  local selected_port="${PORT:-auto}"
+
+  trace_event "stock_backup_blocked" \
+    "reason=read_flash_failed" \
+    "offset=${offset_arg}" \
+    "final_chunk_size=${final_chunk_arg}" \
+    "port=${selected_port}" \
+    "backup_path=${backup_path}" \
+    "flash_size=${flash_size_bytes}"
+
+  echo "error: failed to read stock firmware backup chunk at ${offset_arg} after retrying down to ${final_chunk_arg}" >&2
+  echo "error: if this repeats at the same offset, the stock firmware region may be read-protected or the USB link is unstable." >&2
+  echo "hardware validation status: blocked - installer stopped before erase/write because no complete stock backup is available." >&2
+  echo "hardware validation next steps:" >&2
+  echo "  1. Re-enter ESP32-S3 bootloader mode and confirm esptool can connect to ${selected_port}." >&2
+  echo "  2. Retry with --port ${PORT:-PORT} --backup-chunk-size 0x40000 --backup-min-chunk-size 0x1000." >&2
+  echo "  3. Use a direct known-data USB-C cable and a different host USB port; avoid hubs and adapters." >&2
+  echo "  4. On WSL, detach and reattach the USB device to WSL, then verify the /dev/ttyS* port before retrying." >&2
+  echo "  5. If the same offset repeats, keep the capture for bench analysis and do not flash until a complete stock backup exists or a recovery decision is explicitly approved." >&2
+}
+
 backup_stock_firmware() {
   local esptool_py="$1"
   shift
@@ -1376,9 +1402,7 @@ backup_stock_firmware() {
       rm -f "${chunk_path}"
       if [[ "${read_size}" -le "${minimum_chunk_size_bytes}" ]]; then
         rm -f "${tmp_path}"
-        echo "error: failed to read stock firmware backup chunk at ${offset_arg} after retrying down to ${read_size_arg}" >&2
-        echo "error: if this repeats at the same offset, the stock firmware region may be read-protected or the USB link is unstable." >&2
-        echo "hint: rerun with --port ${PORT:-PORT} --backup-chunk-size 0x40000 --backup-min-chunk-size 0x1000 after confirming the device is still in bootloader mode." >&2
+        report_stock_backup_blocked "${offset_arg}" "${read_size_arg}" "${flash_size_bytes}" "${BACKUP_PATH}"
         exit 1
       fi
 

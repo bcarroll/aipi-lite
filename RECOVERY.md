@@ -59,7 +59,17 @@ During installer backups, failed chunks are retried at smaller sizes down to
 `0x1000` / 4 KiB, and the installer avoids resetting the chip between backup
 chunks. If a failure repeats at `0x00100000` after those smaller retries, treat
 it as an address-specific failure at the stock app region or as evidence that
-the USB transport is still unstable.
+the USB transport is still unstable. With `--trace`, the installer records
+`event=stock_backup_blocked` with the failing offset, final retry chunk size,
+selected serial port, backup path, and flash size.
+
+When `hardware validation status: blocked` appears, do not continue with
+flashing unless a complete stock backup already exists or a recovery decision is
+explicitly approved. Re-enter ESP32-S3 bootloader mode, use a direct known-data
+USB-C cable, try a different host USB port, and rerun with the reported `--port`
+plus `--backup-chunk-size 0x40000 --backup-min-chunk-size 0x1000`. On WSL,
+detach and reattach the USB device to WSL, then verify the `/dev/ttyS*` port
+before retrying.
 
 Manual backup is also possible after staging tools:
 
