@@ -61,6 +61,8 @@ class MvpReleaseTests(unittest.TestCase):
             "Validation Report Template",
             "No-cloud network verification",
             "GPIO10 board-power control",
+            "Installer capture issue/link",
+            "stop MVP validation until a complete backup exists",
         ):
             self.assertIn(expected, mvp_text)
 

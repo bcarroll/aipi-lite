@@ -84,6 +84,19 @@ tooling directories.
 | `spike/13-on-device-inference-feasibility` | Not started | No imported on-device inference experiment. | Measure feasibility after core I/O is reliable. |
 | `feat/14-on-device-inference` | Not started | No imported inference runtime integration. | Add only after feasibility is proven. |
 
+## Hardware Validation Notes
+
+- 2026-06-24: GitHub issue #11 captured a `dev_install.sh --trace` run on
+  commit `8afdc028f0edd44d57d4ed176837a6e5db6ad855` that stopped safely during
+  the stock firmware backup. `esptool` connected to an ESP32-S3 on
+  `/dev/ttyS7`, then `read-flash` repeatedly failed at offset `0x100000` after
+  retrying down to the `0x1000` minimum chunk size. The installer did not erase
+  or write flash because no complete stock backup was available. Treat this as
+  a blocked hardware-validation run; re-enter bootloader mode, retry with the
+  issue's reported port and smaller chunk options, and keep replacement flashing
+  blocked until a complete stock backup exists or a recovery decision is
+  explicitly approved.
+
 ## Task Branches
 
 ### `feat/01-backup-recovery`

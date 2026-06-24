@@ -10,6 +10,9 @@ vendor service endpoints.
 Before flashing replacement firmware, complete the stock backup procedure in
 [RECOVERY.md](RECOVERY.md). Keep the backup under ignored local storage such as
 `tools/.local/backups/` and verify the image size before any erase/write step.
+If installer backup validation is blocked, record the install capture issue or
+local capture artifact and stop MVP validation until a complete backup exists or
+a recovery decision is explicitly approved.
 
 Do not commit stock firmware dumps, local Wi-Fi configuration, service URLs,
 device labels, validation transcripts, credentials, or GitHub tokens.
@@ -106,6 +109,7 @@ Firmware version:
 Service contract:
 Mock service host and port:
 Local network:
+Installer capture issue/link:
 
 Host checks:
 - unittest:
