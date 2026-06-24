@@ -606,13 +606,32 @@ self_update_from_git() {
 
   worktree_root="$(git -C "${SCRIPT_DIR}" rev-parse --show-toplevel)"
   echo "Updating installer source with git pull --ff-only..."
-  if ! git -C "${worktree_root}" pull --ff-only; then
-    echo "error: git pull failed; installer stopped before device operations" >&2
+  if ! self_update_pull_with_retry "${worktree_root}"; then
+    echo "error: git pull failed after retry; installer stopped before device operations" >&2
+    echo "error: rerun after Git/network access recovers, or pass --skip-self-update only for an intentional offline or pinned-revision run" >&2
     exit 1
   fi
 
   echo "Restarting installer after self-update..."
   exec env AIPI_INSTALL_SELF_UPDATED=1 "${SCRIPT_DIR}/install.sh" "$@"
+}
+
+self_update_pull_with_retry() {
+  local worktree_root="$1"
+  local attempt
+
+  for attempt in 1 2; do
+    if git -C "${worktree_root}" pull --ff-only; then
+      return 0
+    fi
+
+    if [[ "${attempt}" -lt 2 ]]; then
+      echo "warning: git pull failed; retrying once before installer stops..." >&2
+      sleep 2
+    fi
+  done
+
+  return 1
 }
 
 preparse_preflight_flags "$@"

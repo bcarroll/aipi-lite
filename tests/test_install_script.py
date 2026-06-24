@@ -42,10 +42,15 @@ class InstallScriptTests(unittest.TestCase):
         parser_index = self.script_text.index("while [[ $# -gt 0 ]]", self_update_index)
 
         self.assertIn('git -C "${worktree_root}" pull --ff-only', self.script_text)
+        self.assertIn("self_update_pull_with_retry()", self.script_text)
+        self.assertIn("for attempt in 1 2", self.script_text)
+        self.assertIn("retrying once before installer stops", self.script_text)
+        self.assertIn("sleep 2", self.script_text)
         self.assertIn('exec env AIPI_INSTALL_SELF_UPDATED=1 "${SCRIPT_DIR}/install.sh" "$@"', self.script_text)
         self.assertIn("--skip-self-update", self.script_text)
         self.assertIn("AIPI_SKIP_SELF_UPDATE", self.script_text)
-        self.assertIn("git pull failed; installer stopped before device operations", self.script_text)
+        self.assertIn("git pull failed after retry; installer stopped before device operations", self.script_text)
+        self.assertIn("--skip-self-update only for an intentional offline or pinned-revision run", self.script_text)
         self.assertLess(self_update_index, parser_index)
 
     def test_debug_mode_writes_sanitized_issue_artifact(self):

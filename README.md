@@ -12,9 +12,9 @@ firmware, flash it, and upload the current application baseline:
 ```
 
 Before any installer actions, `install.sh` runs `git pull --ff-only` from the
-repository root and restarts itself once so the active script is current. Use
-`--skip-self-update` or `AIPI_SKIP_SELF_UPDATE=1` only for intentional offline
-or pinned-revision runs.
+repository root, retries once if that pull fails, and restarts itself once so
+the active script is current. Use `--skip-self-update` or
+`AIPI_SKIP_SELF_UPDATE=1` only for intentional offline or pinned-revision runs.
 
 For issue reporting or future troubleshooting context, add `--debug` to keep a
 sanitized installer transcript and environment summary under
