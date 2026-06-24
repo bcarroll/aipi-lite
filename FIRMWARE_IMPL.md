@@ -96,6 +96,11 @@ tooling directories.
   issue's reported port and smaller chunk options, and keep replacement flashing
   blocked until a complete stock backup exists or a recovery decision is
   explicitly approved.
+- 2026-06-24: GitHub issue #12 repeated the same blocked backup signature on
+  commit `fc5fa6a788d8b029b08ee1942c282e53f854cfca`. `dev_install.sh --gh`
+  now keeps this known stock-backup-blocked capture local instead of creating
+  another automatic issue; use `--issue OWNER/REPO#NUMBER` to attach a later
+  capture to a chosen tracking issue after bench triage.
 
 ## Task Branches
 

@@ -241,6 +241,68 @@ class DevInstallCaptureTests(unittest.TestCase):
                 (capture_dir / "github-issue-body.md").read_text(encoding="utf-8"),
             )
 
+    def test_stock_backup_blocked_gh_create_keeps_capture_local(self):
+        """Known blocked stock-backup captures should not create duplicate issues."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmp_path = Path(tmpdir)
+            capture_dir = tmp_path / "capture"
+            installer = self.make_script(
+                tmp_path,
+                "stub_install.sh",
+                """
+                #!/usr/bin/env bash
+                printf 'error: failed to read stock firmware backup chunk at 0x100000 after retrying down to 0x1000\\n'
+                printf 'hardware validation status: blocked - installer stopped before erase/write because no complete stock backup is available.\\n'
+                exit 1
+                """,
+            )
+            gh_marker = tmp_path / "gh-called.txt"
+            gh = self.make_script(
+                tmp_path,
+                "gh",
+                f"""
+                #!/usr/bin/env bash
+                printf called > {gh_marker}
+                exit 0
+                """,
+            )
+            env = os.environ.copy()
+            env.update(
+                {
+                    "AIPI_DEV_INSTALL_SCRIPT": str(installer),
+                    "AIPI_DEV_GH_BIN": str(gh),
+                    "HOME": str(tmp_path),
+                }
+            )
+
+            result = subprocess.run(
+                [
+                    str(DEV_INSTALL_SCRIPT),
+                    "--capture-dir",
+                    str(capture_dir),
+                    "--gh",
+                    "owner/repo",
+                    "--",
+                    "--trace",
+                ],
+                cwd=REPO_ROOT,
+                env=env,
+                text=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                check=False,
+            )
+
+            self.assertEqual(result.returncode, 1)
+            self.assertIn("Stock-backup-blocked capture kept local", result.stdout)
+            self.assertIn("Use --issue OWNER/REPO#NUMBER", result.stdout)
+            self.assertFalse(gh_marker.exists())
+            self.assertFalse((capture_dir / "github-created-issue.txt").exists())
+            self.assertIn(
+                "hardware validation status: blocked",
+                (capture_dir / "github-issue-body.md").read_text(encoding="utf-8"),
+            )
+
     def test_bare_gh_option_uses_repository_environment(self):
         """Bare --gh should create an issue using AIPI_GITHUB_REPO."""
         with tempfile.TemporaryDirectory() as tmpdir:

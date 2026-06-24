@@ -75,6 +75,9 @@ body as a comment when the `gh` CLI is already installed and authenticated. Use
 `--gh OWNER/REPO` to create a new GitHub issue from the same redacted body, or
 use bare `--gh` to read the repository from `AIPI_GITHUB_REPO` or the local
 `origin` remote. Add `--gh-title TITLE` when a specific issue title is useful.
+Known stock-backup-blocked install captures stay local instead of creating
+another automatic issue; use `--issue OWNER/REPO#NUMBER` after bench triage to
+append one to a chosen tracking issue.
 If GitHub tooling is missing, unauthenticated, or `--prepare-only` is supplied,
 the script leaves the issue body locally for inspection or manual submission.
 The wrapper returns the installer exit status so capture or posting problems do
