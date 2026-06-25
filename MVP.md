@@ -5,14 +5,15 @@ PI-Lite / AIPI Lite model `XY006PL01`. It assumes the firmware remains on an
 operator-controlled local network and does not use cloud, telemetry, OTA, or
 vendor service endpoints.
 
-## Stock Backup Prerequisite
+## Stock Backup Option
 
-Before flashing replacement firmware, complete the stock backup procedure in
-[RECOVERY.md](RECOVERY.md). Keep the backup under ignored local storage such as
-`tools/.local/backups/` and verify the image size before any erase/write step.
-If installer backup validation is blocked, record the install capture issue or
-local capture artifact and stop MVP validation until a complete backup exists or
-a recovery decision is explicitly approved.
+Normal MVP installs prepare the device with compatible MicroPython firmware and
+skip the stock backup. If stock recovery matters for a specific unit, run the
+`--backup-stock` procedure in [RECOVERY.md](RECOVERY.md). Keep any backup under
+ignored local storage such as `tools/.local/backups/` and verify the image size
+before relying on it for recovery. If opt-in backup validation is blocked,
+record the install capture issue or local capture artifact and continue without
+`--backup-stock` only when stock recovery is not required.
 
 Do not commit stock firmware dumps, local Wi-Fi configuration, service URLs,
 device labels, validation transcripts, credentials, or GitHub tokens.
@@ -26,7 +27,8 @@ device labels, validation transcripts, credentials, or GitHub tokens.
    ./install.sh --port /dev/cu.usbmodem31101
    ```
 
-3. Confirm the installer has a verified stock backup before flash erase/write.
+3. Confirm the install summary shows either `Stock backup: skipped by default`
+   or the verified backup path requested with `--backup-stock`.
 4. Allow the installer to upload the current `src/` application tree.
 5. Capture serial output after reset and confirm the safe boot lines appear.
 
@@ -69,7 +71,8 @@ production authentication or hardening.
 
 ## MVP Validation Checklist
 
-- Stock firmware backup exists, has the expected size, and remains ignored.
+- Stock firmware backup is skipped by default, or the opt-in backup exists, has
+  the expected size, and remains ignored.
 - `python3 -m unittest discover -s tests -v` passes on the host.
 - `bash -n install.sh`, `bash -n dev_install.sh`, and
   `bash -n tools/setup_micropython_tools.sh` pass.

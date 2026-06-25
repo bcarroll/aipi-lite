@@ -2,9 +2,10 @@
 
 Target device: XORIGIN AI PI-Lite / AIPI Lite, model `XY006PL01`
 
-Use this procedure before replacing stock firmware. Firmware backup files may
-contain vendor provisioning data, local configuration, or device identifiers.
-Keep them out of Git and store them as local operational artifacts.
+Use this procedure when preserving a stock recovery image matters before
+replacing firmware. Firmware backup files may contain vendor provisioning data,
+local configuration, or device identifiers. Keep them out of Git and store them
+as local operational artifacts.
 
 ## Bootloader Mode
 
@@ -19,12 +20,14 @@ restore operations.
 
 ## Stock Firmware Backup
 
-The preferred path is the installer. It prompts for bootloader confirmation,
-stores answers in ignored `.conf`, then backs up the full 16 MB flash in
-smaller chunks before it erases or writes replacement firmware:
+Normal application installs skip the stock backup and prepare the device with
+compatible MicroPython firmware. When a fresh stock recovery image is required,
+use the installer's opt-in backup path. It prompts for bootloader confirmation,
+stores answers in ignored `.conf`, then backs up the full 16 MB flash in smaller
+chunks before it erases or writes replacement firmware:
 
 ```bash
-./install.sh --port /dev/cu.usbmodem31101
+./install.sh --port /dev/cu.usbmodem31101 --backup-stock
 ```
 
 By default, backups are written under:
@@ -38,6 +41,7 @@ Use a specific backup destination when needed:
 ```bash
 ./install.sh \
   --port /dev/cu.usbmodem31101 \
+  --backup-stock \
   --backup-path /path/outside/git/aipi-lite-stock.bin
 ```
 
@@ -52,6 +56,7 @@ use a smaller chunk size:
 ```bash
 ./install.sh \
   --port /dev/cu.usbmodem31101 \
+  --backup-stock \
   --backup-chunk-size 0x40000
 ```
 
@@ -63,20 +68,17 @@ the USB transport is still unstable. With `--trace`, the installer records
 `event=stock_backup_blocked` with the failing offset, final retry chunk size,
 selected serial port, backup path, and flash size.
 
-When `hardware validation status: blocked` appears, do not continue with
-flashing unless a complete stock backup already exists or a recovery decision is
-explicitly approved. Re-enter ESP32-S3 bootloader mode, use a direct known-data
-USB-C cable, try a different host USB port, and rerun with the reported `--port`
-plus `--backup-chunk-size 0x40000 --backup-min-chunk-size 0x1000`. On WSL,
-detach and reattach the USB device to WSL, then verify the `/dev/ttyS*` port
-before retrying.
+When `hardware validation status: blocked` appears during a `--backup-stock`
+run, re-enter ESP32-S3 bootloader mode, use a direct known-data USB-C cable, try
+a different host USB port, and rerun with the reported `--port` plus
+`--backup-chunk-size 0x40000 --backup-min-chunk-size 0x1000`. On WSL, detach and
+reattach the USB device to WSL, then verify the `/dev/ttyS*` port before
+retrying. Rerun without `--backup-stock` only when stock recovery is not
+required.
 
-If a recovery decision explicitly approves flashing without a stock backup, use
-`./install.sh --skip-backup` or `AIPI_SKIP_STOCK_BACKUP=1 ./install.sh` for that
-single run. The skip is not stored in `.conf`; it bypasses only the stock
-firmware backup read and still requires the normal erase/write confirmation.
-Treat this as a loss-of-recovery tradeoff unless another complete stock backup
-already exists.
+Existing `--skip-backup` and `AIPI_SKIP_STOCK_BACKUP=1` remain accepted for
+explicit application-first install runs. They are not stored in `.conf`, and
+the installer still requires the normal erase/write confirmation.
 
 Manual backup is also possible after staging tools:
 
@@ -148,10 +150,11 @@ Expected restore indicators:
 
 Before any erase, write, or restore operation:
 
-- Confirm the stock firmware backup exists and is non-empty.
-- Confirm the backup is not staged in Git: `git status --short`.
-- If `--skip-backup` is used, record the explicit recovery decision and confirm
-  the operator accepts that stock firmware recovery may be unavailable.
+- If `--backup-stock` is used, confirm the stock firmware backup exists and is
+  non-empty before relying on it for recovery.
+- If a backup exists, confirm it is not staged in Git: `git status --short`.
+- If the normal application-first install path is used, confirm the operator
+  accepts that stock firmware recovery may be unavailable.
 - Confirm the device is on stable USB power.
 - If using the battery module, confirm it has enough charge or remove it during
   bench flashing.
@@ -170,14 +173,15 @@ Before any erase, write, or restore operation:
 - Reads and writes installer answers from ignored `.conf`.
 - Prompts for bootloader readiness.
 - Stages missing local tools only after approval.
-- Backs up full 16 MB stock flash in chunks before installing MicroPython.
+- Skips stock backup by default for application-first MicroPython installs.
+- Backs up full 16 MB stock flash in chunks before installing MicroPython when
+  `--backup-stock` or `AIPI_BACKUP_STOCK_FIRMWARE=1` is supplied.
 - Rejects partial stock backups whose byte count does not match the configured
   flash size.
 - Retries failed backup chunks at smaller sizes without resetting the chip
   between chunk reads.
-- Allows a non-persistent `--skip-backup` / `AIPI_SKIP_STOCK_BACKUP=1` operator
-  override for recovery-approved runs that intentionally accept the loss of a
-  fresh stock backup.
+- Keeps existing non-persistent `--skip-backup` /
+  `AIPI_SKIP_STOCK_BACKUP=1` compatibility for explicit application-first runs.
 - Restores a saved stock firmware backup with `--restore` or
   `--restore-backup`.
 - Keeps generated tools, downloads, and backups under ignored `tools/.local/`

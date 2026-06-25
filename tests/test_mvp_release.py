@@ -54,7 +54,7 @@ class MvpReleaseTests(unittest.TestCase):
         mvp_text = (REPO_ROOT / "MVP.md").read_text(encoding="utf-8")
 
         for expected in (
-            "Stock Backup Prerequisite",
+            "Stock Backup Option",
             "MVP Flashing Guide",
             "MVP Configuration Guide",
             "MVP Validation Checklist",
@@ -62,7 +62,7 @@ class MvpReleaseTests(unittest.TestCase):
             "No-cloud network verification",
             "GPIO10 board-power control",
             "Installer capture issue/link",
-            "stop MVP validation until a complete backup exists",
+            "continue without",
         ):
             self.assertIn(expected, mvp_text)
 

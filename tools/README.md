@@ -14,14 +14,16 @@ The preferred full install path is the repository root installer:
 
 It resolves the latest stable ESP32-S3 MicroPython firmware, prompts before
 downloading missing local prerequisites, stores answers in the ignored root
-`.conf` file, backs up stock firmware, flashes the connected device, copies
-application source with `mpremote`, and resets the device when possible.
+`.conf` file, flashes the connected device, copies application source with
+`mpremote`, and resets the device when possible. Normal installs skip the stock
+firmware backup; add `--backup-stock` or set `AIPI_BACKUP_STOCK_FIRMWARE=1`
+when a fresh stock recovery image is required before flashing.
 Installer prompts are printed explicitly so they remain visible through
 `dev_install.sh` captures. In noninteractive runs, optional prompts use safe
 defaults, confirmations default to `no`, and the installer exits instead of
 waiting silently.
-Only use `--skip-backup` or `AIPI_SKIP_STOCK_BACKUP=1` when an explicit recovery
-decision accepts that stock firmware recovery may be unavailable.
+Existing `--skip-backup` and `AIPI_SKIP_STOCK_BACKUP=1` remain accepted for
+explicit application-first install runs.
 
 Use the development wrapper when an install run should produce a shareable
 transcript for GitHub issue review or hardware validation analysis:
@@ -103,7 +105,8 @@ tools/setup_micropython_tools.sh \
 ```
 
 The script does not flash the device automatically. Review the printed commands
-and confirm the stock firmware backup exists before erasing or writing flash.
+before erasing or writing flash. If stock recovery is required, create and
+verify a stock firmware backup before flashing.
 
 ## Staged MicroPython Libraries
 

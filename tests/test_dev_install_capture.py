@@ -252,7 +252,7 @@ class DevInstallCaptureTests(unittest.TestCase):
                 """
                 #!/usr/bin/env bash
                 printf 'error: failed to read stock firmware backup chunk at 0x100000 after retrying down to 0x1000\\n'
-                printf 'hardware validation status: blocked - installer stopped before erase/write because no complete stock backup is available.\\n'
+                printf 'hardware validation status: blocked - installer stopped before erase/write because --backup-stock was requested and no complete stock backup is available.\\n'
                 exit 1
                 """,
             )

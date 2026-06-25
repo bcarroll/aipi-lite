@@ -433,7 +433,7 @@ create_github_issue() {
     return 0
   fi
 
-  if grep -q "hardware validation status: blocked - installer stopped before erase/write because no complete stock backup is available." "${issue_body}"; then
+  if grep -Eq "hardware validation status: blocked .*stock backup" "${issue_body}"; then
     echo "Stock-backup-blocked capture kept local instead of creating a duplicate GitHub issue: ${issue_body}"
     echo "Use --issue OWNER/REPO#NUMBER to append this capture to a chosen tracking issue after bench triage."
     return 0

@@ -294,17 +294,23 @@ class InstallScriptTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(result.stdout.strip(), "/dev/ttyS7")
 
-    def test_backs_up_stock_firmware_before_flashing(self):
-        """The installer should read the stock flash before erase/write operations."""
+    def test_stock_backup_opt_in_runs_before_flashing(self):
+        """The optional stock backup should still run before erase/write operations."""
         main_text = self.script_text[self.script_text.index("main()") :]
+        opt_in_index = main_text.index("if should_backup_stock_firmware; then")
         backup_index = main_text.index('backup_stock_firmware "${esptool_py}"')
         erase_index = main_text.index("erase_flash")
         write_index = main_text.index("write_flash 0")
 
         self.assertIn('BACKUP_DIR="${TOOLS_ROOT}/backups"', self.script_text)
         self.assertIn("AIPI_STOCK_BACKUP_PATH", self.script_text)
+        self.assertIn('BACKUP_STOCK_FIRMWARE="${AIPI_BACKUP_STOCK_FIRMWARE:-0}"', self.script_text)
+        self.assertIn("--backup-stock", self.script_text)
+        self.assertIn("AIPI_BACKUP_STOCK_FIRMWARE", self.script_text)
+        self.assertIn("should_backup_stock_firmware()", self.script_text)
         self.assertIn('read-flash "${offset_arg}" "${read_size_arg}" "${chunk_path}"', self.script_text)
         self.assertIn('mv "${tmp_path}" "${BACKUP_PATH}"', self.script_text)
+        self.assertLess(opt_in_index, backup_index)
         self.assertLess(backup_index, erase_index)
         self.assertLess(backup_index, write_index)
 
@@ -328,23 +334,33 @@ class InstallScriptTests(unittest.TestCase):
         self.assertIn('trace_event "stock_backup_blocked"', self.script_text)
         self.assertIn("hardware validation status: blocked", self.script_text)
         self.assertIn("On WSL, detach and reattach the USB device", self.script_text)
-        self.assertIn("do not flash until a complete stock backup exists", self.script_text)
+        self.assertIn("Rerun without --backup-stock only when stock recovery is not required", self.script_text)
         self.assertIn("--backup-chunk-size 0x40000 --backup-min-chunk-size 0x1000", self.script_text)
         self.assertIn("Existing stock firmware backup is incomplete", self.script_text)
         self.assertIn("backup chunk size mismatch", self.script_text)
         self.assertNotIn('read-flash 0 "${FLASH_SIZE}" "${BACKUP_PATH}"', self.script_text)
 
-    def test_stock_backup_skip_requires_explicit_non_persistent_opt_in(self):
-        """Skipping the stock backup should be explicit and not saved to .conf."""
+    def test_stock_backup_skips_by_default_with_opt_in_backup(self):
+        """Normal installs should skip backup while keeping opt-in recovery backup."""
+        self.assertIn('BACKUP_STOCK_FIRMWARE="${AIPI_BACKUP_STOCK_FIRMWARE:-0}"', self.script_text)
         self.assertIn('SKIP_STOCK_BACKUP="${AIPI_SKIP_STOCK_BACKUP:-0}"', self.script_text)
+        self.assertIn("--backup-stock", self.script_text)
         self.assertIn("--skip-backup", self.script_text)
+        self.assertIn("AIPI_BACKUP_STOCK_FIRMWARE", self.script_text)
         self.assertIn("AIPI_SKIP_STOCK_BACKUP", self.script_text)
-        self.assertIn('if is_truthy_value "${SKIP_STOCK_BACKUP}"; then', self.script_text)
+        self.assertIn("Stock firmware backup skipped by default for application install", self.script_text)
+        self.assertIn("Use --backup-stock when a fresh stock recovery image is required", self.script_text)
+        self.assertIn("should_backup_stock_firmware", self.script_text)
+        self.assertIn('if should_backup_stock_firmware; then', self.script_text)
         self.assertIn("stock firmware backup skipped by operator request", self.script_text)
         self.assertIn("stock firmware recovery may be unavailable", self.script_text)
-        self.assertIn('trace_event "stock_backup" "status=skipped" "reason=operator_requested"', self.script_text)
+        self.assertIn('skip_stock_firmware_backup "operator_requested"', self.script_text)
+        self.assertIn('trace_event "stock_backup" "status=skipped" "reason=${reason}"', self.script_text)
+        self.assertIn('trace_event "phase" "name=stock_backup" "status=skipped" "reason=default_application_install"', self.script_text)
+        self.assertIn('stock_backup_summary="skipped by default"', self.script_text)
         self.assertIn('stock_backup_summary="skipped by operator request"', self.script_text)
         self.assertIn('Stock backup: ${stock_backup_summary}', self.script_text)
+        self.assertNotIn('config_set "AIPI_BACKUP_STOCK_FIRMWARE"', self.script_text)
         self.assertNotIn('config_set "AIPI_SKIP_STOCK_BACKUP"', self.script_text)
 
     def test_uploads_current_application_baseline(self):

@@ -23,6 +23,7 @@ BACKUP_MIN_CHUNK_SIZE="${AIPI_BACKUP_MIN_CHUNK_SIZE:-}"
 BACKUP_PATH="${AIPI_STOCK_BACKUP_PATH:-}"
 RESTORE_BACKUP_PATH="${AIPI_RESTORE_BACKUP_PATH:-}"
 RESET_AFTER_UPLOAD="${AIPI_RESET_AFTER_UPLOAD:-}"
+BACKUP_STOCK_FIRMWARE="${AIPI_BACKUP_STOCK_FIRMWARE:-0}"
 SKIP_STOCK_BACKUP="${AIPI_SKIP_STOCK_BACKUP:-0}"
 CONF_FILE="${AIPI_INSTALL_CONF:-${SCRIPT_DIR}/.conf}"
 SKIP_SELF_UPDATE="${AIPI_SKIP_SELF_UPDATE:-0}"
@@ -55,9 +56,10 @@ Options:
                           Stock backup read chunk size. Default: 0x80000.
   --backup-min-chunk-size SIZE
                           Smallest retry chunk size. Default: 0x1000.
-  --skip-backup           Skip reading stock firmware before flashing. This is
-                          not saved to .conf and can make stock recovery
-                          unavailable.
+  --backup-stock          Read stock firmware before flashing. This optional
+                          recovery step can block install when flash reads fail.
+  --skip-backup           Keep stock backup skipped. This is the default and is
+                          accepted for explicit application-first install runs.
   --baud RATE             Flash baud rate. Default: 460800.
   --no-reset              Do not reset the device after uploading source.
   --restore               Restore the backup path saved in .conf instead of
@@ -86,6 +88,7 @@ Environment overrides:
   AIPI_FLASH_SIZE
   AIPI_BACKUP_CHUNK_SIZE
   AIPI_BACKUP_MIN_CHUNK_SIZE
+  AIPI_BACKUP_STOCK_FIRMWARE
   AIPI_SKIP_STOCK_BACKUP
   AIPI_STOCK_BACKUP_PATH
   AIPI_RESTORE_BACKUP_PATH
@@ -545,11 +548,12 @@ write_debug_context() {
     printf 'backup_path=%s\n' "${BACKUP_PATH:-auto}"
     printf 'restore_backup_path=%s\n' "${RESTORE_BACKUP_PATH:-none}"
     printf 'reset_after_upload=%s\n' "${RESET_AFTER_UPLOAD}"
+    printf 'backup_stock_firmware=%s\n' "${BACKUP_STOCK_FIRMWARE}"
     printf 'skip_stock_backup=%s\n' "${SKIP_STOCK_BACKUP}"
     printf 'skip_self_update=%s\n' "${SKIP_SELF_UPDATE}"
   } | redact_stream >>"${DEBUG_FILE}"
 
-  trace_event "run_context" "serial_port=${PORT:-auto}" "app_dir=${APP_DIR:-${SCRIPT_DIR}/src}" "firmware_url=${FIRMWARE_URL}" "baud=${BAUD}" "flash_size=${FLASH_SIZE}" "reset_after_upload=${RESET_AFTER_UPLOAD}" "skip_stock_backup=${SKIP_STOCK_BACKUP}" "skip_self_update=${SKIP_SELF_UPDATE}"
+  trace_event "run_context" "serial_port=${PORT:-auto}" "app_dir=${APP_DIR:-${SCRIPT_DIR}/src}" "firmware_url=${FIRMWARE_URL}" "baud=${BAUD}" "flash_size=${FLASH_SIZE}" "reset_after_upload=${RESET_AFTER_UPLOAD}" "backup_stock_firmware=${BACKUP_STOCK_FIRMWARE}" "skip_stock_backup=${SKIP_STOCK_BACKUP}" "skip_self_update=${SKIP_SELF_UPDATE}"
   trace_file_metadata "conf_file" "${CONF_FILE}"
 
   debug_command_output "uname" uname -a
@@ -676,8 +680,14 @@ while [[ $# -gt 0 ]]; do
       BACKUP_MIN_CHUNK_SIZE="${2:?--backup-min-chunk-size requires a value}"
       shift 2
       ;;
+    --backup-stock)
+      BACKUP_STOCK_FIRMWARE=1
+      SKIP_STOCK_BACKUP=0
+      shift
+      ;;
     --skip-backup)
       SKIP_STOCK_BACKUP=1
+      BACKUP_STOCK_FIRMWARE=0
       shift
       ;;
     --baud)
@@ -1382,13 +1392,13 @@ report_stock_backup_blocked() {
 
   echo "error: failed to read stock firmware backup chunk at ${offset_arg} after retrying down to ${final_chunk_arg}" >&2
   echo "error: if this repeats at the same offset, the stock firmware region may be read-protected or the USB link is unstable." >&2
-  echo "hardware validation status: blocked - installer stopped before erase/write because no complete stock backup is available." >&2
+  echo "hardware validation status: blocked - installer stopped before erase/write because --backup-stock was requested and no complete stock backup is available." >&2
   echo "hardware validation next steps:" >&2
   echo "  1. Re-enter ESP32-S3 bootloader mode and confirm esptool can connect to ${selected_port}." >&2
   echo "  2. Retry with --port ${PORT:-PORT} --backup-chunk-size 0x40000 --backup-min-chunk-size 0x1000." >&2
   echo "  3. Use a direct known-data USB-C cable and a different host USB port; avoid hubs and adapters." >&2
   echo "  4. On WSL, detach and reattach the USB device to WSL, then verify the /dev/ttyS* port before retrying." >&2
-  echo "  5. If the same offset repeats, keep the capture for bench analysis and do not flash until a complete stock backup exists or a recovery decision is explicitly approved." >&2
+  echo "  5. If the same offset repeats, keep the capture for bench analysis. Rerun without --backup-stock only when stock recovery is not required." >&2
 }
 
 backup_stock_firmware() {
@@ -1498,10 +1508,21 @@ backup_stock_firmware() {
   trace_file_metadata "stock_backup" "${BACKUP_PATH}"
 }
 
+should_backup_stock_firmware() {
+  is_truthy_value "${BACKUP_STOCK_FIRMWARE}" && ! is_truthy_value "${SKIP_STOCK_BACKUP}"
+}
+
 skip_stock_firmware_backup() {
-  echo "warning: stock firmware backup skipped by operator request." >&2
+  local reason="${1:-default_application_install}"
+
+  if [[ "${reason}" == "operator_requested" ]]; then
+    echo "warning: stock firmware backup skipped by operator request." >&2
+  else
+    echo "Stock firmware backup skipped by default for application install." >&2
+    echo "Use --backup-stock when a fresh stock recovery image is required." >&2
+  fi
   echo "warning: stock firmware recovery may be unavailable after flashing." >&2
-  trace_event "stock_backup" "status=skipped" "reason=operator_requested"
+  trace_event "stock_backup" "status=skipped" "reason=${reason}"
 }
 
 resolve_restore_backup_path() {
@@ -1718,15 +1739,19 @@ main() {
     connect_target="${PORT}"
   fi
   trace_device_probe "${esptool_py}" "${port_args[@]}"
-  if is_truthy_value "${SKIP_STOCK_BACKUP}"; then
-    trace_event "phase" "name=stock_backup" "status=skipped" "reason=operator_requested"
-    skip_stock_firmware_backup
-    stock_backup_summary="skipped by operator request"
-  else
+  if should_backup_stock_firmware; then
     trace_event "phase" "name=stock_backup" "status=start"
     backup_stock_firmware "${esptool_py}" "${port_args[@]}"
     trace_event "phase" "name=stock_backup" "status=complete"
     stock_backup_summary="${BACKUP_PATH}"
+  elif is_truthy_value "${SKIP_STOCK_BACKUP}"; then
+    trace_event "phase" "name=stock_backup" "status=skipped" "reason=operator_requested"
+    skip_stock_firmware_backup "operator_requested"
+    stock_backup_summary="skipped by operator request"
+  else
+    trace_event "phase" "name=stock_backup" "status=skipped" "reason=default_application_install"
+    skip_stock_firmware_backup "default_application_install"
+    stock_backup_summary="skipped by default"
   fi
 
   cat <<EOF

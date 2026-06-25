@@ -120,26 +120,25 @@ ESP32_GENERIC_S3 image is not the right target:
   --firmware-url https://micropython.org/resources/firmware/ESP32_GENERIC_S3-20260406-v1.28.0.bin
 ```
 
-Before erasing or writing flash, the installer now requires bootloader
-confirmation and backs up the 16 MB stock flash image to `tools/.local/backups/`
-unless `.conf` points at an existing exact-size backup. The backup read is
-chunked by default so a failed transfer cannot be mistaken for a complete stock
-image on the next run. If a backup stalls on a specific USB setup, reduce the
-chunk size with `--backup-chunk-size 0x40000` or set
-`AIPI_BACKUP_CHUNK_SIZE=0x40000` in `.conf`. The installer also retries failed
-backup chunks down to 4 KiB without resetting the chip between chunks; a repeat
-failure at the same offset should be treated as an address-specific read
-failure or an unstable USB path. In `--trace` mode the installer records this
-as `event=stock_backup_blocked`, including the failing offset, final retry
-chunk size, selected port, backup path, and flash size. The installer stops
-before erase/write when this happens; re-enter bootloader mode, retry with the
-reported `--port` and smaller chunk options, and check the USB transport before
-attempting another install.
+Before erasing or writing flash, the installer requires bootloader confirmation.
+Normal installs skip the stock firmware backup so the device can be prepared
+with compatible MicroPython firmware and the application can be deployed.
+Recovery-focused runs can add `--backup-stock` or set
+`AIPI_BACKUP_STOCK_FIRMWARE=1` to read the 16 MB stock flash image to
+`tools/.local/backups/` before flashing. Existing `--skip-backup` and
+`AIPI_SKIP_STOCK_BACKUP=1` remain accepted for explicit application-first runs.
 
-If an operator explicitly accepts that stock firmware recovery may be
-unavailable, pass `--skip-backup` or set `AIPI_SKIP_STOCK_BACKUP=1` for that
-single install run. This bypasses only the stock backup read; it is not saved to
-`.conf`, and the installer still requires the normal erase/write confirmation.
+When `--backup-stock` is used, the backup read is chunked by default so a failed
+transfer cannot be mistaken for a complete stock image on the next run. If a
+backup stalls on a specific USB setup, reduce the chunk size with
+`--backup-chunk-size 0x40000` or set `AIPI_BACKUP_CHUNK_SIZE=0x40000` in
+`.conf`. The installer also retries failed backup chunks down to 4 KiB without
+resetting the chip between chunks; a repeat failure at the same offset should be
+treated as an address-specific read failure or an unstable USB path. In
+`--trace` mode the installer records this as `event=stock_backup_blocked`,
+including the failing offset, final retry chunk size, selected port, backup
+path, and flash size. Rerun without `--backup-stock` only when stock recovery is
+not required.
 
 The user still needs to put the AIPI-Lite into ESP32-S3 bootloader mode and
 connect the device over USB-C because those are physical actions.
