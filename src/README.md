@@ -8,7 +8,7 @@ ESP32-S3 image by the repository installer.
 | Path | Purpose |
 | --- | --- |
 | `boot.py` | Safe startup defaults. It emits serial status and does not construct GPIO pins or change GPIO10 board-power control. |
-| `main.py` | Application entrypoint. It prints bring-up status and renders the boot status screen when the ST7735 driver is available. |
+| `main.py` | Application entrypoint. It prints bring-up status, renders the boot screen when available, connects the local push-to-talk flow, and polls GPIO42. |
 | `pins.py` | Central pin constants from `SPEC.md`, grouped by display, audio, status LED, button, and power. |
 | `status_led.py` | WS2812/NeoPixel status LED driver for GPIO46 with named firmware states. |
 | `button.py` | Active-low GPIO42 side button reader with debounce and press/release events. |
@@ -68,18 +68,26 @@ On boot, expected serial output includes:
 boot: AIPI-Lite safe startup
 boot: collecting garbage before application start
 boot: GPIO10 board power left unchanged
-main: AIPI-Lite MicroPython skeleton starting
+main: AIPI-Lite MicroPython application starting
 main: serial bring-up active
 main: GPIO10 board power left unchanged
 main: safe boot leaves board_power_control on GPIO10 untouched
 main: speaker amplifier disabled
 main: display boot status rendered
-main: skeleton ready
+main: status LED initialized
+main: connecting local push-to-talk service
+assistant: state connecting: local service
+assistant: state ready
+main: push-to-talk ready
+main: polling right function button
 ```
 
-If display libraries or hardware initialization are unavailable, `main.py`
-prints `main: display boot status skipped: <ErrorName>` and still reaches the
-skeleton-ready line.
+Normal boot stays in the button polling loop after the ready line. If optional
+display or LED initialization is unavailable, `main.py` prints the matching
+`skipped: <ErrorName>` line and continues with serial output. If local Wi-Fi,
+configuration, or service startup fails, `main.py` prints
+`main: push-to-talk startup failed: <ErrorName>` and renders an `error` status
+when display or LED output is available.
 
 ## GPIO Status/Input Probe
 
@@ -204,10 +212,12 @@ names so serial, LED, and display updates come from one state source.
 6. Play the response while GPIO9 is enabled only for playback.
 7. Return to `ready` or enter visible `error` state on failure.
 
-The controller is dependency-injectable for host tests and hardware validation.
-It does not add public endpoints, cloud calls, telemetry, OTA behavior, or model
-downloads. Long-press behavior remains reserved until GPIO10 board-power
-behavior is physically validated.
+During normal boot, `main.py` creates this controller, connects Wi-Fi through
+the existing local connector, validates local service health, and then polls the
+GPIO42 button continuously. The controller is dependency-injectable for host
+tests and hardware validation. It does not add public endpoints, cloud calls,
+telemetry, OTA behavior, or model downloads. Long-press behavior remains
+reserved until GPIO10 board-power behavior is physically validated.
 
 ## Reliability and Diagnostics
 

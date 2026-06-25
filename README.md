@@ -174,10 +174,10 @@ Backup, restore, expected output, and safety details are documented in
 
 See [tools/README.md](tools/README.md) for lower-level setup tooling.
 
-## MicroPython Application Skeleton
+## MicroPython Application
 
-The MicroPython source under `src/` now provides the safe application skeleton
-and opt-in hardware/service probes:
+The MicroPython source under `src/` now provides the normal local-only
+push-to-talk application and opt-in hardware/service probes:
 
 - `src/boot.py`
 - `src/main.py`
@@ -208,8 +208,11 @@ and opt-in hardware/service probes:
 
 `boot.py` emits serial-visible safe startup status without constructing GPIO
 pins or touching GPIO10 board-power control. `main.py` prints the bring-up
-sequence, drives GPIO9 speaker enable low, and renders a best-effort boot
-status screen through the reusable display wrapper. `pins.py` centralizes the
+sequence, drives GPIO9 speaker enable low, renders the boot screen, initializes
+available LED/display outputs, connects Wi-Fi and the local service through the
+push-to-talk controller, and then polls GPIO42 for press/release events. If
+startup fails, `main.py` prints the failure type and renders a visible error
+state when display or LED output is available. `pins.py` centralizes the
 documented pin map for later hardware probe branches. `aipi_lite_config.py`
 remains as a compatibility shim for the imported display baseline. `es8311.py`
 provides codec I2C control and the speaker amplifier gate; `audio_probe.py` is

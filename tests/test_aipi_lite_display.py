@@ -349,7 +349,11 @@ class AipiLiteDisplayConfigTests(unittest.TestCase):
 
         main = importlib.import_module("main")
         messages = []
-        main.main(print_func=messages.append)
+        result = main.main(
+            print_func=messages.append,
+            run_push_to_talk=False,
+            status_led_factory=lambda: object(),
+        )
         tft = FakeTFT.created[0]
 
         self.assertIn(("fill", 0), tft.calls)
@@ -359,7 +363,9 @@ class AipiLiteDisplayConfigTests(unittest.TestCase):
         self.assertIn("main: speaker amplifier disabled", messages)
         speaker_pin = next(pin for pin in FakePin.created if pin.pin_id == 9)
         self.assertEqual(speaker_pin.values, [0, 0])
-        self.assertEqual(messages[-2:], ["main: display boot status rendered", "main: skeleton ready"])
+        self.assertEqual(result, "boot")
+        self.assertIn("main: display boot status rendered", messages)
+        self.assertEqual(messages[-1], "main: boot-only startup complete")
         self.assertEqual(fake_time.sleep_ms_calls, [100])
 
 

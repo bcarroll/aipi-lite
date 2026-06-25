@@ -258,6 +258,49 @@ class PushToTalkFlowTests(unittest.TestCase):
         self.assertEqual(reconnect.calls, 2)
         self.assertEqual(sleeps, [5])
 
+    def test_create_controller_reconnects_wifi_before_service_health(self):
+        """The default controller factory should connect Wi-Fi before health checks."""
+        wifi_config = importlib.import_module("wifi_config")
+        config = wifi_config.WiFiConfig(
+            "LabNet",
+            "secret-password",
+            "http://192.168.1.10:8080",
+        )
+        service = FakeServiceClient()
+        led = FakeStatusLed()
+        display = FakeStatusDisplay()
+        messages = []
+        connect_calls = []
+
+        class ConnectedWLAN:
+            """Fake WLAN that reports an active connection."""
+
+            def isconnected(self):
+                """Return connected after the first connect call."""
+                return True
+
+        def connect_wifi(config_arg, wlan=None):
+            """Record the Wi-Fi reconnect request."""
+            connect_calls.append((config_arg, wlan))
+            return ConnectedWLAN()
+
+        controller = self.push_to_talk.create_controller(
+            config=config,
+            service_client=service,
+            status_led=led,
+            status_display=display,
+            print_func=messages.append,
+            connect_wifi_func=connect_wifi,
+        )
+
+        state = controller.connect()
+
+        self.assertEqual(state, "ready")
+        self.assertEqual(connect_calls, [(config, None)])
+        self.assertEqual(service.calls, [("health",)])
+        self.assertEqual(display.screens[-1], ("ready", None))
+        self.assertIn("assistant: state connecting: local service", messages)
+
     def test_capture_failure_enters_error_state(self):
         """Capture errors should stop the exchange and show an error state."""
         controller, _, display, _ = self.make_controller(
