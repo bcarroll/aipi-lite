@@ -29,8 +29,10 @@ device labels, validation transcripts, credentials, or GitHub tokens.
 
 3. Confirm the install summary shows either `Stock backup: skipped by default`
    or the verified backup path requested with `--backup-stock`.
-4. Allow the installer to upload the current `src/` application tree.
-5. Capture serial output after reset and confirm the safe boot lines appear.
+4. Confirm the installer reports `ESP32-S3 bootloader connection verified`
+   before erase/write operations.
+5. Allow the installer to upload the current `src/` application tree.
+6. Capture serial output after reset and confirm the safe boot lines appear.
 
 Use `dev_install.sh` for hardware validation captures when a GitHub issue body
 is needed for later analysis:
@@ -73,6 +75,7 @@ production authentication or hardening.
 
 - Stock firmware backup is skipped by default, or the opt-in backup exists, has
   the expected size, and remains ignored.
+- Installer bootloader verification passes before flash-sensitive operations.
 - `python3 -m unittest discover -s tests -v` passes on the host.
 - `bash -n install.sh`, `bash -n dev_install.sh`, and
   `bash -n tools/setup_micropython_tools.sh` pass.

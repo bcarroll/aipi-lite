@@ -1375,6 +1375,51 @@ lock_esptool_auto_port() {
   echo "Detected ESP32-S3 serial port: ${PORT}"
 }
 
+require_bootloader_mode() {
+  local esptool_py="$1"
+  shift
+  local port_args=("$@")
+  local output
+  local status
+  local command_line
+  local selected_port="${PORT:-auto-detect}"
+
+  echo "Checking ESP32-S3 bootloader connection on ${selected_port}..."
+  command_line="$(quote_args "${esptool_py}" -m esptool --chip esp32s3 "${port_args[@]}" --before no-reset --after no-reset chip-id | redact_stream)"
+  trace_event "command_start" "phase=bootloader_check" "port=${selected_port}"
+  trace_line "command=${command_line}"
+
+  set +e
+  output="$("${esptool_py}" -m esptool --chip esp32s3 "${port_args[@]}" --before no-reset --after no-reset chip-id 2>&1)"
+  status=$?
+  set -e
+
+  if trace_enabled; then
+    {
+      printf '\n### esptool bootloader check\n'
+      printf '$ %s\n' "${command_line}"
+      printf '%s\n' "${output}"
+      printf '(exit %s)\n' "${status}"
+    } | redact_stream >>"${TRACE_FILE}"
+  fi
+  trace_event "command_end" "phase=bootloader_check" "status=${status}" "port=${selected_port}"
+
+  if [[ "${status}" -eq 0 ]]; then
+    echo "ESP32-S3 bootloader connection verified."
+    return
+  fi
+
+  echo "error: ESP32-S3 bootloader check failed on ${selected_port}." >&2
+  echo "error: installer stopped before stock backup, erase, write, or restore operations." >&2
+  echo "error: put the AIPI-Lite in bootloader mode and run the installer again." >&2
+  print_bootloader_instructions >&2
+  if [[ -n "${output}" ]]; then
+    echo "esptool output:" >&2
+    printf '%s\n' "${output}" | redact_stream >&2
+  fi
+  exit 1
+}
+
 report_stock_backup_blocked() {
   local offset_arg="$1"
   local final_chunk_arg="$2"
@@ -1711,6 +1756,7 @@ main() {
       port_args=(--port "${PORT}")
       connect_target="${PORT}"
     fi
+    require_bootloader_mode "${esptool_py}" "${port_args[@]}"
     trace_device_probe "${esptool_py}" "${port_args[@]}"
     restore_stock_firmware "${esptool_py}" "${port_args[@]}"
     trace_event "phase" "name=restore" "status=complete"
@@ -1738,6 +1784,7 @@ main() {
     port_args=(--port "${PORT}")
     connect_target="${PORT}"
   fi
+  require_bootloader_mode "${esptool_py}" "${port_args[@]}"
   trace_device_probe "${esptool_py}" "${port_args[@]}"
   if should_backup_stock_firmware; then
     trace_event "phase" "name=stock_backup" "status=start"

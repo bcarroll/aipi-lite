@@ -62,6 +62,7 @@ class MvpReleaseTests(unittest.TestCase):
             "No-cloud network verification",
             "GPIO10 board-power control",
             "Installer capture issue/link",
+            "Installer bootloader verification passes",
             "continue without",
         ):
             self.assertIn(expected, mvp_text)

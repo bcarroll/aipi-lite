@@ -36,6 +36,7 @@ class RecoveryDocumentationTests(unittest.TestCase):
         self.assertIn("--skip-backup", self.recovery_text)
         self.assertIn("AIPI_SKIP_STOCK_BACKUP=1", self.recovery_text)
         self.assertIn("Normal application installs skip the stock backup", self.recovery_text)
+        self.assertIn("verifies the ROM bootloader answers `esptool chip-id`", self.recovery_text)
 
     def test_documents_stock_restore_procedure(self):
         """Recovery docs should explain restore commands and expected signals."""
@@ -53,13 +54,16 @@ class RecoveryDocumentationTests(unittest.TestCase):
         self.assertIn("public cloud", self.recovery_text)
         self.assertIn("not staged in Git", self.recovery_text)
         self.assertIn("accepts that stock firmware recovery may be unavailable", self.recovery_text)
+        self.assertIn("before backup, erase, write, or restore commands", self.recovery_text)
 
     def test_roadmap_and_readme_reference_recovery(self):
         """Top-level docs should point users to recovery procedures."""
         self.assertIn("[RECOVERY.md](RECOVERY.md)", self.readme_text)
-        self.assertIn("Normal installs skip the stock firmware backup", self.readme_text)
+        self.assertIn("Normal installs skip the", self.readme_text)
+        self.assertIn("stock firmware backup", self.readme_text)
         self.assertIn("`feat/01-backup-recovery` | Implemented", self.impl_text)
         self.assertIn("smaller-chunk retries", self.impl_text)
+        self.assertIn("without auto-reset before backup, erase, write, or restore operations", self.impl_text)
 
 
 if __name__ == "__main__":

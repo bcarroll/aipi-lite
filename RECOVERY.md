@@ -23,8 +23,9 @@ restore operations.
 Normal application installs skip the stock backup and prepare the device with
 compatible MicroPython firmware. When a fresh stock recovery image is required,
 use the installer's opt-in backup path. It prompts for bootloader confirmation,
-stores answers in ignored `.conf`, then backs up the full 16 MB flash in smaller
-chunks before it erases or writes replacement firmware:
+verifies the ROM bootloader answers `esptool chip-id` without auto-reset, stores
+answers in ignored `.conf`, then backs up the full 16 MB flash in smaller chunks
+before it erases or writes replacement firmware:
 
 ```bash
 ./install.sh --port /dev/cu.usbmodem31101 --backup-stock
@@ -158,7 +159,8 @@ Before any erase, write, or restore operation:
 - Confirm the device is on stable USB power.
 - If using the battery module, confirm it has enough charge or remove it during
   bench flashing.
-- Confirm the device is in ESP32-S3 bootloader mode.
+- Confirm the device is in ESP32-S3 bootloader mode; the installer also verifies
+  this with `esptool chip-id` before backup, erase, write, or restore commands.
 - Confirm [SPEC.md](SPEC.md) still matches the physical unit and no hardware
   modifications have changed the relevant pins.
 - Confirm replacement firmware configuration does not contain public cloud
@@ -172,6 +174,8 @@ Before any erase, write, or restore operation:
 
 - Reads and writes installer answers from ignored `.conf`.
 - Prompts for bootloader readiness.
+- Verifies the ESP32-S3 ROM bootloader responds before backup, erase, write, or
+  restore operations.
 - Stages missing local tools only after approval.
 - Skips stock backup by default for application-first MicroPython installs.
 - Backs up full 16 MB stock flash in chunks before installing MicroPython when

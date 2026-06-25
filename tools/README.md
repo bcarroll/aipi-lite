@@ -15,9 +15,11 @@ The preferred full install path is the repository root installer:
 It resolves the latest stable ESP32-S3 MicroPython firmware, prompts before
 downloading missing local prerequisites, stores answers in the ignored root
 `.conf` file, flashes the connected device, copies application source with
-`mpremote`, and resets the device when possible. Normal installs skip the stock
-firmware backup; add `--backup-stock` or set `AIPI_BACKUP_STOCK_FIRMWARE=1`
-when a fresh stock recovery image is required before flashing.
+`mpremote`, and resets the device when possible. Before flash-sensitive
+operations, it verifies the ESP32-S3 ROM bootloader responds to `esptool
+chip-id` without auto-reset. Normal installs skip the stock firmware backup; add
+`--backup-stock` or set `AIPI_BACKUP_STOCK_FIRMWARE=1` when a fresh stock
+recovery image is required before flashing.
 Installer prompts are printed explicitly so they remain visible through
 `dev_install.sh` captures. In noninteractive runs, optional prompts use safe
 defaults, confirmations default to `no`, and the installer exits instead of

@@ -247,6 +247,7 @@ class InstallScriptTests(unittest.TestCase):
         """Auto-detected esptool ports should be locked before backup retries."""
         main_text = self.script_text[self.script_text.index("main()") :]
         lock_index = main_text.index('lock_esptool_auto_port "${esptool_py}"')
+        bootloader_index = main_text.index('require_bootloader_mode "${esptool_py}"')
         probe_index = main_text.index('trace_device_probe "${esptool_py}"')
         backup_index = main_text.index('backup_stock_firmware "${esptool_py}"')
 
@@ -258,8 +259,30 @@ class InstallScriptTests(unittest.TestCase):
         self.assertIn("Detected ESP32-S3 serial port:", self.script_text)
         self.assertIn("auto-detect probe failed", self.script_text)
         self.assertIn("phase=auto_port_detect", self.script_text)
+        self.assertLess(lock_index, bootloader_index)
         self.assertLess(lock_index, probe_index)
         self.assertLess(lock_index, backup_index)
+
+    def test_bootloader_check_blocks_flash_sensitive_operations(self):
+        """Install and restore should require ROM bootloader sync before flash operations."""
+        main_text = self.script_text[self.script_text.index("main()") :]
+        first_check_index = main_text.index('require_bootloader_mode "${esptool_py}"')
+        restore_index = main_text.index('restore_stock_firmware "${esptool_py}"')
+        second_check_index = main_text.index('require_bootloader_mode "${esptool_py}"', first_check_index + 1)
+        backup_index = main_text.index('backup_stock_firmware "${esptool_py}"')
+        erase_index = main_text.index("install_erase_flash")
+        write_index = main_text.index("install_write_flash")
+
+        self.assertIn("require_bootloader_mode()", self.script_text)
+        self.assertIn("Checking ESP32-S3 bootloader connection", self.script_text)
+        self.assertIn("phase=bootloader_check", self.script_text)
+        self.assertIn("--before no-reset --after no-reset chip-id", self.script_text)
+        self.assertIn("installer stopped before stock backup, erase, write, or restore operations", self.script_text)
+        self.assertIn("put the AIPI-Lite in bootloader mode", self.script_text)
+        self.assertLess(first_check_index, restore_index)
+        self.assertLess(second_check_index, backup_index)
+        self.assertLess(second_check_index, erase_index)
+        self.assertLess(second_check_index, write_index)
 
     def test_esptool_port_parser_handles_v5_connected_output(self):
         """The port parser should capture the successful esptool v5 port line."""

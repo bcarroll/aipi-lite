@@ -108,9 +108,10 @@ device:
 ./install.sh
 ```
 
-When `esptool` successfully auto-detects an ESP32-S3, the installer records
-that serial port in `.conf` and reuses it for backup retries, erase, and flash
-commands so later steps do not rescan every host serial device.
+When `esptool` successfully auto-detects an ESP32-S3 in bootloader mode, the
+installer records that serial port in `.conf` and reuses it for backup retries,
+erase, and flash commands so later steps do not rescan every host serial
+device.
 
 Use a specific MicroPython firmware build when the latest standard
 ESP32_GENERIC_S3 image is not the right target:
@@ -120,9 +121,12 @@ ESP32_GENERIC_S3 image is not the right target:
   --firmware-url https://micropython.org/resources/firmware/ESP32_GENERIC_S3-20260406-v1.28.0.bin
 ```
 
-Before erasing or writing flash, the installer requires bootloader confirmation.
-Normal installs skip the stock firmware backup so the device can be prepared
-with compatible MicroPython firmware and the application can be deployed.
+Before erasing or writing flash, the installer requires bootloader confirmation
+and verifies the ROM bootloader answers `esptool chip-id` without auto-reset. If
+that check fails, the installer prints the bootloader steps and stops before
+stock backup, erase, write, or restore operations. Normal installs skip the
+stock firmware backup so the device can be prepared with compatible MicroPython
+firmware and the application can be deployed.
 Recovery-focused runs can add `--backup-stock` or set
 `AIPI_BACKUP_STOCK_FIRMWARE=1` to read the 16 MB stock flash image to
 `tools/.local/backups/` before flashing. Existing `--skip-backup` and
