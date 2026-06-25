@@ -44,6 +44,37 @@ def _module_value(module, names, default=None):
     return default
 
 
+def _module_name(module):
+    """Return a printable module name for configuration errors."""
+    return getattr(module, "__name__", LOCAL_WIFI_CONFIG_MODULE)
+
+
+def _public_module_names(module):
+    """Return public attribute names exposed by a config module."""
+    try:
+        names = dir(module)
+    except Exception:
+        return ()
+    return tuple(name for name in names if not name.startswith("_"))
+
+
+def _required_module_value(module, names, field_name):
+    """Return a required config attribute with a source-aware error."""
+    try:
+        return _required_text(_module_value(module, names), field_name)
+    except WiFiConfigError:
+        available_names = _public_module_names(module)
+        available_label = ", ".join(available_names) if available_names else "none"
+        raise WiFiConfigError(
+            "missing {} in {} (expected one of {}; available: {})".format(
+                field_name,
+                _module_name(module),
+                ", ".join(names),
+                available_label,
+            )
+        )
+
+
 def config_from_mapping(mapping):
     """Build WiFiConfig from a dictionary-like object."""
     approved_hosts = mapping.get("approved_hosts", mapping.get("APPROVED_LOCAL_HOSTS", ()))
@@ -58,9 +89,13 @@ def config_from_mapping(mapping):
 def config_from_module(module):
     """Build WiFiConfig from an imported local config module."""
     return WiFiConfig(
-        _module_value(module, ("WIFI_SSID", "SSID")),
-        _module_value(module, ("WIFI_PASSWORD", "PASSWORD")),
-        _module_value(module, ("LOCAL_SERVICE_URL", "SERVICE_URL")),
+        _required_module_value(module, ("WIFI_SSID", "SSID"), "ssid"),
+        _required_module_value(module, ("WIFI_PASSWORD", "PASSWORD"), "password"),
+        _required_module_value(
+            module,
+            ("LOCAL_SERVICE_URL", "SERVICE_URL"),
+            "local_service_url",
+        ),
         _module_value(module, ("APPROVED_LOCAL_HOSTS", "APPROVED_HOSTS"), ()),
     )
 

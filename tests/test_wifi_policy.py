@@ -195,6 +195,26 @@ class WifiPolicyTests(unittest.TestCase):
         with self.assertRaises(wifi_config.WiFiConfigError):
             wifi_config.load_config(importer=lambda name: (_ for _ in ()).throw(ImportError(name)))
 
+    def test_wifi_config_reports_available_module_names_when_ssid_is_missing(self):
+        """Wi-Fi config errors should show imported config names without values."""
+        wifi_config = self.import_module("wifi_config")
+        module = types.SimpleNamespace(
+            WIFI_PASSWORD="secret-password",
+            LOCAL_SERVICE_URL="http://192.168.1.10:8080",
+        )
+        module.__name__ = "local_wifi_config"
+
+        with self.assertRaises(wifi_config.WiFiConfigError) as context:
+            wifi_config.config_from_module(module)
+
+        message = str(context.exception)
+        self.assertIn("missing ssid in local_wifi_config", message)
+        self.assertIn("expected one of WIFI_SSID, SSID", message)
+        self.assertIn("LOCAL_SERVICE_URL", message)
+        self.assertIn("WIFI_PASSWORD", message)
+        self.assertNotIn("secret-password", message)
+        self.assertNotIn("192.168.1.10", message)
+
     def test_connect_wifi_uses_station_interface_and_credentials(self):
         """connect_wifi should activate station mode and connect with configured values."""
         wifi_config = self.import_module("wifi_config")

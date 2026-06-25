@@ -329,8 +329,14 @@ AIPI_APPROVED_LOCAL_HOSTS=assistant.lan
 After uploading `src/`, run:
 
 ```bash
+mpremote connect /dev/cu.usbmodem31101 exec "import local_wifi_config as c; print(dir(c))"
 mpremote connect /dev/cu.usbmodem31101 exec "import wifi_probe; wifi_probe.run_probe()"
 ```
+
+The first command verifies the deployed config module exposes the expected
+setting names, including `WIFI_SSID`, without printing credential values. If
+`wifi_probe` reports a missing setting, re-run that command to confirm the file
+on the device matches the local `src/local_wifi_config.py` that was uploaded.
 
 The probe validates the configured endpoint before connecting to Wi-Fi. It
 accepts RFC1918 IPv4 addresses, loopback/link-local IPv4 for bench testing,

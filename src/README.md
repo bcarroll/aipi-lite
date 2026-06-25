@@ -247,8 +247,14 @@ Run the probe explicitly when the device is ready to validate local Wi-Fi and
 local service reachability:
 
 ```bash
+mpremote connect /dev/cu.usbmodem31101 exec "import local_wifi_config as c; print(dir(c))"
 mpremote connect /dev/cu.usbmodem31101 exec "import wifi_probe; wifi_probe.run_probe()"
 ```
+
+The first command verifies the deployed config module exposes the expected
+setting names, including `WIFI_SSID`, without printing credential values. If
+`wifi_probe` reports a missing setting, re-run that command to confirm the file
+on the device matches the local `src/local_wifi_config.py` that was uploaded.
 
 The probe validates `LOCAL_SERVICE_URL` before connecting or making an HTTP
 request. It accepts RFC1918 IPv4 addresses, loopback/link-local IPv4 for bench
