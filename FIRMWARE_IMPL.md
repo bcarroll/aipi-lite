@@ -32,7 +32,7 @@ with text so the checklist does not rely on color alone.
 
 1. ✅ Complete | 🟡 Not Validated - `feat/01-backup-recovery`
 2. ✅ Complete | 🟡 Not Validated - `feat/02-micropython-skeleton`
-3. ✅ Complete | 🟡 Not Validated - `feat/03-gpio-status-input`
+3. ✅ Complete | ✅ Validated - `feat/03-gpio-status-input`
 4. ✅ Complete | 🟡 Not Validated - `feat/04-display-bringup`
 5. ✅ Complete | 🟡 Not Validated - `feat/05-local-wifi-policy`
 6. ✅ Complete | 🟡 Not Validated - `feat/06-es8311-codec-control`
@@ -72,7 +72,7 @@ tooling directories.
 | `feat/02-micropython-skeleton` | Implemented | `src/boot.py`, `src/main.py`, `src/pins.py`, `src/README.md`, and host tests provide safe startup defaults, grouped pin constants, serial-visible bring-up status, and hardware-free regression coverage. | Validate the serial output and display baseline on physical hardware. |
 | `feat/04-display-bringup` | Implemented, hardware validation pending | `src/display.py`, `src/display_probe.py`, `src/aipi_lite_config.py`, `src/main.py`, and `tests/test_aipi_lite_display.py` add an ST7735 wrapper, PWM backlight control, named status screens, an opt-in display probe, and host-side layout coverage. | Run `display_probe.run_probe()` on physical hardware and record final orientation, color order, and readability observations. |
 | LCD pin constants | Implemented | `src/pins.py` includes display, button, status LED, ES8311 audio, speaker enable, charge input, and board power constants from `SPEC.md`. | Verify unconfirmed GPIO10 power behavior before any branch attempts to drive it. |
-| `feat/03-gpio-status-input` | Implemented, hardware validation pending | `src/status_led.py`, `src/button.py`, `src/io_probe.py`, and `tests/test_gpio_status_input.py` add GPIO46 status states, GPIO42 active-low debounce events, a GPIO-only serial probe, and host regression coverage. | Validate LED colors and button press/release serial output on physical hardware. |
+| `feat/03-gpio-status-input` | Implemented, hardware validated | `src/status_led.py`, `src/button.py`, `src/io_probe.py`, and `tests/test_gpio_status_input.py` add GPIO46 status states, GPIO42 active-low debounce events, a GPIO-only serial probe, and host regression coverage. Operator hardware validation on 2026-06-25 observed the GPIO46 LED blink several colors, recorded the GPIO42 button press correctly, and reported no errors. | Capture a full `io_probe` serial transcript during a future bench run if exact output evidence is needed. |
 | `feat/05-local-wifi-policy` | Implemented, hardware validation pending | `src/wifi_config.py`, `src/local_endpoint.py`, `src/wifi_probe.py`, `.gitignore`, and `tests/test_wifi_policy.py` add ignored local config loading, local-only endpoint validation, a Wi-Fi `/health` probe, and host-side policy coverage. | Run `wifi_probe.run_probe()` on physical hardware with a local service and record connection, endpoint, LED, and display behavior. |
 | `feat/06-es8311-codec-control` | Implemented, hardware validation pending | `src/es8311.py`, `src/audio_probe.py`, `src/main.py`, and `tests/test_es8311_codec.py` add ES8311 I2C detection, register setup, GPIO9 speaker gate defaults, and host-side regression coverage. | Run `audio_probe.run_probe()` on physical hardware and record the observed scan and audio behavior. |
 | `feat/07-audio-capture` | Implemented, hardware validation pending | `src/audio_capture.py`, `src/capture_probe.py`, and `tests/test_audio_capture.py` add bounded 16 kHz 16-bit mono I2S capture, WAV packaging, capture metrics, an opt-in capture probe, and host-side coverage. | Run `capture_probe.run_probe()` on physical hardware and record gain, clipping, noise floor, dropped-sample behavior, and whether MicroPython MCLK output works on GPIO6. |
@@ -86,6 +86,11 @@ tooling directories.
 
 ## Hardware Validation Notes
 
+- 2026-06-25: Operator reported successful application deployment to the
+  AIPI-Lite with the display showing `AIPI-LITE`, `Booting`, and
+  `Local firmware`. A following GPIO probe run made the GPIO46 status LED blink
+  several colors, recorded the GPIO42 button press correctly, and reported no
+  errors. The full serial transcript was not available.
 - 2026-06-24: GitHub issue #11 captured a `dev_install.sh --trace` run on
   commit `8afdc028f0edd44d57d4ed176837a6e5db6ad855` that stopped safely during
   the then-default stock firmware backup. `esptool` connected to an ESP32-S3 on
