@@ -7,6 +7,7 @@ import unittest
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 SETUP_SCRIPT = REPO_ROOT / "tools" / "setup_micropython_tools.sh"
+SRC_LIB = REPO_ROOT / "src" / "lib"
 
 
 class SetupMicropythonToolsTests(unittest.TestCase):
@@ -17,13 +18,14 @@ class SetupMicropythonToolsTests(unittest.TestCase):
         """Load the setup script once for static assertions."""
         cls.script_text = SETUP_SCRIPT.read_text(encoding="utf-8")
 
-    def test_downloads_are_staged_under_tools_directory(self):
-        """The setup script should use tools/.local as its generated artifact root."""
+    def test_host_downloads_and_libraries_use_separate_roots(self):
+        """The setup script should keep host artifacts local and libraries in src/lib."""
         self.assertIn('TOOLS_ROOT="${SCRIPT_DIR}/.local"', self.script_text)
         self.assertIn('DOWNLOAD_DIR="${TOOLS_ROOT}/downloads/firmware"', self.script_text)
-        self.assertIn('LIB_ROOT="${TOOLS_ROOT}/micropython-libs"', self.script_text)
-        self.assertIn("Downloaded files are placed under tools/.local/", self.script_text)
         self.assertIn('APP_DIR="${REPO_ROOT}/src"', self.script_text)
+        self.assertIn('LIB_ROOT="${APP_DIR}/lib"', self.script_text)
+        self.assertIn("MicroPython library source is staged under src/lib", self.script_text)
+        self.assertNotIn('TOOLS_ROOT}/micropython-libs', self.script_text)
 
     def test_required_host_tools_are_installed(self):
         """The setup script should install esptool and mpremote into the local venv."""
@@ -52,12 +54,12 @@ class SetupMicropythonToolsTests(unittest.TestCase):
     def test_required_display_libraries_are_declared(self):
         """The setup script should stage the TFT display driver bundle and license."""
         expected_destinations = {
-            "lib/drivers/boolpalette.py",
-            "lib/drivers/st7735r/package.json",
-            "lib/drivers/st7735r/st7735r.py",
-            "lib/drivers/st7735r/st7735r_4bit.py",
-            "lib/drivers/st7735r/st7735r144.py",
-            "lib/drivers/st7735r/st7735r144_4bit.py",
+            "drivers/boolpalette.py",
+            "drivers/st7735r/package.json",
+            "drivers/st7735r/st7735r.py",
+            "drivers/st7735r/st7735r_4bit.py",
+            "drivers/st7735r/st7735r144.py",
+            "drivers/st7735r/st7735r144_4bit.py",
             "metadata/micropython-nano-gui-LICENSE",
         }
         actual_destinations = set(
@@ -66,7 +68,24 @@ class SetupMicropythonToolsTests(unittest.TestCase):
 
         self.assertTrue(expected_destinations.issubset(actual_destinations))
         self.assertIn("github.com/peterhinch/micropython-nano-gui", self.script_text)
-        self.assertIn("Upload MicroPython libraries:", self.script_text)
+        self.assertIn("The application upload includes MicroPython libraries", self.script_text)
+        self.assertNotIn("Upload MicroPython libraries:", self.script_text)
+
+    def test_required_display_libraries_are_tracked_under_src_lib(self):
+        """The external display library bundle should live in src/lib."""
+        expected_paths = {
+            SRC_LIB / "drivers" / "boolpalette.py",
+            SRC_LIB / "drivers" / "st7735r" / "package.json",
+            SRC_LIB / "drivers" / "st7735r" / "st7735r.py",
+            SRC_LIB / "drivers" / "st7735r" / "st7735r_4bit.py",
+            SRC_LIB / "drivers" / "st7735r" / "st7735r144.py",
+            SRC_LIB / "drivers" / "st7735r" / "st7735r144_4bit.py",
+            SRC_LIB / "metadata" / "micropython-nano-gui-LICENSE",
+            SRC_LIB / "AIPI-LITE-MICROPYTHON-LIBRARIES.md",
+        }
+
+        for path in sorted(expected_paths):
+            self.assertTrue(path.is_file(), f"{path} should be tracked under src/lib")
 
 
 if __name__ == "__main__":

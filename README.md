@@ -53,9 +53,10 @@ before a fresh setup run:
 ```
 
 This removes the local MicroPython virtual environment, downloaded firmware
-cache, and staged MicroPython libraries under `tools/.local/`. It preserves
-stock firmware backups, installer debug logs, and developer install captures.
-`--clean-prereqs` is accepted as an alias.
+cache, and other ignored prerequisite artifacts under `tools/.local/`. It
+preserves tracked MicroPython libraries in `src/lib/`, stock firmware backups,
+installer debug logs, and developer install captures. `--clean-prereqs` is
+accepted as an alias.
 
 For development-team install captures and future hardware validation runs, use
 `dev_install.sh`. It runs the same `install.sh` path, passes installer arguments
@@ -90,8 +91,9 @@ GitHub reporting workflow.
 
 If local prerequisites are missing, the installer prompts before downloading or
 installing components under ignored `tools/.local/`, then continues with the
-upload workflow after approval. The default setup path installs `mpremote` and
-staged libraries without downloading a MicroPython firmware image.
+upload workflow after approval. The default setup path installs `mpremote`,
+ensures external MicroPython library source exists under `src/lib/`, and skips
+downloading a MicroPython firmware image.
 Prompts are written explicitly so they remain visible through `dev_install.sh`
 captures. If stdin is not interactive, the installer uses safe defaults for
 optional prompts, treats confirmations as `no`, and exits instead of waiting
@@ -202,6 +204,7 @@ and opt-in hardware/service probes:
 - `src/local_endpoint.py`
 - `src/wifi_probe.py`
 - `src/lib/st7735/`
+- `src/lib/drivers/`
 
 `boot.py` emits serial-visible safe startup status without constructing GPIO
 pins or touching GPIO10 board-power control. `main.py` prints the bring-up
@@ -220,7 +223,8 @@ service API and client. `assistant_state.py`, `push_to_talk.py`, and
 exchange flow, bounded retries, diagnostics, and conservative power
 observations. `version.py` records MVP metadata. `wifi_probe.py` connects only
 to configured local Wi-Fi and calls only a local `/health` endpoint after
-endpoint policy validation passes.
+endpoint policy validation passes. External MicroPython display driver source is
+tracked under `src/lib/drivers/` so a normal application upload includes it.
 
 The GPIO status/input probe remains opt-in so normal boot stays recoverable. To
 cycle the GPIO46 WS2812/NeoPixel status LED states and print debounced GPIO42

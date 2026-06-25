@@ -8,8 +8,6 @@ TOOLS_ROOT="${TOOLS_DIR}/.local"
 VENV_DIR="${TOOLS_ROOT}/micropython-venv"
 DOWNLOAD_DIR="${TOOLS_ROOT}/downloads/firmware"
 BACKUP_DIR="${TOOLS_ROOT}/backups"
-LIB_ROOT="${TOOLS_ROOT}/micropython-libs"
-LIB_DIR="${LIB_ROOT}/lib"
 MICROPYTHON_BOARD_URL="https://micropython.org/download/ESP32_GENERIC_S3/"
 MICROPYTHON_BASE_URL="https://micropython.org"
 LOCAL_WIFI_CONFIG_FILENAME="local_wifi_config.py"
@@ -133,7 +131,6 @@ clean_prerequisite_artifacts() {
   echo "Cleaning downloaded prerequisite artifacts under ${TOOLS_ROOT}..."
   remove_path_if_present "${VENV_DIR}"
   remove_path_if_present "${DOWNLOAD_DIR}"
-  remove_path_if_present "${LIB_ROOT}"
   rmdir "${TOOLS_ROOT}/downloads" 2>/dev/null || true
   echo "Preserved local artifacts:"
   echo "  ${BACKUP_DIR}"
@@ -1380,6 +1377,7 @@ has_mpremote() {
 
 collect_missing_prerequisites() {
   local firmware_path="$1"
+  local app_root="${APP_DIR:-${SCRIPT_DIR}/src}"
   local missing=()
 
   if ! has_esptool; then
@@ -1394,8 +1392,8 @@ collect_missing_prerequisites() {
     missing+=("MicroPython firmware image $(basename "${firmware_path}")")
   fi
 
-  if [[ ! -d "${LIB_DIR}" ]]; then
-    missing+=("staged MicroPython libraries in ${LIB_ROOT}")
+  if [[ ! -d "${app_root}/lib/drivers" ]]; then
+    missing+=("tracked MicroPython libraries in ${app_root}/lib")
   fi
 
   if [[ "${#missing[@]}" -gt 0 ]]; then
@@ -1404,14 +1402,15 @@ collect_missing_prerequisites() {
 }
 
 collect_missing_upload_prerequisites() {
+  local app_root="${APP_DIR:-${SCRIPT_DIR}/src}"
   local missing=()
 
   if ! has_mpremote; then
     missing+=("mpremote in ${VENV_DIR}")
   fi
 
-  if [[ ! -d "${LIB_DIR}" ]]; then
-    missing+=("staged MicroPython libraries in ${LIB_ROOT}")
+  if [[ ! -d "${app_root}/lib/drivers" ]]; then
+    missing+=("tracked MicroPython libraries in ${app_root}/lib")
   fi
 
   if [[ "${#missing[@]}" -gt 0 ]]; then
@@ -2069,16 +2068,6 @@ upload_runtime_assets() {
 
   trace_micropython_probe "${mpremote_bin}" "${connect_target}"
 
-  if [[ -d "${LIB_DIR}/drivers" ]]; then
-    trace_source_inventory "driver_libraries" "${LIB_DIR}/drivers"
-    trace_event "phase" "name=upload_libraries" "status=start"
-    remote_mkdir "${mpremote_bin}" "${connect_target}" "lib"
-    upload_tree "${mpremote_bin}" "${connect_target}" "${LIB_DIR}/drivers" "lib/drivers"
-    trace_event "phase" "name=upload_libraries" "status=complete"
-  else
-    trace_event "phase" "name=upload_libraries" "status=skipped" "reason=no_driver_directory"
-  fi
-
   trace_event "phase" "name=upload_application" "status=start"
   upload_application "${mpremote_bin}" "${connect_target}"
   trace_event "phase" "name=upload_application" "status=complete"
@@ -2136,7 +2125,6 @@ main() {
     trace_event "phase" "name=upload_prerequisites" "status=start"
     ensure_upload_prerequisites
     trace_event "phase" "name=upload_prerequisites" "status=complete"
-    trace_source_inventory "staged_libraries" "${LIB_DIR}"
 
     mpremote_bin="${VENV_DIR}/bin/mpremote"
 
@@ -2169,7 +2157,6 @@ EOF
   ensure_prerequisites "${firmware_url}" "${firmware_path}"
   trace_event "phase" "name=prerequisites" "status=complete"
   trace_file_metadata "micropython_firmware" "${firmware_path}"
-  trace_source_inventory "staged_libraries" "${LIB_DIR}"
 
   esptool_py="${VENV_DIR}/bin/python"
   mpremote_bin="${VENV_DIR}/bin/mpremote"

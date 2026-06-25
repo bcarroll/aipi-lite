@@ -26,14 +26,14 @@ class InstallScriptTests(unittest.TestCase):
         setup_script = repo_root / "tools" / "setup_micropython_tools.sh"
         app_dir = repo_root / "src"
         mpremote = repo_root / "tools" / ".local" / "micropython-venv" / "bin" / "mpremote"
-        lib_dir = repo_root / "tools" / ".local" / "micropython-libs" / "lib"
+        app_lib_dir = app_dir / "lib" / "drivers"
 
         shutil.copy2(INSTALL_SCRIPT, tmp_install)
         tmp_install.chmod(0o755)
         setup_script.parent.mkdir(parents=True)
         setup_script.write_text("#!/usr/bin/env bash\nexit 0\n", encoding="utf-8")
         setup_script.chmod(0o755)
-        app_dir.mkdir()
+        app_lib_dir.mkdir(parents=True)
         (app_dir / "main.py").write_text("print('hello')\n", encoding="utf-8")
         mpremote.parent.mkdir(parents=True)
         mpremote.write_text(
@@ -43,7 +43,6 @@ class InstallScriptTests(unittest.TestCase):
             encoding="utf-8",
         )
         mpremote.chmod(0o755)
-        lib_dir.mkdir(parents=True)
         return tmp_install, app_dir
 
     def test_resolves_latest_official_micropython_firmware(self):
@@ -202,16 +201,18 @@ class InstallScriptTests(unittest.TestCase):
             prerequisite_paths = [
                 tools_root / "micropython-venv",
                 tools_root / "downloads" / "firmware",
-                tools_root / "micropython-libs",
             ]
             preserved_paths = [
                 tools_root / "backups",
                 tools_root / "debug",
                 tools_root / "dev-install",
             ]
+            tracked_lib_path = repo_root / "src" / "lib"
             for path in prerequisite_paths + preserved_paths:
                 path.mkdir(parents=True)
                 (path / "marker.txt").write_text("keep scope visible", encoding="utf-8")
+            tracked_lib_path.mkdir(parents=True)
+            (tracked_lib_path / "marker.py").write_text("keep = True\n", encoding="utf-8")
 
             result = subprocess.run(
                 [str(tmp_install), "--clean-tools"],
@@ -229,6 +230,7 @@ class InstallScriptTests(unittest.TestCase):
                 self.assertFalse(path.exists(), f"{path} should have been removed")
             for path in preserved_paths:
                 self.assertTrue((path / "marker.txt").exists(), f"{path} should be preserved")
+            self.assertTrue((tracked_lib_path / "marker.py").exists(), "src/lib should be preserved")
 
     def test_answers_are_persisted_in_conf(self):
         """The installer should read and write task answers from .conf."""
@@ -396,7 +398,11 @@ class InstallScriptTests(unittest.TestCase):
 
         self.assertIn("collect_missing_upload_prerequisites()", self.script_text)
         self.assertIn("Missing upload prerequisite components", self.script_text)
+        self.assertIn("tracked MicroPython libraries in ${app_root}/lib", self.script_text)
         self.assertIn("setup_args=(--skip-firmware)", self.script_text)
+        self.assertNotIn("staged MicroPython libraries", self.script_text)
+        self.assertNotIn("upload_libraries", self.script_text)
+        self.assertNotIn("micropython-libs", self.script_text)
         self.assertIn("AIPI_CONFIRM_UPLOAD", self.script_text)
         self.assertIn("MicroPython firmware: assumed present on device (ESP32_GENERIC_S3)", self.script_text)
         self.assertIn("Upload application source to existing MicroPython device", self.script_text)
@@ -567,8 +573,7 @@ class InstallScriptTests(unittest.TestCase):
         self.assertIn("upload_tree", self.script_text)
         self.assertNotIn('${SCRIPT_DIR}/main.py', self.script_text)
         self.assertNotIn('${SCRIPT_DIR}/aipi_lite_config.py', self.script_text)
-        self.assertNotIn('${SCRIPT_DIR}/lib', self.script_text)
-        self.assertIn("lib/drivers", self.script_text)
+        self.assertIn('app_root="${SCRIPT_DIR}/src"', self.script_text)
 
     def test_resets_device_after_upload(self):
         """The installer should reset the device after copying source by default."""

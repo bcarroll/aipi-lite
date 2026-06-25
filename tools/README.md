@@ -1,8 +1,9 @@
 # AIPI-Lite Tooling
 
 This directory contains host-side tooling for preparing an AIPI-Lite device over
-USB-C. Downloaded tools, virtual environments, firmware binaries, and staged
-MicroPython libraries are stored under `tools/.local/`, which is ignored by Git.
+USB-C. Downloaded tools, virtual environments, and firmware binaries are stored
+under `tools/.local/`, which is ignored by Git. External MicroPython library
+source that must be uploaded to the device is tracked under `src/lib/`.
 
 ## Bootstrap Flashing Tools
 
@@ -75,11 +76,12 @@ To force a clean prerequisite setup without deleting operational artifacts, run:
 ```
 
 The cleanup removes `tools/.local/micropython-venv/`,
-`tools/.local/downloads/firmware/`, and `tools/.local/micropython-libs/`.
-It preserves stock backups in `tools/.local/backups/`, debug logs in
-`tools/.local/debug/`, and developer install captures in
-`tools/.local/dev-install/`. Use `./dev_install.sh --clean-tools` when the
-cleanup transcript should be captured for issue review.
+`tools/.local/downloads/firmware/`, and other ignored prerequisite artifacts.
+It preserves tracked MicroPython libraries in `src/lib/`, stock backups in
+`tools/.local/backups/`, debug logs in `tools/.local/debug/`, and developer
+install captures in `tools/.local/dev-install/`. Use
+`./dev_install.sh --clean-tools` when the cleanup transcript should be captured
+for issue review.
 
 Use the setup script directly when you only want to stage tools, firmware, and
 libraries without flashing:
@@ -91,10 +93,9 @@ tools/setup_micropython_tools.sh
 ```
 
 The script creates `tools/.local/micropython-venv/`, installs `esptool` and
-`mpremote`, downloads the default ESP32-S3 MicroPython firmware image, stages the
-MicroPython libraries needed by the AIPI-Lite firmware, and prints the commands
-needed to erase flash, write MicroPython firmware, upload libraries to `/lib`,
-and upload the `src/` application tree.
+`mpremote`, downloads the default ESP32-S3 MicroPython firmware image, stages
+the MicroPython libraries under `src/lib/`, and prints the commands needed to
+erase flash, write MicroPython firmware, and upload the `src/` application tree.
 
 Use an explicit serial port when multiple USB serial devices are attached:
 
@@ -116,16 +117,17 @@ verify a stock firmware backup before flashing.
 
 ## Staged MicroPython Libraries
 
-The current setup script downloads the ST7735R display driver bundle from
-`micropython-nano-gui` into:
+The current setup script stages the ST7735R display driver bundle from
+`micropython-nano-gui` in tracked source:
 
 ```text
-tools/.local/micropython-libs/lib/drivers/
+src/lib/drivers/
 ```
 
-That bundle covers the AIPI-Lite TFT LCD driver dependency. The first firmware
-bring-up expects other device capabilities to come from MicroPython built-ins:
+That bundle is uploaded as part of the normal `src/` application tree and covers
+the AIPI-Lite TFT LCD driver dependency. The first firmware bring-up expects
+other device capabilities to come from MicroPython built-ins:
 `machine`, `network`, `socket`, `framebuf`, `neopixel`, and `machine.I2S`.
 
 The downloaded display driver source is MIT licensed; the script also downloads
-the upstream license into `tools/.local/micropython-libs/metadata/`.
+the upstream license into `src/lib/metadata/`.

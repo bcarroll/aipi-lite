@@ -32,6 +32,8 @@ ESP32-S3 image by the repository installer.
 | `local_endpoint.py` | Local-only endpoint parser and validator for configured service URLs. |
 | `wifi_probe.py` | Explicit Wi-Fi/local-service probe that validates endpoint policy, connects Wi-Fi, calls `/health`, and reports status. |
 | `lib/st7735/` | Imported ST7735 display driver and font files. |
+| `lib/drivers/` | Tracked external MicroPython display driver bundle staged by `tools/setup_micropython_tools.sh`. |
+| `lib/AIPI-LITE-MICROPYTHON-LIBRARIES.md` | Manifest for tracked external MicroPython library source and upstream license location. |
 
 ## Firmware Image Selection
 
