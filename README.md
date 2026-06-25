@@ -100,7 +100,8 @@ silently.
 Installer answers are stored in a root `.conf` file, which is ignored by Git.
 The script reads that file on later runs for values such as serial port,
 download approval, upload approval, bootloader confirmation for explicit flash
-or restore runs, flash approval, backup path, and reset preference.
+or restore runs, flash approval, backup path, reset preference, and optional
+local Wi-Fi config generation values.
 
 Run without `--port` to let `mpremote` auto-detect the attached MicroPython
 device:
@@ -295,8 +296,22 @@ state on capture, network, service, or playback failures. The full MVP install,
 configuration, validation checklist, and report template are in
 [MVP.md](MVP.md).
 
-The Wi-Fi/local-service probe requires an ignored `src/local_wifi_config.py`
-file on the device. After uploading `src/`, run:
+The Wi-Fi/local-service probe requires an ignored `local_wifi_config.py` file on
+the device. During application upload, `install.sh` checks the selected app
+directory for `local_wifi_config.py`. If it is missing, the installer prompts to
+create `src/local_wifi_config.py`; if it already exists, the installer prompts
+before re-creating it. For noninteractive runs, keep the default skip behavior
+or provide explicit values in `.conf` or the environment:
+
+```bash
+AIPI_CREATE_LOCAL_WIFI_CONFIG=yes
+AIPI_WIFI_SSID=your-local-ssid
+AIPI_WIFI_PASSWORD=your-wpa2-password
+AIPI_LOCAL_SERVICE_URL=http://192.168.1.10:8080
+AIPI_APPROVED_LOCAL_HOSTS=assistant.lan
+```
+
+After uploading `src/`, run:
 
 ```bash
 mpremote connect /dev/cu.usbmodem31101 exec "import wifi_probe; wifi_probe.run_probe()"

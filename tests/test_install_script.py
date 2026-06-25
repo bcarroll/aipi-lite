@@ -20,6 +20,32 @@ class InstallScriptTests(unittest.TestCase):
         """Load the installer script once for static assertions."""
         cls.script_text = INSTALL_SCRIPT.read_text(encoding="utf-8")
 
+    def _make_upload_fixture(self, repo_root):
+        """Create a temporary installer tree with fake upload prerequisites."""
+        tmp_install = repo_root / "install.sh"
+        setup_script = repo_root / "tools" / "setup_micropython_tools.sh"
+        app_dir = repo_root / "src"
+        mpremote = repo_root / "tools" / ".local" / "micropython-venv" / "bin" / "mpremote"
+        lib_dir = repo_root / "tools" / ".local" / "micropython-libs" / "lib"
+
+        shutil.copy2(INSTALL_SCRIPT, tmp_install)
+        tmp_install.chmod(0o755)
+        setup_script.parent.mkdir(parents=True)
+        setup_script.write_text("#!/usr/bin/env bash\nexit 0\n", encoding="utf-8")
+        setup_script.chmod(0o755)
+        app_dir.mkdir()
+        (app_dir / "main.py").write_text("print('hello')\n", encoding="utf-8")
+        mpremote.parent.mkdir(parents=True)
+        mpremote.write_text(
+            "#!/usr/bin/env bash\n"
+            "printf '%s\\n' \"$*\" >> \"${AIPI_FAKE_MPREMOTE_LOG:-mpremote.log}\"\n"
+            "exit 0\n",
+            encoding="utf-8",
+        )
+        mpremote.chmod(0o755)
+        lib_dir.mkdir(parents=True)
+        return tmp_install, app_dir
+
     def test_resolves_latest_official_micropython_firmware(self):
         """The installer should resolve the latest stable ESP32-S3 firmware URL."""
         self.assertIn("MICROPYTHON_BOARD_URL=", self.script_text)
@@ -221,7 +247,128 @@ class InstallScriptTests(unittest.TestCase):
         self.assertIn("AIPI_CONFIRM_RESTORE", self.script_text)
         self.assertIn("AIPI_BACKUP_CHUNK_SIZE", self.script_text)
         self.assertIn("AIPI_BACKUP_MIN_CHUNK_SIZE", self.script_text)
+        self.assertIn("AIPI_WIFI_SSID", self.script_text)
+        self.assertIn("AIPI_WIFI_PASSWORD", self.script_text)
+        self.assertIn("AIPI_LOCAL_SERVICE_URL", self.script_text)
         self.assertIn(".conf", gitignore_text)
+        self.assertIn("**/local_wifi_config.py", gitignore_text)
+
+    def test_installer_can_prepare_ignored_local_wifi_config(self):
+        """The installer should offer to create local_wifi_config.py before upload."""
+        upload_application_text = self.script_text[
+            self.script_text.index("upload_application()") : self.script_text.index("\n\nreset_device()", self.script_text.index("upload_application()"))
+        ]
+
+        self.assertIn('LOCAL_WIFI_CONFIG_FILENAME="local_wifi_config.py"', self.script_text)
+        self.assertIn("prepare_local_wifi_config()", self.script_text)
+        self.assertIn("write_local_wifi_config()", self.script_text)
+        self.assertIn("read_secret_prompt_answer()", self.script_text)
+        self.assertIn("AIPI_CREATE_LOCAL_WIFI_CONFIG", self.script_text)
+        self.assertIn("AIPI_RECREATE_LOCAL_WIFI_CONFIG", self.script_text)
+        self.assertIn("AIPI_APPROVED_LOCAL_HOSTS", self.script_text)
+        self.assertIn("WIFI_PASSWORD = {!r}", self.script_text)
+        self.assertIn("redacted-local-wifi-config", self.script_text)
+        self.assertIn('prepare_local_wifi_config "${app_root}"', upload_application_text)
+        self.assertIn('trace_source_inventory "application" "${app_root}"', upload_application_text)
+
+    def test_missing_local_wifi_config_can_be_created_before_upload(self):
+        """Configured values should generate local_wifi_config.py before upload."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            repo_root = Path(tmpdir)
+            tmp_install, app_dir = self._make_upload_fixture(repo_root)
+            (repo_root / ".conf").write_text(
+                "\n".join(
+                    [
+                        "AIPI_SERIAL_PORT=auto",
+                        "AIPI_CONFIRM_UPLOAD=yes",
+                        "AIPI_CREATE_LOCAL_WIFI_CONFIG=yes",
+                        "AIPI_WIFI_SSID=LabNet",
+                        "AIPI_WIFI_PASSWORD=secret pass",
+                        "AIPI_LOCAL_SERVICE_URL=http://192.168.1.10:8080",
+                        "AIPI_APPROVED_LOCAL_HOSTS=assistant.lan, lab.local",
+                        "",
+                    ]
+                ),
+                encoding="utf-8",
+            )
+
+            result = subprocess.run(
+                [str(tmp_install), "--no-reset"],
+                cwd=repo_root,
+                stdin=subprocess.DEVNULL,
+                text=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                check=False,
+            )
+
+            config_path = app_dir / "local_wifi_config.py"
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertTrue(config_path.exists())
+            self.assertEqual(config_path.stat().st_mode & 0o777, 0o600)
+            config_text = config_path.read_text(encoding="utf-8")
+            self.assertIn("WIFI_SSID = 'LabNet'", config_text)
+            self.assertIn("WIFI_PASSWORD = 'secret pass'", config_text)
+            self.assertIn("LOCAL_SERVICE_URL = 'http://192.168.1.10:8080'", config_text)
+            self.assertIn("APPROVED_LOCAL_HOSTS = ('assistant.lan', 'lab.local')", config_text)
+            self.assertIn("local_wifi_config.py", (repo_root / "mpremote.log").read_text(encoding="utf-8"))
+
+    def test_existing_local_wifi_config_is_preserved_by_default(self):
+        """Existing Wi-Fi config should not be overwritten without confirmation."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            repo_root = Path(tmpdir)
+            tmp_install, app_dir = self._make_upload_fixture(repo_root)
+            config_path = app_dir / "local_wifi_config.py"
+            original_text = "WIFI_SSID = 'ExistingNet'\n"
+            config_path.write_text(original_text, encoding="utf-8")
+            (repo_root / ".conf").write_text(
+                "AIPI_SERIAL_PORT=auto\n"
+                "AIPI_CONFIRM_UPLOAD=yes\n"
+                "AIPI_RECREATE_LOCAL_WIFI_CONFIG=no\n",
+                encoding="utf-8",
+            )
+
+            result = subprocess.run(
+                [str(tmp_install), "--no-reset"],
+                cwd=repo_root,
+                stdin=subprocess.DEVNULL,
+                text=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                check=False,
+            )
+
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertEqual(config_path.read_text(encoding="utf-8"), original_text)
+            self.assertIn("Keeping existing local Wi-Fi config", result.stdout)
+
+    def test_missing_local_wifi_config_skips_creation_noninteractively(self):
+        """Closed stdin should not silently create a credentials file."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            repo_root = Path(tmpdir)
+            tmp_install, app_dir = self._make_upload_fixture(repo_root)
+            (repo_root / ".conf").write_text(
+                "AIPI_SERIAL_PORT=auto\n"
+                "AIPI_CONFIRM_UPLOAD=yes\n",
+                encoding="utf-8",
+            )
+
+            result = subprocess.run(
+                [str(tmp_install), "--no-reset"],
+                cwd=repo_root,
+                stdin=subprocess.DEVNULL,
+                text=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                check=False,
+            )
+
+            combined_output = result.stdout + result.stderr
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertFalse((app_dir / "local_wifi_config.py").exists())
+            self.assertIn("Create local Wi-Fi config", combined_output)
+            self.assertIn("defaulting to no because prompt input is not available", combined_output)
+            self.assertIn("Local Wi-Fi config not created", combined_output)
 
     def test_flash_micropython_mode_uses_offset_zero(self):
         """Explicit flashing should use the ESP32-S3 MicroPython offset-zero flow."""

@@ -47,8 +47,9 @@ is needed for later analysis:
 
 ## MVP Configuration Guide
 
-Create an ignored `src/local_wifi_config.py` on the device before Wi-Fi,
-health-check, or push-to-talk validation:
+Create an ignored `src/local_wifi_config.py` before Wi-Fi, health-check, or
+push-to-talk validation. The normal installer offers to create it during upload
+when it is missing, and prompts before re-creating it when it already exists:
 
 ```python
 WIFI_SSID = "your-local-ssid"
@@ -56,6 +57,11 @@ WIFI_PASSWORD = "your-wpa2-password"
 LOCAL_SERVICE_URL = "http://192.168.1.10:8080"
 APPROVED_LOCAL_HOSTS = ("assistant.lan",)
 ```
+
+For unattended uploads, place the corresponding `AIPI_CREATE_LOCAL_WIFI_CONFIG`,
+`AIPI_WIFI_SSID`, `AIPI_WIFI_PASSWORD`, `AIPI_LOCAL_SERVICE_URL`, and optional
+`AIPI_APPROVED_LOCAL_HOSTS` values in the ignored root `.conf` file or export
+them in the environment.
 
 `LOCAL_SERVICE_URL` must resolve to a local endpoint accepted by
 `src/local_endpoint.py`: RFC1918 IPv4, loopback or link-local IPv4 for bench

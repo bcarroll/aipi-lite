@@ -225,7 +225,7 @@ behavior is physically validated.
 ## Wi-Fi and Local Service Probe
 
 Create an ignored `src/local_wifi_config.py` file before uploading `src/` to the
-device:
+device, or let `install.sh` prompt to create it during upload:
 
 ```python
 WIFI_SSID = "your-local-ssid"
@@ -236,7 +236,10 @@ APPROVED_LOCAL_HOSTS = ("assistant.lan",)
 
 `APPROVED_LOCAL_HOSTS` is optional and should contain only operator-controlled
 local DNS names. Do not commit this file. It is ignored by Git because it may
-contain Wi-Fi credentials or local infrastructure names.
+contain Wi-Fi credentials or local infrastructure names. For noninteractive
+installer runs, set `AIPI_CREATE_LOCAL_WIFI_CONFIG=yes`, `AIPI_WIFI_SSID`,
+`AIPI_WIFI_PASSWORD`, `AIPI_LOCAL_SERVICE_URL`, and optional
+`AIPI_APPROVED_LOCAL_HOSTS` in the ignored root `.conf` file or environment.
 
 Run the probe explicitly when the device is ready to validate local Wi-Fi and
 local service reachability:

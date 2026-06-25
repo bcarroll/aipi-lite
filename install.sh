@@ -12,6 +12,7 @@ LIB_ROOT="${TOOLS_ROOT}/micropython-libs"
 LIB_DIR="${LIB_ROOT}/lib"
 MICROPYTHON_BOARD_URL="https://micropython.org/download/ESP32_GENERIC_S3/"
 MICROPYTHON_BASE_URL="https://micropython.org"
+LOCAL_WIFI_CONFIG_FILENAME="local_wifi_config.py"
 
 PORT="${AIPI_SERIAL_PORT:-}"
 APP_DIR="${AIPI_APP_DIR:-}"
@@ -101,6 +102,12 @@ Environment overrides:
   AIPI_STOCK_BACKUP_PATH
   AIPI_RESTORE_BACKUP_PATH
   AIPI_RESET_AFTER_UPLOAD
+  AIPI_CREATE_LOCAL_WIFI_CONFIG
+  AIPI_RECREATE_LOCAL_WIFI_CONFIG
+  AIPI_WIFI_SSID
+  AIPI_WIFI_PASSWORD
+  AIPI_LOCAL_SERVICE_URL
+  AIPI_APPROVED_LOCAL_HOSTS
   AIPI_INSTALL_CONF
   AIPI_INSTALL_SELF_UPDATE
   AIPI_SKIP_SELF_UPDATE
@@ -210,6 +217,8 @@ redact_stream() {
     -e 's#(https?://)[^/@[:space:]]+@#\1<redacted>@#g' \
     -e 's/([Pp][Aa][Ss][Ss][Ww][Oo][Rr][Dd]|[Pp][Aa][Ss][Ss][Ww][Dd]|[Tt][Oo][Kk][Ee][Nn]|[Ss][Ee][Cc][Rr][Ee][Tt]|[Kk][Ee][Yy])=([^[:space:]]+)/\1=<redacted>/g' \
     -e 's/([Ss][Ss][Ii][Dd])=([^[:space:]]+)/\1=<redacted>/g' \
+    -e 's/([Ww][Ii][Ff][Ii]_[Ss][Ss][Ii][Dd][[:space:]]*=[[:space:]]*).*/\1<redacted>/g' \
+    -e 's/([Ww][Ii][Ff][Ii]_[Pp][Aa][Ss][Ss][Ww][Oo][Rr][Dd][[:space:]]*=[[:space:]]*).*/\1<redacted>/g' \
     -e 's/([[:xdigit:]]{2}:){5}[[:xdigit:]]{2}/<redacted-mac>/g'
 }
 
@@ -421,7 +430,11 @@ trace_source_inventory() {
     relative="${file#"${root}"}"
     relative="${relative#/}"
     bytes="$(file_size_bytes "${file}")"
-    digest="$(sha256_file "${file}")"
+    if [[ "${relative}" == "${LOCAL_WIFI_CONFIG_FILENAME}" ]]; then
+      digest="<redacted-local-wifi-config>"
+    else
+      digest="$(sha256_file "${file}")"
+    fi
     trace_event "source_file" "label=${label}" "path=${relative}" "bytes=${bytes}" "sha256=${digest}"
   done < <(find "${root}" -type d \
     -name __pycache__ -prune -o \
@@ -899,6 +912,26 @@ read_prompt_answer() {
   printf '%s\n' "${answer}"
 }
 
+read_secret_prompt_answer() {
+  local prompt="$1"
+  local default_label="${2:-required}"
+  local answer
+
+  printf '%s [%s] ' "${prompt}" "${default_label}" >&2
+  if [[ ! -t 0 ]]; then
+    printf '\n' >&2
+    return 1
+  fi
+
+  if ! IFS= read -r -s answer; then
+    printf '\n' >&2
+    return 1
+  fi
+
+  printf '\n' >&2
+  printf '%s\n' "${answer}"
+}
+
 confirm_from_config() {
   local key="$1"
   local prompt="$2"
@@ -996,6 +1029,207 @@ prompt_serial_port() {
   fi
   PORT="${answer}"
   config_set "AIPI_SERIAL_PORT" "${PORT:-auto}"
+}
+
+config_or_env_value() {
+  local key="$1"
+  local value
+
+  value="$(printenv "${key}" 2>/dev/null || true)"
+  if [[ -n "${value}" ]]; then
+    printf '%s\n' "${value}"
+    return 0
+  fi
+
+  config_get "${key}"
+}
+
+confirm_local_wifi_config_action() {
+  local key="$1"
+  local prompt="$2"
+  local default_answer="${3:-no}"
+  local answer
+
+  if answer="$(config_or_env_value "${key}")"; then
+    if is_yes "${answer}"; then
+      return 0
+    fi
+    if is_no "${answer}"; then
+      return 1
+    fi
+  fi
+
+  if [[ "${ASSUME_YES}" -eq 1 ]]; then
+    return 1
+  fi
+
+  if ! answer="$(read_prompt_answer "${prompt}" "${default_answer}")"; then
+    echo "warning: ${prompt} defaulting to ${default_answer} because prompt input is not available." >&2
+    answer="${default_answer}"
+  fi
+  answer="${answer:-${default_answer}}"
+  is_yes "${answer}"
+}
+
+prompt_local_wifi_value() {
+  local key="$1"
+  local prompt="$2"
+  local required="${3:-yes}"
+  local default_value=""
+  local answer
+
+  if default_value="$(config_or_env_value "${key}")"; then
+    :
+  else
+    default_value=""
+  fi
+
+  if [[ "${ASSUME_YES}" -eq 1 ]]; then
+    if [[ -z "${default_value}" && "${required}" == "yes" ]]; then
+      echo "error: ${key} must be set in ${CONF_FILE} or the environment before local Wi-Fi config can be generated" >&2
+      exit 1
+    fi
+    if [[ -n "${default_value}" ]]; then
+      config_set "${key}" "${default_value}"
+    fi
+    printf '%s\n' "${default_value}"
+    return
+  fi
+
+  if ! answer="$(read_prompt_answer "${prompt}" "${default_value}")"; then
+    if [[ -z "${default_value}" && "${required}" == "yes" ]]; then
+      echo "error: ${key} must be set in ${CONF_FILE} or the environment because prompt input is not available" >&2
+      exit 1
+    fi
+    if [[ -n "${default_value}" ]]; then
+      echo "warning: ${prompt} defaulting to saved ${key} because prompt input is not available." >&2
+    fi
+    answer="${default_value}"
+  fi
+  answer="${answer:-${default_value}}"
+  if [[ -z "${answer}" && "${required}" == "yes" ]]; then
+    echo "error: ${key} is required" >&2
+    exit 1
+  fi
+
+  if [[ -n "${answer}" ]]; then
+    config_set "${key}" "${answer}"
+  fi
+  printf '%s\n' "${answer}"
+}
+
+prompt_local_wifi_secret() {
+  local key="$1"
+  local prompt="$2"
+  local default_value=""
+  local default_label="required"
+  local answer
+
+  if default_value="$(config_or_env_value "${key}")"; then
+    default_label="<saved>"
+  else
+    default_value=""
+  fi
+
+  if [[ "${ASSUME_YES}" -eq 1 ]]; then
+    if [[ -z "${default_value}" ]]; then
+      echo "error: ${key} must be set in ${CONF_FILE} or the environment before local Wi-Fi config can be generated" >&2
+      exit 1
+    fi
+    config_set "${key}" "${default_value}"
+    printf '%s\n' "${default_value}"
+    return
+  fi
+
+  if ! answer="$(read_secret_prompt_answer "${prompt}" "${default_label}")"; then
+    if [[ -z "${default_value}" ]]; then
+      echo "error: ${key} must be set in ${CONF_FILE} or the environment because prompt input is not available" >&2
+      exit 1
+    fi
+    echo "warning: ${prompt} defaulting to saved ${key} because prompt input is not available." >&2
+    answer="${default_value}"
+  fi
+  answer="${answer:-${default_value}}"
+  if [[ -z "${answer}" ]]; then
+    echo "error: ${key} is required" >&2
+    exit 1
+  fi
+
+  config_set "${key}" "${answer}"
+  printf '%s\n' "${answer}"
+}
+
+write_local_wifi_config() {
+  local config_path="$1"
+  local ssid="$2"
+  local password="$3"
+  local local_service_url="$4"
+  local approved_hosts="$5"
+
+  mkdir -p "$(dirname "${config_path}")"
+  AIPI_LOCAL_WIFI_CONFIG_PATH="${config_path}" \
+  AIPI_LOCAL_WIFI_CONFIG_SSID="${ssid}" \
+  AIPI_LOCAL_WIFI_CONFIG_PASSWORD="${password}" \
+  AIPI_LOCAL_WIFI_CONFIG_SERVICE_URL="${local_service_url}" \
+  AIPI_LOCAL_WIFI_CONFIG_APPROVED_HOSTS="${approved_hosts}" \
+  python3 <<'PY'
+from pathlib import Path
+import os
+
+path = Path(os.environ["AIPI_LOCAL_WIFI_CONFIG_PATH"])
+hosts = tuple(
+    host.strip()
+    for host in os.environ.get("AIPI_LOCAL_WIFI_CONFIG_APPROVED_HOSTS", "").split(",")
+    if host.strip()
+)
+content = "\n".join(
+    [
+        "# Local AIPI-Lite Wi-Fi configuration generated by install.sh.",
+        "# This file is ignored by Git because it contains local credentials.",
+        "WIFI_SSID = {!r}".format(os.environ["AIPI_LOCAL_WIFI_CONFIG_SSID"]),
+        "WIFI_PASSWORD = {!r}".format(os.environ["AIPI_LOCAL_WIFI_CONFIG_PASSWORD"]),
+        "LOCAL_SERVICE_URL = {!r}".format(os.environ["AIPI_LOCAL_WIFI_CONFIG_SERVICE_URL"]),
+        "APPROVED_LOCAL_HOSTS = {!r}".format(hosts),
+        "",
+    ]
+)
+tmp_path = path.with_name(path.name + ".tmp")
+tmp_path.write_text(content, encoding="utf-8")
+os.chmod(tmp_path, 0o600)
+os.replace(tmp_path, path)
+os.chmod(path, 0o600)
+PY
+}
+
+prepare_local_wifi_config() {
+  local app_root="$1"
+  local config_path="${app_root}/${LOCAL_WIFI_CONFIG_FILENAME}"
+  local ssid
+  local password
+  local local_service_url
+  local approved_hosts
+
+  if [[ -e "${config_path}" ]]; then
+    if ! confirm_local_wifi_config_action "AIPI_RECREATE_LOCAL_WIFI_CONFIG" "Re-create existing local Wi-Fi config at ${config_path}" "no"; then
+      echo "Keeping existing local Wi-Fi config: ${config_path}"
+      trace_event "local_wifi_config" "path=${config_path}" "status=kept"
+      return
+    fi
+  else
+    if ! confirm_local_wifi_config_action "AIPI_CREATE_LOCAL_WIFI_CONFIG" "Create local Wi-Fi config at ${config_path}" "no"; then
+      echo "Local Wi-Fi config not created; wifi_probe will fail until ${LOCAL_WIFI_CONFIG_FILENAME} is uploaded."
+      trace_event "local_wifi_config" "path=${config_path}" "status=missing"
+      return
+    fi
+  fi
+
+  ssid="$(prompt_local_wifi_value "AIPI_WIFI_SSID" "Wi-Fi SSID")"
+  password="$(prompt_local_wifi_secret "AIPI_WIFI_PASSWORD" "Wi-Fi password")"
+  local_service_url="$(prompt_local_wifi_value "AIPI_LOCAL_SERVICE_URL" "Local service URL")"
+  approved_hosts="$(prompt_local_wifi_value "AIPI_APPROVED_LOCAL_HOSTS" "Approved local hostnames, comma-separated or blank" "no")"
+  write_local_wifi_config "${config_path}" "${ssid}" "${password}" "${local_service_url}" "${approved_hosts}"
+  echo "Wrote local Wi-Fi config: ${config_path}"
+  trace_event "local_wifi_config" "path=${config_path}" "status=written"
 }
 
 apply_config_defaults() {
@@ -1164,7 +1398,9 @@ collect_missing_prerequisites() {
     missing+=("staged MicroPython libraries in ${LIB_ROOT}")
   fi
 
-  printf '%s\n' "${missing[@]}"
+  if [[ "${#missing[@]}" -gt 0 ]]; then
+    printf '%s\n' "${missing[@]}"
+  fi
 }
 
 collect_missing_upload_prerequisites() {
@@ -1178,7 +1414,9 @@ collect_missing_upload_prerequisites() {
     missing+=("staged MicroPython libraries in ${LIB_ROOT}")
   fi
 
-  printf '%s\n' "${missing[@]}"
+  if [[ "${#missing[@]}" -gt 0 ]]; then
+    printf '%s\n' "${missing[@]}"
+  fi
 }
 
 ensure_prerequisites() {
@@ -1784,16 +2022,25 @@ upload_tree() {
 upload_application() {
   local mpremote_bin="$1"
   local connect_target="$2"
+  local app_root
 
   if [[ -n "${APP_DIR}" ]]; then
-    trace_source_inventory "application" "${APP_DIR}"
-    upload_tree "${mpremote_bin}" "${connect_target}" "${APP_DIR}" ""
+    app_root="${APP_DIR}"
+    if [[ ! -d "${app_root}" ]]; then
+      echo "error: application source directory not found: ${app_root}" >&2
+      exit 1
+    fi
+    prepare_local_wifi_config "${app_root}"
+    trace_source_inventory "application" "${app_root}"
+    upload_tree "${mpremote_bin}" "${connect_target}" "${app_root}" ""
     return
   fi
 
   if [[ -d "${SCRIPT_DIR}/src" ]]; then
-    trace_source_inventory "application" "${SCRIPT_DIR}/src"
-    upload_tree "${mpremote_bin}" "${connect_target}" "${SCRIPT_DIR}/src" ""
+    app_root="${SCRIPT_DIR}/src"
+    prepare_local_wifi_config "${app_root}"
+    trace_source_inventory "application" "${app_root}"
+    upload_tree "${mpremote_bin}" "${connect_target}" "${app_root}" ""
     return
   fi
 

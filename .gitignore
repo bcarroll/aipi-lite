@@ -4,6 +4,7 @@ tools/.local/
 .conf
 .conf.tmp.*
 src/local_wifi_config.py
+**/local_wifi_config.py
 __pycache__/
 *.pyc
 esp-env
