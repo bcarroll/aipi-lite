@@ -304,8 +304,19 @@ The Wi-Fi/local-service probe requires an ignored `local_wifi_config.py` file on
 the device. During application upload, `install.sh` checks the selected app
 directory for `local_wifi_config.py`. If it is missing, the installer prompts to
 create `src/local_wifi_config.py`; if it already exists, the installer prompts
-before re-creating it. For noninteractive runs, keep the default skip behavior
-or provide explicit values in `.conf` or the environment:
+before re-creating it. The generated or hand-written file should look like:
+
+```python
+WIFI_SSID = "your-local-ssid"
+WIFI_PASSWORD = "your-wpa2-password"
+LOCAL_SERVICE_URL = "http://192.168.1.10:8080"
+APPROVED_LOCAL_HOSTS = ("assistant.lan",)
+```
+
+`APPROVED_LOCAL_HOSTS` is optional; use an empty tuple when no extra local DNS
+names need approval. Do not commit this file because it contains local Wi-Fi
+credentials and network details. For noninteractive runs, keep the default skip
+behavior or provide explicit values in `.conf` or the environment:
 
 ```bash
 AIPI_CREATE_LOCAL_WIFI_CONFIG=yes
