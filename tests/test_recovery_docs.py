@@ -32,10 +32,13 @@ class RecoveryDocumentationTests(unittest.TestCase):
         self.assertIn("4 KiB", self.recovery_text)
         self.assertIn("exactly matches `AIPI_FLASH_SIZE`", self.recovery_text)
         self.assertIn("--backup-stock", self.recovery_text)
+        self.assertIn("--flash-micropython --backup-stock", self.recovery_text)
+        self.assertIn("AIPI_FLASH_MICROPYTHON=1", self.recovery_text)
         self.assertIn("AIPI_BACKUP_STOCK_FIRMWARE=1", self.recovery_text)
         self.assertIn("--skip-backup", self.recovery_text)
         self.assertIn("AIPI_SKIP_STOCK_BACKUP=1", self.recovery_text)
-        self.assertIn("Normal application installs skip the stock backup", self.recovery_text)
+        self.assertIn("assume the device already", self.recovery_text)
+        self.assertIn("ESP32_GENERIC_S3 MicroPython firmware", self.recovery_text)
         self.assertIn("verifies the ROM bootloader answers `esptool chip-id`", self.recovery_text)
 
     def test_documents_stock_restore_procedure(self):
@@ -55,14 +58,17 @@ class RecoveryDocumentationTests(unittest.TestCase):
         self.assertIn("not staged in Git", self.recovery_text)
         self.assertIn("accepts that stock firmware recovery may be unavailable", self.recovery_text)
         self.assertIn("before backup, erase, write, or restore commands", self.recovery_text)
+        self.assertIn("upload-only install path", self.recovery_text)
 
     def test_roadmap_and_readme_reference_recovery(self):
         """Top-level docs should point users to recovery procedures."""
         self.assertIn("[RECOVERY.md](RECOVERY.md)", self.readme_text)
-        self.assertIn("Normal installs skip the", self.readme_text)
-        self.assertIn("stock firmware backup", self.readme_text)
+        self.assertIn("does not run `git pull` by default", self.readme_text)
+        self.assertIn("already has ESP32_GENERIC_S3 MicroPython flashed", self.readme_text)
+        self.assertIn("--flash-micropython --backup-stock", self.readme_text)
         self.assertIn("`feat/01-backup-recovery` | Implemented", self.impl_text)
         self.assertIn("smaller-chunk retries", self.impl_text)
+        self.assertIn("uploads application source by default", self.impl_text)
         self.assertIn("without auto-reset before backup, erase, write, or restore operations", self.impl_text)
 
 

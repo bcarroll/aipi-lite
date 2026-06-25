@@ -36,8 +36,8 @@ class InstallScriptTests(unittest.TestCase):
         self.assertIn("bash \"${SETUP_SCRIPT}\"", self.script_text)
         self.assertIn("-y|--yes", self.script_text)
 
-    def test_self_updates_from_git_before_installer_actions(self):
-        """The installer should pull the latest script before parsing normal actions."""
+    def test_self_update_is_explicitly_opt_in(self):
+        """The installer should not pull from Git unless self-update is requested."""
         self_update_index = self.script_text.index('self_update_from_git "$@"')
         parser_index = self.script_text.index("while [[ $# -gt 0 ]]", self_update_index)
 
@@ -47,10 +47,14 @@ class InstallScriptTests(unittest.TestCase):
         self.assertIn("retrying once before installer stops", self.script_text)
         self.assertIn("sleep 2", self.script_text)
         self.assertIn('exec env AIPI_INSTALL_SELF_UPDATED=1 "${SCRIPT_DIR}/install.sh" "$@"', self.script_text)
+        self.assertIn('SELF_UPDATE="${AIPI_INSTALL_SELF_UPDATE:-0}"', self.script_text)
+        self.assertIn("--self-update", self.script_text)
         self.assertIn("--skip-self-update", self.script_text)
+        self.assertIn("AIPI_INSTALL_SELF_UPDATE", self.script_text)
         self.assertIn("AIPI_SKIP_SELF_UPDATE", self.script_text)
         self.assertIn("git pull failed after retry; installer stopped before device operations", self.script_text)
-        self.assertIn("--skip-self-update only for an intentional offline or pinned-revision run", self.script_text)
+        self.assertIn('if ! is_truthy_value "${SELF_UPDATE}"; then', self.script_text)
+        self.assertIn("self-update is skipped by default", self.script_text)
         self.assertLess(self_update_index, parser_index)
 
     def test_debug_mode_writes_sanitized_issue_artifact(self):
@@ -139,10 +143,6 @@ class InstallScriptTests(unittest.TestCase):
             result = subprocess.run(
                 [
                     str(tmp_install),
-                    "--skip-self-update",
-                    "--firmware-url",
-                    "https://example.invalid/ESP32_GENERIC_S3-test.bin",
-                    "--skip-backup",
                 ],
                 cwd=repo_root,
                 stdin=subprocess.DEVNULL,
@@ -158,7 +158,7 @@ class InstallScriptTests(unittest.TestCase):
             self.assertIn("Serial port prompt skipped because prompt input is not available", combined_output)
             self.assertIn("Download missing components and continue [no]", combined_output)
             self.assertIn("defaulting to no because prompt input is not available", combined_output)
-            self.assertIn("aborted: prerequisites are missing", combined_output)
+            self.assertIn("aborted: upload prerequisites are missing", combined_output)
             self.assertIn(
                 "AIPI_SERIAL_PORT=auto",
                 (repo_root / ".conf").read_text(encoding="utf-8"),
@@ -215,6 +215,7 @@ class InstallScriptTests(unittest.TestCase):
         self.assertIn("read_prompt_answer()", self.script_text)
         self.assertNotIn("read -r -p", self.script_text)
         self.assertIn("AIPI_SERIAL_PORT", self.script_text)
+        self.assertIn("AIPI_CONFIRM_UPLOAD", self.script_text)
         self.assertIn("AIPI_BOOTLOADER_CONFIRMED", self.script_text)
         self.assertIn("AIPI_CONFIRM_FLASH", self.script_text)
         self.assertIn("AIPI_CONFIRM_RESTORE", self.script_text)
@@ -222,13 +223,39 @@ class InstallScriptTests(unittest.TestCase):
         self.assertIn("AIPI_BACKUP_MIN_CHUNK_SIZE", self.script_text)
         self.assertIn(".conf", gitignore_text)
 
-    def test_flashes_firmware_at_offset_zero(self):
-        """The installer should use the ESP32-S3 MicroPython offset-zero flow."""
+    def test_flash_micropython_mode_uses_offset_zero(self):
+        """Explicit flashing should use the ESP32-S3 MicroPython offset-zero flow."""
+        main_text = self.script_text[self.script_text.index("main()") :]
+        flash_branch_index = main_text.index("if ! should_flash_micropython; then")
+        resolve_index = main_text.index('firmware_url="$(resolve_firmware_url)"')
+
+        self.assertIn('FLASH_MICROPYTHON="${AIPI_FLASH_MICROPYTHON:-0}"', self.script_text)
+        self.assertIn("--flash-micropython", self.script_text)
+        self.assertIn("AIPI_FLASH_MICROPYTHON", self.script_text)
+        self.assertIn("should_flash_micropython()", self.script_text)
         self.assertIn("--chip esp32s3", self.script_text)
         self.assertIn("erase_flash", self.script_text)
         self.assertIn("write_flash 0 \"${firmware_path}\"", self.script_text)
         self.assertNotIn("bootloader.bin", self.script_text)
         self.assertNotIn("partition-table.bin", self.script_text)
+        self.assertLess(flash_branch_index, resolve_index)
+
+    def test_default_mode_uploads_without_firmware_flash(self):
+        """Normal installs should assume MicroPython exists and only upload source."""
+        main_text = self.script_text[self.script_text.index("main()") :]
+        upload_prereq_index = main_text.index("ensure_upload_prerequisites")
+        firmware_resolve_index = main_text.index('firmware_url="$(resolve_firmware_url)"')
+        upload_assets_index = main_text.index('upload_runtime_assets "${mpremote_bin}"')
+
+        self.assertIn("collect_missing_upload_prerequisites()", self.script_text)
+        self.assertIn("Missing upload prerequisite components", self.script_text)
+        self.assertIn("setup_args=(--skip-firmware)", self.script_text)
+        self.assertIn("AIPI_CONFIRM_UPLOAD", self.script_text)
+        self.assertIn("MicroPython firmware: assumed present on device (ESP32_GENERIC_S3)", self.script_text)
+        self.assertIn("Upload application source to existing MicroPython device", self.script_text)
+        self.assertIn("Application upload complete.", self.script_text)
+        self.assertLess(upload_prereq_index, firmware_resolve_index)
+        self.assertLess(upload_assets_index, firmware_resolve_index)
 
     def test_restore_mode_uses_saved_backup_without_firmware_download(self):
         """Restore mode should write a stock backup without resolving MicroPython."""
@@ -244,7 +271,7 @@ class InstallScriptTests(unittest.TestCase):
         self.assertLess(restore_index, resolve_index)
 
     def test_auto_detected_esptool_port_is_reused(self):
-        """Auto-detected esptool ports should be locked before backup retries."""
+        """Auto-detected esptool ports should be locked before flash-mode backup retries."""
         main_text = self.script_text[self.script_text.index("main()") :]
         lock_index = main_text.index('lock_esptool_auto_port "${esptool_py}"')
         bootloader_index = main_text.index('require_bootloader_mode "${esptool_py}"')
@@ -331,6 +358,7 @@ class InstallScriptTests(unittest.TestCase):
         self.assertIn("--backup-stock", self.script_text)
         self.assertIn("AIPI_BACKUP_STOCK_FIRMWARE", self.script_text)
         self.assertIn("should_backup_stock_firmware()", self.script_text)
+        self.assertIn("error: --backup-stock requires --flash-micropython.", self.script_text)
         self.assertIn('read-flash "${offset_arg}" "${read_size_arg}" "${chunk_path}"', self.script_text)
         self.assertIn('mv "${tmp_path}" "${BACKUP_PATH}"', self.script_text)
         self.assertLess(opt_in_index, backup_index)
@@ -357,7 +385,7 @@ class InstallScriptTests(unittest.TestCase):
         self.assertIn('trace_event "stock_backup_blocked"', self.script_text)
         self.assertIn("hardware validation status: blocked", self.script_text)
         self.assertIn("On WSL, detach and reattach the USB device", self.script_text)
-        self.assertIn("Rerun without --backup-stock only when stock recovery is not required", self.script_text)
+        self.assertIn("Rerun with --flash-micropython but without --backup-stock", self.script_text)
         self.assertIn("--backup-chunk-size 0x40000 --backup-min-chunk-size 0x1000", self.script_text)
         self.assertIn("Existing stock firmware backup is incomplete", self.script_text)
         self.assertIn("backup chunk size mismatch", self.script_text)
@@ -397,9 +425,11 @@ class InstallScriptTests(unittest.TestCase):
 
     def test_resets_device_after_upload(self):
         """The installer should reset the device after copying source by default."""
-        main_text = self.script_text[self.script_text.index("main()") :]
-        upload_index = main_text.index('upload_application "${mpremote_bin}"')
-        reset_index = main_text.index('reset_device "${mpremote_bin}"')
+        upload_runtime_text = self.script_text[
+            self.script_text.index("upload_runtime_assets()") : self.script_text.index("\n\nmain()", self.script_text.index("upload_runtime_assets()"))
+        ]
+        upload_index = upload_runtime_text.index('upload_application "${mpremote_bin}"')
+        reset_index = upload_runtime_text.index('reset_device "${mpremote_bin}"')
 
         self.assertIn("AIPI_RESET_AFTER_UPLOAD", self.script_text)
         self.assertIn('"${mpremote_bin}" connect "${connect_target}" reset', self.script_text)

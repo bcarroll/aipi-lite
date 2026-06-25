@@ -23,9 +23,11 @@ BACKUP_MIN_CHUNK_SIZE="${AIPI_BACKUP_MIN_CHUNK_SIZE:-}"
 BACKUP_PATH="${AIPI_STOCK_BACKUP_PATH:-}"
 RESTORE_BACKUP_PATH="${AIPI_RESTORE_BACKUP_PATH:-}"
 RESET_AFTER_UPLOAD="${AIPI_RESET_AFTER_UPLOAD:-}"
+FLASH_MICROPYTHON="${AIPI_FLASH_MICROPYTHON:-0}"
 BACKUP_STOCK_FIRMWARE="${AIPI_BACKUP_STOCK_FIRMWARE:-0}"
 SKIP_STOCK_BACKUP="${AIPI_SKIP_STOCK_BACKUP:-0}"
 CONF_FILE="${AIPI_INSTALL_CONF:-${SCRIPT_DIR}/.conf}"
+SELF_UPDATE="${AIPI_INSTALL_SELF_UPDATE:-0}"
 SKIP_SELF_UPDATE="${AIPI_SKIP_SELF_UPDATE:-0}"
 DEBUG_ENABLED="${AIPI_INSTALL_DEBUG:-0}"
 DEBUG_FILE="${AIPI_INSTALL_DEBUG_FILE:-}"
@@ -41,23 +43,26 @@ usage() {
   cat <<'USAGE'
 Usage: ./install.sh [options]
 
-Flash MicroPython firmware to the connected AIPI-Lite and copy application
-source over USB-C with mpremote.
+Copy application source over USB-C with mpremote. By default, the connected
+AIPI-Lite is assumed to already run ESP32_GENERIC_S3 MicroPython.
 
 Options:
   --port PORT             Serial port, for example /dev/cu.usbmodem31101.
   --app-dir DIR           Application directory to upload instead of src/.
   --backup-path FILE      Stock firmware backup path. Defaults to tools/.local.
   --conf FILE             Answer/config file. Default: ./.conf.
-  --firmware-url URL      MicroPython firmware .bin URL. Defaults to latest
-                          stable ESP32_GENERIC_S3 from micropython.org.
+  --flash-micropython     Flash MicroPython before uploading source. This mode
+                          requires ESP32-S3 bootloader mode.
+  --firmware-url URL      MicroPython firmware .bin URL for --flash-micropython.
+                          Defaults to latest stable ESP32_GENERIC_S3.
   --flash-size SIZE       Stock firmware backup size. Default: 0x1000000.
   --backup-chunk-size SIZE
                           Stock backup read chunk size. Default: 0x80000.
   --backup-min-chunk-size SIZE
                           Smallest retry chunk size. Default: 0x1000.
-  --backup-stock          Read stock firmware before flashing. This optional
-                          recovery step can block install when flash reads fail.
+  --backup-stock          With --flash-micropython, read stock firmware before
+                          flashing. This optional recovery step can block
+                          install when flash reads fail.
   --skip-backup           Keep stock backup skipped. This is the default and is
                           accepted for explicit application-first install runs.
   --baud RATE             Flash baud rate. Default: 460800.
@@ -66,8 +71,10 @@ Options:
                           installing MicroPython.
   --restore-backup FILE   Restore this stock firmware backup instead of
                           installing MicroPython.
-  --skip-erase            Write firmware without first erasing flash.
-  --skip-self-update      Do not run git pull before installer actions.
+  --skip-erase            With --flash-micropython or --restore, write firmware
+                          without first erasing flash.
+  --self-update           Run git pull --ff-only and restart before actions.
+  --skip-self-update      Compatibility no-op; self-update is skipped by default.
   --clean-tools, --clean-prereqs
                           Delete downloaded prerequisite artifacts under
                           tools/.local and exit. Preserves stock backups,
@@ -77,7 +84,7 @@ Options:
   --trace                 Enable --debug and write detailed install/device
                           trace data for hardware feedback analysis.
   --trace-file FILE       Write --trace output to this file.
-  -y, --yes               Approve prerequisite setup and flashing prompts.
+  -y, --yes               Approve prerequisite setup and confirmation prompts.
   -h, --help              Show this help.
 
 Environment overrides:
@@ -86,6 +93,7 @@ Environment overrides:
   AIPI_MICROPYTHON_FIRMWARE_URL
   AIPI_FLASH_BAUD
   AIPI_FLASH_SIZE
+  AIPI_FLASH_MICROPYTHON
   AIPI_BACKUP_CHUNK_SIZE
   AIPI_BACKUP_MIN_CHUNK_SIZE
   AIPI_BACKUP_STOCK_FIRMWARE
@@ -94,6 +102,7 @@ Environment overrides:
   AIPI_RESTORE_BACKUP_PATH
   AIPI_RESET_AFTER_UPLOAD
   AIPI_INSTALL_CONF
+  AIPI_INSTALL_SELF_UPDATE
   AIPI_SKIP_SELF_UPDATE
   AIPI_INSTALL_DEBUG
   AIPI_INSTALL_DEBUG_FILE
@@ -129,13 +138,18 @@ clean_prerequisite_artifacts() {
 preparse_preflight_flags() {
   while [[ $# -gt 0 ]]; do
     case "$1" in
+      --self-update)
+        SELF_UPDATE=1
+        shift
+        ;;
       --skip-self-update)
         SKIP_SELF_UPDATE=1
+        SELF_UPDATE=0
         shift
         ;;
       --clean-tools|--clean-prereqs)
         CLEAN_TOOLS=1
-        SKIP_SELF_UPDATE=1
+        SELF_UPDATE=0
         shift
         ;;
       --debug)
@@ -548,12 +562,14 @@ write_debug_context() {
     printf 'backup_path=%s\n' "${BACKUP_PATH:-auto}"
     printf 'restore_backup_path=%s\n' "${RESTORE_BACKUP_PATH:-none}"
     printf 'reset_after_upload=%s\n' "${RESET_AFTER_UPLOAD}"
+    printf 'flash_micropython=%s\n' "${FLASH_MICROPYTHON}"
     printf 'backup_stock_firmware=%s\n' "${BACKUP_STOCK_FIRMWARE}"
     printf 'skip_stock_backup=%s\n' "${SKIP_STOCK_BACKUP}"
+    printf 'self_update=%s\n' "${SELF_UPDATE}"
     printf 'skip_self_update=%s\n' "${SKIP_SELF_UPDATE}"
   } | redact_stream >>"${DEBUG_FILE}"
 
-  trace_event "run_context" "serial_port=${PORT:-auto}" "app_dir=${APP_DIR:-${SCRIPT_DIR}/src}" "firmware_url=${FIRMWARE_URL}" "baud=${BAUD}" "flash_size=${FLASH_SIZE}" "reset_after_upload=${RESET_AFTER_UPLOAD}" "backup_stock_firmware=${BACKUP_STOCK_FIRMWARE}" "skip_stock_backup=${SKIP_STOCK_BACKUP}" "skip_self_update=${SKIP_SELF_UPDATE}"
+  trace_event "run_context" "serial_port=${PORT:-auto}" "app_dir=${APP_DIR:-${SCRIPT_DIR}/src}" "firmware_url=${FIRMWARE_URL}" "baud=${BAUD}" "flash_size=${FLASH_SIZE}" "reset_after_upload=${RESET_AFTER_UPLOAD}" "flash_micropython=${FLASH_MICROPYTHON}" "backup_stock_firmware=${BACKUP_STOCK_FIRMWARE}" "skip_stock_backup=${SKIP_STOCK_BACKUP}" "self_update=${SELF_UPDATE}" "skip_self_update=${SKIP_SELF_UPDATE}"
   trace_file_metadata "conf_file" "${CONF_FILE}"
 
   debug_command_output "uname" uname -a
@@ -593,13 +609,17 @@ self_update_from_git() {
     return
   fi
 
+  if ! is_truthy_value "${SELF_UPDATE}"; then
+    return
+  fi
+
   if is_truthy_value "${SKIP_SELF_UPDATE}"; then
     echo "Installer self-update skipped."
     return
   fi
 
   if ! command -v git >/dev/null 2>&1; then
-    echo "error: git is required for installer self-update; pass --skip-self-update to continue without pulling" >&2
+    echo "error: git is required for installer self-update; rerun without --self-update to continue without pulling" >&2
     exit 1
   fi
 
@@ -612,7 +632,7 @@ self_update_from_git() {
   echo "Updating installer source with git pull --ff-only..."
   if ! self_update_pull_with_retry "${worktree_root}"; then
     echo "error: git pull failed after retry; installer stopped before device operations" >&2
-    echo "error: rerun after Git/network access recovers, or pass --skip-self-update only for an intentional offline or pinned-revision run" >&2
+    echo "error: rerun after Git/network access recovers, or rerun without --self-update for an intentional offline or pinned-revision run" >&2
     exit 1
   fi
 
@@ -664,6 +684,10 @@ while [[ $# -gt 0 ]]; do
       CONF_FILE="${2:?--conf requires a value}"
       shift 2
       ;;
+    --flash-micropython)
+      FLASH_MICROPYTHON=1
+      shift
+      ;;
     --firmware-url)
       FIRMWARE_URL="${2:?--firmware-url requires a value}"
       shift 2
@@ -713,6 +737,11 @@ while [[ $# -gt 0 ]]; do
       ;;
     --skip-self-update)
       SKIP_SELF_UPDATE=1
+      SELF_UPDATE=0
+      shift
+      ;;
+    --self-update)
+      SELF_UPDATE=1
       shift
       ;;
     --clean-tools|--clean-prereqs)
@@ -1138,6 +1167,20 @@ collect_missing_prerequisites() {
   printf '%s\n' "${missing[@]}"
 }
 
+collect_missing_upload_prerequisites() {
+  local missing=()
+
+  if ! has_mpremote; then
+    missing+=("mpremote in ${VENV_DIR}")
+  fi
+
+  if [[ ! -d "${LIB_DIR}" ]]; then
+    missing+=("staged MicroPython libraries in ${LIB_ROOT}")
+  fi
+
+  printf '%s\n' "${missing[@]}"
+}
+
 ensure_prerequisites() {
   local firmware_url="$1"
   local firmware_path="$2"
@@ -1170,6 +1213,38 @@ EOF
   setup_args+=(--app-dir "${setup_app_dir}")
 
   run_with_trace "setup_prerequisites" bash "${SETUP_SCRIPT}" "${setup_args[@]}"
+}
+
+ensure_upload_prerequisites() {
+  local missing
+  local setup_args
+  local setup_app_dir
+
+  missing="$(collect_missing_upload_prerequisites)"
+  if [[ -z "${missing}" ]]; then
+    return
+  fi
+
+  cat <<EOF
+Missing upload prerequisite components:
+${missing}
+
+These components will be installed or downloaded under tools/.local/.
+EOF
+
+  if ! confirm_from_config "AIPI_DOWNLOAD_PREREQUISITES" "Download missing components and continue" "no"; then
+    echo "aborted: upload prerequisites are missing" >&2
+    exit 1
+  fi
+
+  setup_args=(--skip-firmware)
+  if [[ -n "${PORT}" ]]; then
+    setup_args+=(--port "${PORT}")
+  fi
+  setup_app_dir="${APP_DIR:-${SCRIPT_DIR}/src}"
+  setup_args+=(--app-dir "${setup_app_dir}")
+
+  run_with_trace "setup_upload_prerequisites" bash "${SETUP_SCRIPT}" "${setup_args[@]}"
 }
 
 ensure_restore_prerequisites() {
@@ -1443,7 +1518,7 @@ report_stock_backup_blocked() {
   echo "  2. Retry with --port ${PORT:-PORT} --backup-chunk-size 0x40000 --backup-min-chunk-size 0x1000." >&2
   echo "  3. Use a direct known-data USB-C cable and a different host USB port; avoid hubs and adapters." >&2
   echo "  4. On WSL, detach and reattach the USB device to WSL, then verify the /dev/ttyS* port before retrying." >&2
-  echo "  5. If the same offset repeats, keep the capture for bench analysis. Rerun without --backup-stock only when stock recovery is not required." >&2
+  echo "  5. If the same offset repeats, keep the capture for bench analysis. Rerun with --flash-micropython but without --backup-stock only when stock recovery is not required." >&2
 }
 
 backup_stock_firmware() {
@@ -1555,6 +1630,30 @@ backup_stock_firmware() {
 
 should_backup_stock_firmware() {
   is_truthy_value "${BACKUP_STOCK_FIRMWARE}" && ! is_truthy_value "${SKIP_STOCK_BACKUP}"
+}
+
+should_flash_micropython() {
+  is_truthy_value "${FLASH_MICROPYTHON}"
+}
+
+validate_install_mode_options() {
+  if [[ "${RESTORE_MODE}" -eq 1 ]]; then
+    return
+  fi
+
+  if should_flash_micropython; then
+    return
+  fi
+
+  if should_backup_stock_firmware; then
+    echo "error: --backup-stock requires --flash-micropython." >&2
+    exit 2
+  fi
+
+  if [[ "${SKIP_ERASE}" -eq 1 ]]; then
+    echo "error: --skip-erase requires --flash-micropython or --restore." >&2
+    exit 2
+  fi
 }
 
 skip_stock_firmware_backup() {
@@ -1717,6 +1816,28 @@ reset_device() {
   fi
 }
 
+upload_runtime_assets() {
+  local mpremote_bin="$1"
+  local connect_target="$2"
+
+  trace_micropython_probe "${mpremote_bin}" "${connect_target}"
+
+  if [[ -d "${LIB_DIR}/drivers" ]]; then
+    trace_source_inventory "driver_libraries" "${LIB_DIR}/drivers"
+    trace_event "phase" "name=upload_libraries" "status=start"
+    remote_mkdir "${mpremote_bin}" "${connect_target}" "lib"
+    upload_tree "${mpremote_bin}" "${connect_target}" "${LIB_DIR}/drivers" "lib/drivers"
+    trace_event "phase" "name=upload_libraries" "status=complete"
+  else
+    trace_event "phase" "name=upload_libraries" "status=skipped" "reason=no_driver_directory"
+  fi
+
+  trace_event "phase" "name=upload_application" "status=start"
+  upload_application "${mpremote_bin}" "${connect_target}"
+  trace_event "phase" "name=upload_application" "status=complete"
+  reset_device "${mpremote_bin}" "${connect_target}"
+}
+
 main() {
   local firmware_url
   local firmware_name
@@ -1739,7 +1860,8 @@ main() {
   prompt_serial_port
   persist_config_defaults
   write_debug_context "$@"
-  trace_event "phase" "name=config" "status=complete" "port=${PORT:-auto}" "baud=${BAUD}" "firmware_url=${FIRMWARE_URL}" "restore_mode=${RESTORE_MODE}"
+  validate_install_mode_options
+  trace_event "phase" "name=config" "status=complete" "port=${PORT:-auto}" "baud=${BAUD}" "firmware_url=${FIRMWARE_URL}" "restore_mode=${RESTORE_MODE}" "flash_micropython=${FLASH_MICROPYTHON}"
 
   if [[ -n "${PORT}" ]]; then
     port_args=(--port "${PORT}")
@@ -1760,6 +1882,33 @@ main() {
     trace_device_probe "${esptool_py}" "${port_args[@]}"
     restore_stock_firmware "${esptool_py}" "${port_args[@]}"
     trace_event "phase" "name=restore" "status=complete"
+    return
+  fi
+
+  if ! should_flash_micropython; then
+    trace_event "phase" "name=upload_prerequisites" "status=start"
+    ensure_upload_prerequisites
+    trace_event "phase" "name=upload_prerequisites" "status=complete"
+    trace_source_inventory "staged_libraries" "${LIB_DIR}"
+
+    mpremote_bin="${VENV_DIR}/bin/mpremote"
+
+    cat <<EOF
+
+Ready to upload application:
+  MicroPython firmware: assumed present on device (ESP32_GENERIC_S3)
+  Port: ${connect_target}
+EOF
+
+    if ! confirm_from_config "AIPI_CONFIRM_UPLOAD" "Upload application source to existing MicroPython device" "no"; then
+      echo "aborted: upload was not confirmed" >&2
+      exit 1
+    fi
+
+    upload_runtime_assets "${mpremote_bin}" "${connect_target}"
+
+    echo "Application upload complete."
+    trace_event "phase" "name=main" "status=complete"
     return
   fi
 
@@ -1827,22 +1976,7 @@ EOF
   trace_event "phase" "name=micropython_reconnect_wait" "status=start" "seconds=3"
   sleep 3
   trace_event "phase" "name=micropython_reconnect_wait" "status=complete"
-  trace_micropython_probe "${mpremote_bin}" "${connect_target}"
-
-  if [[ -d "${LIB_DIR}/drivers" ]]; then
-    trace_source_inventory "driver_libraries" "${LIB_DIR}/drivers"
-    trace_event "phase" "name=upload_libraries" "status=start"
-    remote_mkdir "${mpremote_bin}" "${connect_target}" "lib"
-    upload_tree "${mpremote_bin}" "${connect_target}" "${LIB_DIR}/drivers" "lib/drivers"
-    trace_event "phase" "name=upload_libraries" "status=complete"
-  else
-    trace_event "phase" "name=upload_libraries" "status=skipped" "reason=no_driver_directory"
-  fi
-
-  trace_event "phase" "name=upload_application" "status=start"
-  upload_application "${mpremote_bin}" "${connect_target}"
-  trace_event "phase" "name=upload_application" "status=complete"
-  reset_device "${mpremote_bin}" "${connect_target}"
+  upload_runtime_assets "${mpremote_bin}" "${connect_target}"
 
   echo "Install complete."
   trace_event "phase" "name=main" "status=complete"

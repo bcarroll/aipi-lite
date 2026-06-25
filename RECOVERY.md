@@ -9,8 +9,9 @@ as local operational artifacts.
 
 ## Bootloader Mode
 
-The AIPI-Lite must be in ESP32-S3 bootloader mode for backup, install, or
-restore operations.
+The AIPI-Lite must be in ESP32-S3 bootloader mode for stock backup, explicit
+firmware flash, or restore operations. The default application upload path
+assumes MicroPython is already running and does not use bootloader mode.
 
 1. Remove the four back screws from the AIPI-Lite.
 2. Hold the BOOT button under the display.
@@ -20,15 +21,16 @@ restore operations.
 
 ## Stock Firmware Backup
 
-Normal application installs skip the stock backup and prepare the device with
-compatible MicroPython firmware. When a fresh stock recovery image is required,
-use the installer's opt-in backup path. It prompts for bootloader confirmation,
+Normal application installs skip the stock backup and assume the device already
+runs compatible ESP32_GENERIC_S3 MicroPython firmware. When a fresh stock
+recovery image is required before replacing firmware, use the installer's
+explicit flash path with opt-in backup. It prompts for bootloader confirmation,
 verifies the ROM bootloader answers `esptool chip-id` without auto-reset, stores
 answers in ignored `.conf`, then backs up the full 16 MB flash in smaller chunks
 before it erases or writes replacement firmware:
 
 ```bash
-./install.sh --port /dev/cu.usbmodem31101 --backup-stock
+./install.sh --port /dev/cu.usbmodem31101 --flash-micropython --backup-stock
 ```
 
 By default, backups are written under:
@@ -42,6 +44,7 @@ Use a specific backup destination when needed:
 ```bash
 ./install.sh \
   --port /dev/cu.usbmodem31101 \
+  --flash-micropython \
   --backup-stock \
   --backup-path /path/outside/git/aipi-lite-stock.bin
 ```
@@ -57,6 +60,7 @@ use a smaller chunk size:
 ```bash
 ./install.sh \
   --port /dev/cu.usbmodem31101 \
+  --flash-micropython \
   --backup-stock \
   --backup-chunk-size 0x40000
 ```
@@ -69,17 +73,18 @@ the USB transport is still unstable. With `--trace`, the installer records
 `event=stock_backup_blocked` with the failing offset, final retry chunk size,
 selected serial port, backup path, and flash size.
 
-When `hardware validation status: blocked` appears during a `--backup-stock`
-run, re-enter ESP32-S3 bootloader mode, use a direct known-data USB-C cable, try
-a different host USB port, and rerun with the reported `--port` plus
+When `hardware validation status: blocked` appears during a
+`--flash-micropython --backup-stock` run, re-enter ESP32-S3 bootloader mode, use
+a direct known-data USB-C cable, try a different host USB port, and rerun with
+the reported `--port` plus
 `--backup-chunk-size 0x40000 --backup-min-chunk-size 0x1000`. On WSL, detach and
 reattach the USB device to WSL, then verify the `/dev/ttyS*` port before
-retrying. Rerun without `--backup-stock` only when stock recovery is not
-required.
+retrying. Rerun with `--flash-micropython` but without `--backup-stock` only
+when stock recovery is not required.
 
 Existing `--skip-backup` and `AIPI_SKIP_STOCK_BACKUP=1` remain accepted for
-explicit application-first install runs. They are not stored in `.conf`, and
-the installer still requires the normal erase/write confirmation.
+explicit application-first flash runs. They are not stored in `.conf`, and the
+installer still requires the normal erase/write confirmation.
 
 Manual backup is also possible after staging tools:
 
@@ -154,13 +159,16 @@ Before any erase, write, or restore operation:
 - If `--backup-stock` is used, confirm the stock firmware backup exists and is
   non-empty before relying on it for recovery.
 - If a backup exists, confirm it is not staged in Git: `git status --short`.
-- If the normal application-first install path is used, confirm the operator
-  accepts that stock firmware recovery may be unavailable.
+- If the normal upload-only install path is used, confirm ESP32_GENERIC_S3
+  MicroPython is already flashed and running on the device.
+- If explicit firmware flashing is used without `--backup-stock`, confirm the
+  operator accepts that stock firmware recovery may be unavailable.
 - Confirm the device is on stable USB power.
 - If using the battery module, confirm it has enough charge or remove it during
   bench flashing.
-- Confirm the device is in ESP32-S3 bootloader mode; the installer also verifies
-  this with `esptool chip-id` before backup, erase, write, or restore commands.
+- For backup, flash, or restore operations, confirm the device is in ESP32-S3
+  bootloader mode; the installer also verifies this with `esptool chip-id`
+  before backup, erase, write, or restore commands.
 - Confirm [SPEC.md](SPEC.md) still matches the physical unit and no hardware
   modifications have changed the relevant pins.
 - Confirm replacement firmware configuration does not contain public cloud
@@ -173,13 +181,18 @@ Before any erase, write, or restore operation:
 `install.sh` now performs these `feat/01-backup-recovery` tasks:
 
 - Reads and writes installer answers from ignored `.conf`.
-- Prompts for bootloader readiness.
+- Uploads application source by default to an existing ESP32_GENERIC_S3
+  MicroPython runtime without backing up, erasing, or flashing firmware.
+- Skips Git self-update by default; `--self-update` is available for intentional
+  pull-and-restart runs.
+- Prompts for bootloader readiness during explicit flash and restore flows.
 - Verifies the ESP32-S3 ROM bootloader responds before backup, erase, write, or
   restore operations.
 - Stages missing local tools only after approval.
-- Skips stock backup by default for application-first MicroPython installs.
+- Skips stock backup by default for application-first MicroPython uploads.
 - Backs up full 16 MB stock flash in chunks before installing MicroPython when
-  `--backup-stock` or `AIPI_BACKUP_STOCK_FIRMWARE=1` is supplied.
+  `--flash-micropython --backup-stock` or `AIPI_FLASH_MICROPYTHON=1`
+  with `AIPI_BACKUP_STOCK_FIRMWARE=1` is supplied.
 - Rejects partial stock backups whose byte count does not match the configured
   flash size.
 - Retries failed backup chunks at smaller sizes without resetting the chip

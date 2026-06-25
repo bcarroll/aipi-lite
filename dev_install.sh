@@ -24,7 +24,9 @@ Usage: ./dev_install.sh [dev options] [--] [install.sh options]
 
 Run the normal installer, show the same stdout/stderr a developer would see,
 and capture a redacted transcript for GitHub issue inspection or hardware
-validation analysis.
+validation analysis. The default installer path uploads to an existing
+MicroPython runtime; pass --flash-micropython after -- only for intentional
+firmware flashing.
 
 Developer options:
   --gh [REPOSITORY]        Create a new GitHub issue from the redacted issue

@@ -67,7 +67,7 @@ tooling directories.
 
 | Branch / component | Status | Evidence | Remaining work |
 | --- | --- | --- | --- |
-| `feat/01-backup-recovery` | Implemented | `install.sh` self-updates with `git pull --ff-only` plus one retry before device operations, can write sanitized debug artifacts for GitHub issues, can clean downloaded prerequisite artifacts while preserving backups/debug/captures, prompts for bootloader readiness, stores answers in `.conf`, locks a successful esptool auto-detected port for later backup/flash commands, verifies the ESP32-S3 ROM bootloader responds to `esptool chip-id` without auto-reset before backup, erase, write, or restore operations, skips stock backup by default for application-first installs, can opt in to stock flash backup with `--backup-stock` / `AIPI_BACKUP_STOCK_FIRMWARE=1`, keeps exact-size validation, no-reset chunked reads, smaller-chunk retries, compatibility with `--skip-backup` / `AIPI_SKIP_STOCK_BACKUP=1`, and a structured `stock_backup_blocked` trace event when an opt-in backup cannot read flash, restores saved stock backups, and `RECOVERY.md` documents backup, restore, expected recovery output, blocked-backup handling, and the flashing safety checklist. | Validate the restore flow on physical hardware and record exact stock serial logs. |
+| `feat/01-backup-recovery` | Implemented | `install.sh` skips Git self-update by default, exposes explicit `--self-update`, can write sanitized debug artifacts for GitHub issues, can clean downloaded prerequisite artifacts while preserving backups/debug/captures, uploads application source by default to an already-flashed ESP32_GENERIC_S3 MicroPython device, stores answers in `.conf`, prompts for bootloader readiness only during explicit flash/restore flows, locks a successful esptool auto-detected port for later backup/flash commands, verifies the ESP32-S3 ROM bootloader responds to `esptool chip-id` without auto-reset before backup, erase, write, or restore operations, skips stock backup, erase, and MicroPython flashing by default for application-first uploads, can opt in to MicroPython flashing with `--flash-micropython` / `AIPI_FLASH_MICROPYTHON=1`, can opt in to stock flash backup with `--flash-micropython --backup-stock` / `AIPI_FLASH_MICROPYTHON=1` plus `AIPI_BACKUP_STOCK_FIRMWARE=1`, keeps exact-size validation, no-reset chunked reads, smaller-chunk retries, compatibility with `--skip-backup` / `AIPI_SKIP_STOCK_BACKUP=1`, and a structured `stock_backup_blocked` trace event when an opt-in backup cannot read flash, restores saved stock backups, and `RECOVERY.md` documents backup, restore, expected recovery output, blocked-backup handling, and the flashing safety checklist. | Validate the restore flow on physical hardware and record exact stock serial logs. |
 | `tooling/dev-install-capture` | Implemented | `dev_install.sh`, `install.sh --trace`, `tests/test_dev_install_capture.py`, `tests/test_install_script.py`, `README.md`, and `tools/README.md` add host-only installer capture plus deeper trace diagnostics. Captures include raw/redacted transcripts, run metadata, hardware validation notes, GitHub-ready issue bodies, automatic issue creation, installer phase transitions, firmware metadata, best-effort target probes, upload inventory, and command status under ignored local storage. | Use it during physical hardware validation runs and refine collected metadata if real bench analysis needs more fields. |
 | `feat/02-micropython-skeleton` | Implemented | `src/boot.py`, `src/main.py`, `src/pins.py`, `src/README.md`, and host tests provide safe startup defaults, grouped pin constants, serial-visible bring-up status, and hardware-free regression coverage. | Validate the serial output and display baseline on physical hardware. |
 | `feat/04-display-bringup` | Implemented, hardware validation pending | `src/display.py`, `src/display_probe.py`, `src/aipi_lite_config.py`, `src/main.py`, and `tests/test_aipi_lite_display.py` add an ST7735 wrapper, PWM backlight control, named status screens, an opt-in display probe, and host-side layout coverage. | Run `display_probe.run_probe()` on physical hardware and record final orientation, color order, and readability observations. |
@@ -92,8 +92,9 @@ tooling directories.
   `/dev/ttyS7`, then `read-flash` repeatedly failed at offset `0x100000` after
   retrying down to the `0x1000` minimum chunk size. The installer did not erase
   or write flash because no complete stock backup was available. Current
-  application-first installs skip backup by default; use `--backup-stock` only
-  for recovery-focused runs that should still stop on this read failure.
+  application-first installs skip backup by default; use
+  `--flash-micropython --backup-stock` only for recovery-focused runs that
+  should still stop on this read failure.
 - 2026-06-24: GitHub issue #12 repeated the same blocked backup signature on
   commit `fc5fa6a788d8b029b08ee1942c282e53f854cfca`. `dev_install.sh --gh`
   now keeps this known stock-backup-blocked capture local instead of creating
@@ -194,7 +195,7 @@ Implementation notes:
 - `install.sh --trace` enables `--debug` and writes a separate redacted trace
   artifact under `tools/.local/debug/` with installer phase transitions,
   firmware path/size/checksum metadata, prerequisite status, best-effort
-  esptool target identity probes, post-flash MicroPython/mpremote probes,
+  esptool target identity probes, MicroPython/mpremote probes,
   source upload inventory, command exit statuses, and reset status.
 - `dev_install.sh --trace` passes tracing through to the installer while keeping
   the visible transcript and GitHub issue body behavior unchanged.

@@ -4,17 +4,16 @@ Local-only replacement firmware work for the XORIGIN AI PI-Lite / AIPI Lite.
 
 ## Current MicroPython Workflow
 
-Use the repository installer to resolve the latest stable ESP32-S3 MicroPython
-firmware, flash it, and upload the current application baseline:
+Use the repository installer to upload the current application baseline to an
+AIPI-Lite that already has ESP32_GENERIC_S3 MicroPython flashed:
 
 ```bash
 ./install.sh --port /dev/cu.usbmodem31101
 ```
 
-Before any installer actions, `install.sh` runs `git pull --ff-only` from the
-repository root, retries once if that pull fails, and restarts itself once so
-the active script is current. Use `--skip-self-update` or
-`AIPI_SKIP_SELF_UPDATE=1` only for intentional offline or pinned-revision runs.
+The installer does not run `git pull` by default. Use `--self-update` or
+`AIPI_INSTALL_SELF_UPDATE=1` only when you intentionally want it to run
+`git pull --ff-only` and restart itself before installer actions.
 
 For issue reporting or future troubleshooting context, add `--debug` to keep a
 sanitized installer transcript and environment summary under
@@ -32,9 +31,10 @@ transcript.
 Use `--trace` when a hardware or firmware install run needs deeper feedback for
 improvement. Trace mode enables `--debug` and writes a separate redacted trace
 artifact under `tools/.local/debug/` with installer phase transitions,
-firmware path/size/checksum metadata, prerequisite status, best-effort esptool
-target identity probes, MicroPython/mpremote runtime probes after flashing,
-source upload inventory, command exit statuses, and reset status:
+prerequisite status, MicroPython/mpremote runtime probes, source upload
+inventory, command exit statuses, and reset status. Explicit firmware flashing
+runs also include firmware path/size/checksum metadata and best-effort esptool
+target identity probes:
 
 ```bash
 ./install.sh --trace --port /dev/cu.usbmodem31101
@@ -90,7 +90,8 @@ GitHub reporting workflow.
 
 If local prerequisites are missing, the installer prompts before downloading or
 installing components under ignored `tools/.local/`, then continues with the
-flash and upload workflow after approval.
+upload workflow after approval. The default setup path installs `mpremote` and
+staged libraries without downloading a MicroPython firmware image.
 Prompts are written explicitly so they remain visible through `dev_install.sh`
 captures. If stdin is not interactive, the installer uses safe defaults for
 optional prompts, treats confirmations as `no`, and exits instead of waiting
@@ -98,60 +99,70 @@ silently.
 
 Installer answers are stored in a root `.conf` file, which is ignored by Git.
 The script reads that file on later runs for values such as serial port,
-download approval, bootloader confirmation, flash approval, backup path, and
-reset preference.
+download approval, upload approval, bootloader confirmation for explicit flash
+or restore runs, flash approval, backup path, and reset preference.
 
-Run without `--port` to let `esptool` and `mpremote` auto-detect the attached
+Run without `--port` to let `mpremote` auto-detect the attached MicroPython
 device:
 
 ```bash
 ./install.sh
 ```
 
-When `esptool` successfully auto-detects an ESP32-S3 in bootloader mode, the
-installer records that serial port in `.conf` and reuses it for backup retries,
-erase, and flash commands so later steps do not rescan every host serial
-device.
+Use explicit firmware flashing only when the connected device needs
+ESP32_GENERIC_S3 MicroPython installed or replaced:
+
+```bash
+./install.sh --port /dev/cu.usbmodem31101 --flash-micropython
+```
 
 Use a specific MicroPython firmware build when the latest standard
 ESP32_GENERIC_S3 image is not the right target:
 
 ```bash
 ./install.sh --port /dev/cu.usbmodem31101 \
+  --flash-micropython \
   --firmware-url https://micropython.org/resources/firmware/ESP32_GENERIC_S3-20260406-v1.28.0.bin
 ```
 
-Before erasing or writing flash, the installer requires bootloader confirmation
-and verifies the ROM bootloader answers `esptool chip-id` without auto-reset. If
-that check fails, the installer prints the bootloader steps and stops before
-stock backup, erase, write, or restore operations. Normal installs skip the
-stock firmware backup so the device can be prepared with compatible MicroPython
-firmware and the application can be deployed.
-Recovery-focused runs can add `--backup-stock` or set
-`AIPI_BACKUP_STOCK_FIRMWARE=1` to read the 16 MB stock flash image to
-`tools/.local/backups/` before flashing. Existing `--skip-backup` and
-`AIPI_SKIP_STOCK_BACKUP=1` remain accepted for explicit application-first runs.
+In `--flash-micropython` and restore modes, `esptool` auto-detection can record
+a successful ESP32-S3 bootloader port in `.conf` and reuse it for backup
+retries, erase, and flash commands so later steps do not rescan every host
+serial device.
 
-When `--backup-stock` is used, the backup read is chunked by default so a failed
-transfer cannot be mistaken for a complete stock image on the next run. If a
-backup stalls on a specific USB setup, reduce the chunk size with
-`--backup-chunk-size 0x40000` or set `AIPI_BACKUP_CHUNK_SIZE=0x40000` in
+Before backing up, erasing, writing, or restoring firmware, the installer
+requires bootloader confirmation and verifies the ROM bootloader answers
+`esptool chip-id` without auto-reset. If that check fails, the installer prints
+the bootloader steps and stops before stock backup, erase, write, or restore
+operations. Normal installs skip stock backup and firmware flashing so an
+already-prepared MicroPython device can receive only the application source.
+Recovery-focused runs can add `--flash-micropython --backup-stock` or set
+`AIPI_FLASH_MICROPYTHON=1` and `AIPI_BACKUP_STOCK_FIRMWARE=1` to read the
+16 MB stock flash image to `tools/.local/backups/` before explicit firmware
+flashing. Existing `--skip-backup` and `AIPI_SKIP_STOCK_BACKUP=1` remain
+accepted for explicit application-first flash runs.
+
+When `--flash-micropython --backup-stock` is used, the backup read is chunked by
+default so a failed transfer cannot be mistaken for a complete stock image on
+the next run. If a backup stalls on a specific USB setup, reduce the chunk size
+with `--backup-chunk-size 0x40000` or set `AIPI_BACKUP_CHUNK_SIZE=0x40000` in
 `.conf`. The installer also retries failed backup chunks down to 4 KiB without
 resetting the chip between chunks; a repeat failure at the same offset should be
 treated as an address-specific read failure or an unstable USB path. In
 `--trace` mode the installer records this as `event=stock_backup_blocked`,
 including the failing offset, final retry chunk size, selected port, backup
-path, and flash size. Rerun without `--backup-stock` only when stock recovery is
-not required.
+path, and flash size. Rerun with `--flash-micropython` but without
+`--backup-stock` only when stock recovery is not required.
 
-The user still needs to put the AIPI-Lite into ESP32-S3 bootloader mode and
-connect the device over USB-C because those are physical actions.
+The user still needs to put the AIPI-Lite into ESP32-S3 bootloader mode for
+explicit firmware flash or restore operations, and connect the device over
+USB-C because those are physical actions.
 
 Bootloader access currently requires removing the four back screws, pressing the
 button under the display while plugging the device into USB-C, and confirming
 that the screen remains black.
 
-After flashing and copying `src/`, the installer attempts to reset the device.
+After copying `src/`, the installer attempts to reset the device.
 Set `AIPI_RESET_AFTER_UPLOAD=no` in `.conf` or pass `--no-reset` to skip that
 step.
 

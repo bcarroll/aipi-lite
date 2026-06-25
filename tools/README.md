@@ -12,14 +12,18 @@ The preferred full install path is the repository root installer:
 ./install.sh --port /dev/cu.usbmodem31101
 ```
 
-It resolves the latest stable ESP32-S3 MicroPython firmware, prompts before
-downloading missing local prerequisites, stores answers in the ignored root
-`.conf` file, flashes the connected device, copies application source with
-`mpremote`, and resets the device when possible. Before flash-sensitive
-operations, it verifies the ESP32-S3 ROM bootloader responds to `esptool
-chip-id` without auto-reset. Normal installs skip the stock firmware backup; add
-`--backup-stock` or set `AIPI_BACKUP_STOCK_FIRMWARE=1` when a fresh stock
-recovery image is required before flashing.
+It assumes ESP32_GENERIC_S3 MicroPython is already flashed on the connected
+device, prompts before downloading missing local prerequisites, stores answers
+in the ignored root `.conf` file, copies application source with `mpremote`, and
+resets the device when possible. Normal installs do not run `git pull`, back up
+stock firmware, erase flash, or write a MicroPython firmware image. Use
+`--self-update` only when an intentional `git pull --ff-only` and restart is
+wanted.
+Before explicit flash-sensitive operations, it verifies the ESP32-S3 ROM
+bootloader responds to `esptool chip-id` without auto-reset. Add
+`--flash-micropython --backup-stock` or set `AIPI_FLASH_MICROPYTHON=1` and
+`AIPI_BACKUP_STOCK_FIRMWARE=1` when a fresh stock recovery image is required
+before flashing.
 Installer prompts are printed explicitly so they remain visible through
 `dev_install.sh` captures. In noninteractive runs, optional prompts use safe
 defaults, confirmations default to `no`, and the installer exits instead of
@@ -59,10 +63,10 @@ For deeper hardware feedback, pass installer tracing through the wrapper:
 
 Trace mode enables installer debug logging and writes a separate redacted trace
 file under `tools/.local/debug/`. The trace records phase transitions,
-firmware metadata and checksum, prerequisite state, best-effort esptool target
-identity, post-flash MicroPython/mpremote probes, upload inventory, command
-exit statuses, and reset status. It does not commit firmware dumps or local
-secrets.
+firmware metadata and checksum for explicit flash runs, prerequisite state,
+best-effort esptool target identity for explicit flash/restore runs,
+MicroPython/mpremote probes, upload inventory, command exit statuses, and reset
+status. It does not commit firmware dumps or local secrets.
 
 To force a clean prerequisite setup without deleting operational artifacts, run:
 

@@ -7,32 +7,33 @@ vendor service endpoints.
 
 ## Stock Backup Option
 
-Normal MVP installs prepare the device with compatible MicroPython firmware and
-skip the stock backup. If stock recovery matters for a specific unit, run the
-`--backup-stock` procedure in [RECOVERY.md](RECOVERY.md). Keep any backup under
-ignored local storage such as `tools/.local/backups/` and verify the image size
-before relying on it for recovery. If opt-in backup validation is blocked,
-record the install capture issue or local capture artifact and continue without
-`--backup-stock` only when stock recovery is not required.
+Normal MVP installs assume the device already runs compatible
+ESP32_GENERIC_S3 MicroPython firmware and skip the stock backup. If stock
+recovery matters before replacing firmware on a specific unit, run the
+`--flash-micropython --backup-stock` procedure in [RECOVERY.md](RECOVERY.md).
+Keep any backup under ignored local storage such as `tools/.local/backups/` and
+verify the image size before relying on it for recovery. If opt-in backup
+validation is blocked, record the install capture issue or local capture
+artifact and continue with `--flash-micropython` but without `--backup-stock`
+only when stock recovery is not required.
 
 Do not commit stock firmware dumps, local Wi-Fi configuration, service URLs,
 device labels, validation transcripts, credentials, or GitHub tokens.
 
-## MVP Flashing Guide
+## MVP Install Guide
 
-1. Put the device into ESP32-S3 bootloader mode.
-2. Run the installer from the repository root:
+1. Confirm ESP32_GENERIC_S3 MicroPython is already flashed and running on the
+   device.
+2. Run the installer from the repository root to upload the application:
 
    ```bash
    ./install.sh --port /dev/cu.usbmodem31101
    ```
 
-3. Confirm the install summary shows either `Stock backup: skipped by default`
-   or the verified backup path requested with `--backup-stock`.
-4. Confirm the installer reports `ESP32-S3 bootloader connection verified`
-   before erase/write operations.
-5. Allow the installer to upload the current `src/` application tree.
-6. Capture serial output after reset and confirm the safe boot lines appear.
+3. Confirm the install summary says MicroPython firmware is assumed present on
+   the device.
+4. Allow the installer to upload the current `src/` application tree.
+5. Capture serial output after reset and confirm the safe boot lines appear.
 
 Use `dev_install.sh` for hardware validation captures when a GitHub issue body
 is needed for later analysis:
@@ -75,7 +76,8 @@ production authentication or hardening.
 
 - Stock firmware backup is skipped by default, or the opt-in backup exists, has
   the expected size, and remains ignored.
-- Installer bootloader verification passes before flash-sensitive operations.
+- Installer bootloader verification passes before any explicit flash-sensitive
+  operation.
 - `python3 -m unittest discover -s tests -v` passes on the host.
 - `bash -n install.sh`, `bash -n dev_install.sh`, and
   `bash -n tools/setup_micropython_tools.sh` pass.
