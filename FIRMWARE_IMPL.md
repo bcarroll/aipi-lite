@@ -33,7 +33,7 @@ with text so the checklist does not rely on color alone.
 1. ✅ Complete | 🟡 Not Validated - `feat/01-backup-recovery`
 2. ✅ Complete | 🟡 Not Validated - `feat/02-micropython-skeleton`
 3. ✅ Complete | ✅ Validated - `feat/03-gpio-status-input`
-4. ✅ Complete | 🟡 Not Validated - `feat/04-display-bringup`
+4. ✅ Complete | ✅ Validated - `feat/04-display-bringup`
 5. ✅ Complete | 🟡 Not Validated - `feat/05-local-wifi-policy`
 6. ✅ Complete | 🟡 Not Validated - `feat/06-es8311-codec-control`
 7. ✅ Complete | 🟡 Not Validated - `feat/07-audio-capture`
@@ -70,7 +70,7 @@ tooling directories.
 | `feat/01-backup-recovery` | Implemented | `install.sh` skips Git self-update by default, exposes explicit `--self-update`, can write sanitized debug artifacts for GitHub issues, can clean downloaded prerequisite artifacts while preserving backups/debug/captures, uploads application source by default to an already-flashed ESP32_GENERIC_S3 MicroPython device, stores answers in `.conf`, prompts for bootloader readiness only during explicit flash/restore flows, locks a successful esptool auto-detected port for later backup/flash commands, verifies the ESP32-S3 ROM bootloader responds to `esptool chip-id` without auto-reset before backup, erase, write, or restore operations, skips stock backup, erase, and MicroPython flashing by default for application-first uploads, can opt in to MicroPython flashing with `--flash-micropython` / `AIPI_FLASH_MICROPYTHON=1`, can opt in to stock flash backup with `--flash-micropython --backup-stock` / `AIPI_FLASH_MICROPYTHON=1` plus `AIPI_BACKUP_STOCK_FIRMWARE=1`, keeps exact-size validation, no-reset chunked reads, smaller-chunk retries, compatibility with `--skip-backup` / `AIPI_SKIP_STOCK_BACKUP=1`, and a structured `stock_backup_blocked` trace event when an opt-in backup cannot read flash, restores saved stock backups, and `RECOVERY.md` documents backup, restore, expected recovery output, blocked-backup handling, and the flashing safety checklist. | Validate the restore flow on physical hardware and record exact stock serial logs. |
 | `tooling/dev-install-capture` | Implemented | `dev_install.sh`, `install.sh --trace`, `tests/test_dev_install_capture.py`, `tests/test_install_script.py`, `README.md`, and `tools/README.md` add host-only installer capture plus deeper trace diagnostics. Captures include raw/redacted transcripts, run metadata, hardware validation notes, GitHub-ready issue bodies, automatic issue creation, installer phase transitions, firmware metadata, best-effort target probes, upload inventory, and command status under ignored local storage. | Use it during physical hardware validation runs and refine collected metadata if real bench analysis needs more fields. |
 | `feat/02-micropython-skeleton` | Implemented | `src/boot.py`, `src/main.py`, `src/pins.py`, `src/README.md`, and host tests provide safe startup defaults, grouped pin constants, serial-visible bring-up status, and hardware-free regression coverage. | Validate the serial output and display baseline on physical hardware. |
-| `feat/04-display-bringup` | Implemented, hardware validation pending | `src/display.py`, `src/display_probe.py`, `src/aipi_lite_config.py`, `src/main.py`, and `tests/test_aipi_lite_display.py` add an ST7735 wrapper, PWM backlight control, named status screens, an opt-in display probe, and host-side layout coverage. | Run `display_probe.run_probe()` on physical hardware and record final orientation, color order, and readability observations. |
+| `feat/04-display-bringup` | Implemented, hardware validated | `src/display.py`, `src/display_probe.py`, `src/aipi_lite_config.py`, `src/main.py`, and `tests/test_aipi_lite_display.py` add an ST7735 wrapper, PWM backlight control, named status screens, an opt-in display probe, and host-side layout coverage. Operator hardware validation on 2026-06-25 reported that `display_probe.run_probe(cycles=2)` passed. | Capture a photo or full display probe serial transcript during a future bench run if exact orientation, color, and readability evidence is needed. |
 | LCD pin constants | Implemented | `src/pins.py` includes display, button, status LED, ES8311 audio, speaker enable, charge input, and board power constants from `SPEC.md`. | Verify unconfirmed GPIO10 power behavior before any branch attempts to drive it. |
 | `feat/03-gpio-status-input` | Implemented, hardware validated | `src/status_led.py`, `src/button.py`, `src/io_probe.py`, and `tests/test_gpio_status_input.py` add GPIO46 status states, GPIO42 active-low debounce events, a GPIO-only serial probe, and host regression coverage. Operator hardware validation on 2026-06-25 observed the GPIO46 LED blink several colors, recorded the GPIO42 button press correctly, and reported no errors. | Capture a full `io_probe` serial transcript during a future bench run if exact output evidence is needed. |
 | `feat/05-local-wifi-policy` | Implemented, hardware validation pending | `src/wifi_config.py`, `src/local_endpoint.py`, `src/wifi_probe.py`, `.gitignore`, and `tests/test_wifi_policy.py` add ignored local config loading, local-only endpoint validation, a Wi-Fi `/health` probe, and host-side policy coverage. | Run `wifi_probe.run_probe()` on physical hardware with a local service and record connection, endpoint, LED, and display behavior. |
@@ -91,6 +91,9 @@ tooling directories.
   `Local firmware`. A following GPIO probe run made the GPIO46 status LED blink
   several colors, recorded the GPIO42 button press correctly, and reported no
   errors. The full serial transcript was not available.
+- 2026-06-25: Operator reported that the explicit display probe
+  `display_probe.run_probe(cycles=2)` passed on physical hardware. No full
+  display probe serial transcript or photo evidence was captured.
 - 2026-06-24: GitHub issue #11 captured a `dev_install.sh --trace` run on
   commit `8afdc028f0edd44d57d4ed176837a6e5db6ad855` that stopped safely during
   the then-default stock firmware backup. `esptool` connected to an ESP32-S3 on
@@ -315,8 +318,10 @@ Implementation notes:
   recording, processing, speaking, and error.
 - `aipi_lite_config.py` remains as a compatibility shim for the imported display
   baseline. New code should use `display.py`.
-- Physical validation still needs to confirm whether the current rotation,
-  color constants, and text size are optimal on the target LCD.
+- Operator hardware validation on 2026-06-25 reported the explicit display
+  probe passed with the current rotation, color constants, text size, and
+  backlight behavior. Capture photo evidence during a later bench run if exact
+  visual records are needed.
 
 ### `feat/05-local-wifi-policy`
 
