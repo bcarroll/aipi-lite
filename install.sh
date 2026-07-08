@@ -83,9 +83,14 @@ Options:
   --trace                 Enable --debug and write detailed install/device
                           trace data for hardware feedback analysis.
   --trace-file FILE       Write --trace output to this file.
+  --list-env              List supported environment overrides and exit.
   -y, --yes               Approve prerequisite setup and confirmation prompts.
   -h, --help              Show this help.
+USAGE
+}
 
+list_environment_overrides() {
+  cat <<'ENVIRONMENT_OVERRIDES'
 Environment overrides:
   AIPI_SERIAL_PORT
   AIPI_APP_DIR
@@ -113,7 +118,7 @@ Environment overrides:
   AIPI_INSTALL_DEBUG_FILE
   AIPI_INSTALL_TRACE
   AIPI_INSTALL_TRACE_FILE
-USAGE
+ENVIRONMENT_OVERRIDES
 }
 
 remove_path_if_present() {
@@ -788,6 +793,10 @@ while [[ $# -gt 0 ]]; do
       TRACE_ENABLED=1
       TRACE_FILE="${1#*=}"
       shift
+      ;;
+    --list-env)
+      list_environment_overrides
+      exit 0
       ;;
     -y|--yes)
       ASSUME_YES=1

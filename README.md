@@ -104,6 +104,8 @@ The script reads that file on later runs for values such as serial port,
 download approval, upload approval, bootloader confirmation for explicit flash
 or restore runs, flash approval, backup path, reset preference, and optional
 local Wi-Fi config generation values.
+Run `./install.sh --list-env` to print the supported environment override names
+without expanding the main help screen.
 
 Run without `--port` to let `mpremote` auto-detect the attached MicroPython
 device:

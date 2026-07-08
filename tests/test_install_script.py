@@ -124,6 +124,40 @@ class InstallScriptTests(unittest.TestCase):
         self.assertIn("upload_application", self.script_text)
         self.assertIn("sha256_file()", self.script_text)
 
+    def test_help_points_to_env_listing_without_printing_full_list(self):
+        """Installer help should mention --list-env without printing every variable."""
+        result = subprocess.run(
+            [str(INSTALL_SCRIPT), "--help"],
+            cwd=REPO_ROOT,
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            check=False,
+        )
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("--list-env", result.stdout)
+        self.assertIn("List supported environment overrides and exit.", result.stdout)
+        self.assertNotIn("Environment overrides:", result.stdout)
+        self.assertNotIn("AIPI_SERIAL_PORT", result.stdout)
+
+    def test_list_env_outputs_supported_environment_overrides(self):
+        """The --list-env option should print supported AIPI_* variables and exit."""
+        result = subprocess.run(
+            [str(INSTALL_SCRIPT), "--list-env"],
+            cwd=REPO_ROOT,
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            check=False,
+        )
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("Environment overrides:", result.stdout)
+        self.assertIn("AIPI_SERIAL_PORT", result.stdout)
+        self.assertIn("AIPI_INSTALL_TRACE_FILE", result.stdout)
+        self.assertNotIn("Usage:", result.stdout)
+
     def test_trace_mode_creates_ignored_artifact_for_cleanup_run(self):
         """A trace cleanup run should create debug and trace artifacts only under tools/.local."""
         with tempfile.TemporaryDirectory() as tmpdir:
