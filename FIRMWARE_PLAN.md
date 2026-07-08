@@ -26,7 +26,9 @@ memory, flash, compute, thermal, power, and responsiveness limits. It should not
 block the first firmware milestone, because display, audio, controls, Wi-Fi,
 and local-only policy must be proven first. Treat on-device inference as an
 optional local-only capability that can reduce or replace calls to a LAN service
-after the core I/O path is stable.
+after the core I/O path is stable. Networking is not a baseline requirement for
+on-device inference usability; the feasibility probe and any future offline mode
+must remain usable without Wi-Fi when their scoped behavior does not need it.
 
 ## Non-Goals
 
@@ -39,7 +41,7 @@ after the core I/O path is stable.
 
 ## Target User Experience
 
-The initial usable firmware should behave as a push-to-talk local assistant
+The initial Wi-Fi-backed MVP should behave as a push-to-talk local assistant
 terminal:
 
 1. Device boots and shows local firmware status on the LCD.
@@ -73,10 +75,12 @@ Any on-device inference work must preserve these constraints:
 - No cloud endpoints, telemetry, model fetches, or remote activation are allowed
   by default.
 - Models and runtime artifacts must be versioned and traceable.
-- The display, button, LED, microphone capture, speaker playback, and network
-  recovery behavior must remain responsive.
-- The firmware must fail back to the local LAN service or a clear offline state
-  if on-device inference is unavailable.
+- The display, button, LED, microphone capture, speaker playback, and any
+  configured network recovery behavior must remain responsive.
+- The firmware must fail to a clear local deferred or unsupported state if
+  on-device inference is unavailable. A configured local Wi-Fi service can
+  remain an optional assistant path, but it is not required for the offline
+  inference feature itself.
 - Memory, flash, CPU, latency, power, and thermal observations must be recorded
   before the feature is promoted beyond an experiment.
 
@@ -116,8 +120,10 @@ All endpoints must be configured as local addresses, such as RFC1918 IPv4
 addresses, `.local` mDNS names, or a local DNS name controlled by the operator.
 The firmware should reject public internet hostnames by default.
 
-If on-device inference is enabled later, the local protocol remains useful as a
-fallback and for capabilities that do not fit on the device.
+If on-device inference is enabled later, the local protocol remains useful as an
+optional assistant path for capabilities that do not fit on the device. It must
+not be required for an offline-only inference probe or feature whose scoped
+behavior can run locally.
 
 ## Runtime Probe Sequence
 
@@ -183,7 +189,10 @@ Build the replacement firmware in small hardware validation steps:
     - Measure available memory, flash, CPU headroom, latency, and power impact.
     - Test only local model/runtime artifacts.
     - Confirm that user I/O and audio streaming remain responsive.
-    - Keep LAN-service fallback available.
+    - Keep the probe offline-first with no Wi-Fi, endpoint, cloud, model
+      download, activation call, or speaker-output requirement.
+    - Record a local `candidate_supported`, `defer_inference`, or
+      `offline_unsupported` decision.
 
 ## Fallback Criteria
 
@@ -286,7 +295,7 @@ baseline:
 | Local service contract | Implemented | `src/service_contract.py`, `src/service_client.py`, `service/mock_service.py`, `service/README.md`, and `tests/test_local_service_contract.py` define `/health`, `/session`, `/audio`, `/response/{session_id}`, and `/audio/{response_id}.wav` with a local-only firmware client and deterministic mock service. |
 | Push-to-talk assistant flow | Implemented, hardware validation pending | `src/main.py`, `src/assistant_state.py`, `src/push_to_talk.py`, `src/reliability.py`, `tests/test_main_startup.py`, and `tests/test_push_to_talk_flow.py` add normal-boot startup for the local-only state machine, GPIO42 press/release handling, bounded capture handoff, local service exchange, response text/audio handling, playback, bounded retries, diagnostics, and recoverable error states. |
 | MVP release packaging | Implemented, hardware validation pending | `src/version.py`, `MVP.md`, `README.md`, `src/README.md`, and `tests/test_mvp_release.py` add local-only version metadata, install/configuration guidance, validation checklist, no-cloud network verification, and a validation report template. |
-| On-device inference | Not implemented | No local model runtime, model metadata, or inference routing has been imported. |
+| On-device inference feasibility | Implemented, hardware validation pending | `src/inference_probe.py`, `INFERENCE_FEASIBILITY.md`, and `tests/test_inference_probe.py` add an offline-first simulated inference probe, deterministic local prompt fixture, model metadata validation, no-network policy checks, and local decision states. No supported model runtime or inference routing has been imported. |
 
 The imported baseline should be treated as hardware evidence for the display
 branch and as a starting point for refactoring into the planned firmware layout.

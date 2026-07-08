@@ -203,6 +203,7 @@ push-to-talk application and opt-in hardware/service probes:
 - `src/wifi_config.py`
 - `src/local_endpoint.py`
 - `src/wifi_probe.py`
+- `src/inference_probe.py`
 - `src/lib/st7735/`
 - `src/lib/drivers/`
 
@@ -226,8 +227,10 @@ service API and client. `assistant_state.py`, `push_to_talk.py`, and
 exchange flow, bounded retries, diagnostics, and conservative power
 observations. `version.py` records MVP metadata. `wifi_probe.py` connects only
 to configured local Wi-Fi and calls only a local `/health` endpoint after
-endpoint policy validation passes. External MicroPython display driver source is
-tracked under `src/lib/drivers/` so a normal application upload includes it.
+endpoint policy validation passes. `inference_probe.py` runs an opt-in
+offline-first on-device inference feasibility probe without Wi-Fi, cloud calls,
+model downloads, or speaker output. External MicroPython display driver source
+is tracked under `src/lib/drivers/` so a normal application upload includes it.
 
 The GPIO status/input probe remains opt-in so normal boot stays recoverable. To
 cycle the GPIO46 WS2812/NeoPixel status LED states and print debounced GPIO42
@@ -281,6 +284,19 @@ The playback helper currently supports bounded 16 kHz, 16-bit, mono PCM and
 WAV input. The probe unmutes the DAC only for playback, enables GPIO9 only
 while I2S samples are being written, then mutes the DAC and disables GPIO9
 before returning.
+
+The on-device inference feasibility probe is opt-in and offline-first. It
+measures heap, flash, timing, button responsiveness, and optional LED/display
+updates under a simulated local inference load. It does not require Wi-Fi, a
+local service, public network access, model downloads, activation calls, or a
+connected speaker:
+
+```bash
+mpremote connect /dev/cu.usbmodem31101 exec "import inference_probe; inference_probe.run_probe()"
+```
+
+See [INFERENCE_FEASIBILITY.md](INFERENCE_FEASIBILITY.md) for the scope,
+candidate runtime inventory, decision states, and validation report template.
 
 The local service client is used by the push-to-talk MVP flow. It validates
 that the configured service URL is local-only before calling

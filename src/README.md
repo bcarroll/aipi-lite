@@ -31,6 +31,7 @@ ESP32-S3 image by the repository installer.
 | `wifi_config.py` | Loader for ignored local Wi-Fi and local-service configuration. |
 | `local_endpoint.py` | Local-only endpoint parser and validator for configured service URLs. |
 | `wifi_probe.py` | Explicit Wi-Fi/local-service probe that validates endpoint policy, connects Wi-Fi, calls `/health`, and reports status. |
+| `inference_probe.py` | Explicit offline on-device inference feasibility probe with resource, timing, button, LED, and display observations. |
 | `lib/st7735/` | Imported ST7735 display driver and font files. |
 | `lib/drivers/` | Tracked external MicroPython display driver bundle staged by `tools/setup_micropython_tools.sh`. |
 | `lib/AIPI-LITE-MICROPYTHON-LIBRARIES.md` | Manifest for tracked external MicroPython library source and upstream license location. |
@@ -178,6 +179,30 @@ tone, unmutes the DAC only for playback, enables GPIO9 only while I2S samples
 are being written, then mutes the DAC and disables GPIO9 before returning. It
 prints byte count, sample count, write calls, and underrun count to serial.
 
+## Offline Inference Feasibility Probe
+
+The inference feasibility probe is separate from the Wi-Fi push-to-talk MVP. It
+does not require Wi-Fi, a local service, public network access, model downloads,
+activation calls, or speaker output. It uses a deterministic local fixture and a
+simulated CPU/memory workload to measure whether on-device inference is worth
+developing further.
+
+Run it explicitly after uploading `src/`:
+
+```python
+import inference_probe
+inference_probe.run_probe()
+```
+
+The probe prints elapsed time, iteration count, heap and flash metrics when
+available, button poll count, local prompt response, and a decision:
+`candidate_supported`, `defer_inference`, or `offline_unsupported`. The current
+hardware validation path can be completed on a test unit with the speaker
+disconnected because no playback check is part of this probe.
+
+See [../INFERENCE_FEASIBILITY.md](../INFERENCE_FEASIBILITY.md) for the
+feasibility scope, candidate runtime inventory, and validation report template.
+
 ## Local Service Client
 
 `service_client.py` implements the local assistant service contract used by the
@@ -303,6 +328,10 @@ status, and updates the status LED and display when those modules initialize.
 - `playback_probe.py` is opt-in. It initializes the ES8311 output and I2S
   speaker path, keeps the test tone bounded and low volume, and must leave the
   DAC muted plus GPIO9 speaker enable disabled before returning.
+- `inference_probe.py` is opt-in and offline-first. It must not require Wi-Fi,
+  a local service endpoint, cloud access, model downloads, activation calls, or
+  speaker output. Keep future model artifacts out of source control unless they
+  have explicit approval and traceable metadata.
 - Local Wi-Fi credentials, service URLs, and operator overrides belong in
   ignored local configuration files, not in source control.
 - Replacement firmware must remain local-only by default. Do not add cloud,

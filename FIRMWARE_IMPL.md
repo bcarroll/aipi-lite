@@ -49,7 +49,7 @@ Support tooling branch:
 
 Optional on-device inference branches:
 
-13. 🟡 Pending | 🟡 Not Validated - `spike/13-on-device-inference-feasibility`
+13. ✅ Complete | 🟡 Not Validated - `spike/13-on-device-inference-feasibility`
 14. 🟡 Pending | 🟡 Not Validated - `feat/14-on-device-inference`
 
 Conditional runtime fallback branch:
@@ -81,7 +81,7 @@ tooling directories.
 | `feat/10-push-to-talk-flow` | Implemented, hardware validation pending | `src/main.py`, `src/assistant_state.py`, `src/push_to_talk.py`, `tests/test_main_startup.py`, and `tests/test_push_to_talk_flow.py` add the assistant state machine, normal-boot push-to-talk startup, shared LED/display/serial state output, button press/release handling, bounded capture handoff, local service exchange, response playback, recoverable error states, and host-side flow coverage. | Run one complete exchange on physical hardware against the mock service and record capture, upload, response text, playback, and visible state behavior. |
 | `feat/11-reliability-power-errors` | Implemented, hardware validation pending | `src/reliability.py`, `src/push_to_talk.py`, `MVP.md`, and `tests/test_reliability.py` add bounded retry/backoff, retry diagnostics, reconnect helper, runtime diagnostics formatting, GPIO21 charge-pulse observation, and GPIO10 board-power guarding. | Validate repeated sessions, Wi-Fi/service recovery, serial diagnostics, GPIO21 observations, and that GPIO10 remains unchanged on hardware. |
 | `feat/12-mvp-release` | Implemented, hardware validation pending | `src/version.py`, `MVP.md`, `README.md`, `src/README.md`, and `tests/test_mvp_release.py` add local-only MVP version metadata, install/configuration guidance, validation checklist, report template, and no-cloud verification expectations. | Complete the MVP validation report from a physical hardware run and record tested MicroPython/runtime versions. |
-| `spike/13-on-device-inference-feasibility` | Not started | No imported on-device inference experiment. | Measure feasibility after core I/O is reliable. |
+| `spike/13-on-device-inference-feasibility` | Implemented, hardware validation pending | `src/inference_probe.py`, `INFERENCE_FEASIBILITY.md`, `README.md`, `src/README.md`, and `tests/test_inference_probe.py` add an offline-first simulated inference resource probe, deterministic local prompt fixture, model metadata validation, no-network policy checks, and a feasibility report template. | Run `inference_probe.run_probe()` on physical hardware and record heap, flash, timing, button, LED, display, and decision behavior. Speaker output is not required for this validation path. |
 | `feat/14-on-device-inference` | Not started | No imported inference runtime integration. | Add only after feasibility is proven. |
 
 ## Hardware Validation Notes
@@ -94,6 +94,11 @@ tooling directories.
 - 2026-06-25: Operator reported that the explicit display probe
   `display_probe.run_probe(cycles=2)` passed on physical hardware. No full
   display probe serial transcript or photo evidence was captured.
+- 2026-07-08: The current test AIPI-Lite has its speaker disconnected. The
+  on-device inference feasibility probe is therefore scoped to heap, flash,
+  timing, button, LED, display, offline prompt fixture, metadata, and no-network
+  behavior. Speaker playback remains validated separately through the audio
+  playback branch when hardware is connected for that purpose.
 - 2026-06-24: GitHub issue #11 captured a `dev_install.sh --trace` run on
   commit `8afdc028f0edd44d57d4ed176837a6e5db6ad855` that stopped safely during
   the then-default stock firmware backup. `esptool` connected to an ESP32-S3 on
@@ -730,7 +735,8 @@ Implementation notes:
 ### `spike/13-on-device-inference-feasibility`
 
 Purpose: determine whether useful on-device inference can run locally on the
-AIPI-Lite without breaking the proven user I/O and audio path.
+AIPI-Lite without requiring networking and without breaking the proven user I/O
+path.
 
 Expected commits:
 
@@ -738,7 +744,8 @@ Expected commits:
   - Define candidate use cases: intent routing, constrained local responses,
     wake-word assistance, or partial assistant logic.
   - Define latency, memory, flash, power, and responsiveness success criteria.
-  - Define how the device falls back to the LAN service.
+  - Define visible local decisions for unsupported or deferred inference without
+    making Wi-Fi or a LAN service a usability requirement.
 
 - `docs: inventory candidate runtimes and models`
   - Record candidate runtime options for MicroPython and ESP-IDF.
@@ -748,7 +755,9 @@ Expected commits:
 - `firmware: add inference resource probe`
   - Measure heap, flash, CPU timing, and UI responsiveness during simulated
     inference load.
-  - Keep microphone, speaker, button, display, and LED checks active.
+  - Keep button, display, and LED checks active when available.
+  - Do not require speaker output, Wi-Fi, local services, model downloads, or
+    activation calls.
 
 - `firmware: add local prompt-response experiment`
   - Use a tiny local fixture or mock model interface.
@@ -756,8 +765,8 @@ Expected commits:
   - Avoid cloud model downloads or activation calls.
 
 - `tests: add inference policy tests`
-  - Verify public endpoints remain blocked.
-  - Verify fallback state is selected when inference is unavailable.
+  - Verify network requirements and endpoints are blocked for the probe.
+  - Verify local decision state is selected when inference is unavailable.
   - Verify model metadata validation rejects unknown artifacts.
 
 - `docs: record feasibility decision`
@@ -768,9 +777,28 @@ Expected commits:
 Acceptance criteria:
 
 - On-device inference feasibility is documented with measurements.
-- No cloud endpoint is required for the experiment.
-- Core I/O remains responsive during the probe or the limitation is documented.
+- No network endpoint is required for the experiment.
+- Button, display, and LED responsiveness remain observable during the probe or
+  the limitation is documented.
 - A clear continue/defer/fallback decision is recorded.
+
+Implementation notes:
+
+- `INFERENCE_FEASIBILITY.md` defines the offline-first scope, candidate runtime
+  inventory, decision states, success criteria, and hardware validation report.
+- `src/inference_probe.py` provides an explicit `run_probe()` entrypoint that
+  measures heap and flash metrics when available, runs a bounded simulated
+  CPU/memory load, polls GPIO42 when available, refreshes optional LED/display
+  outputs, and returns `candidate_supported`, `defer_inference`, or
+  `offline_unsupported`.
+- The probe validates model provenance metadata without loading model binaries
+  and rejects any endpoint or network requirement. It does not start Wi-Fi or
+  call local, vendor, public, cloud, OTA, telemetry, or analytics services.
+- The deterministic local prompt fixture is only a feasibility harness. It is
+  not a supported model runtime and should not be wired into normal startup.
+- The current feasibility decision remains `defer_inference` until a physical
+  hardware run records heap, flash, timing, button, LED, and display behavior.
+  A disconnected speaker does not block this validation path.
 
 ### `feat/14-on-device-inference`
 
@@ -807,7 +835,9 @@ Expected commits:
 
 - `docs: add on-device inference operation guide`
   - Explain model installation and provenance checks.
-  - Explain when inference runs locally versus LAN fallback.
+  - Explain when inference runs locally, when the device reports a local
+    unsupported/deferred state, and when an operator-configured local service is
+    used as an optional assistant path.
   - Document measured limits and known failure modes.
 
 Acceptance criteria:
