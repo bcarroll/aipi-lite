@@ -33,6 +33,9 @@ DEBUG_FILE="${AIPI_INSTALL_DEBUG_FILE:-}"
 TRACE_ENABLED="${AIPI_INSTALL_TRACE:-0}"
 TRACE_FILE="${AIPI_INSTALL_TRACE_FILE:-}"
 ASSUME_YES=0
+LIST_PORTS=0
+PORT_OPTION_PROVIDED=0
+PORT_DISCOVERY_ATTEMPTED=0
 SKIP_ERASE=0
 RESTORE_MODE=0
 CLEAN_TOOLS=0
@@ -83,9 +86,15 @@ Options:
   --trace                 Enable --debug and write detailed install/device
                           trace data for hardware feedback analysis.
   --trace-file FILE       Write --trace output to this file.
+  --list-ports            Probe available MicroPython serial ports, then exit.
+  --list-env              List supported environment overrides and exit.
   -y, --yes               Approve prerequisite setup and confirmation prompts.
   -h, --help              Show this help.
+USAGE
+}
 
+list_environment_overrides() {
+  cat <<'ENVIRONMENT_OVERRIDES'
 Environment overrides:
   AIPI_SERIAL_PORT
   AIPI_APP_DIR
@@ -113,7 +122,7 @@ Environment overrides:
   AIPI_INSTALL_DEBUG_FILE
   AIPI_INSTALL_TRACE
   AIPI_INSTALL_TRACE_FILE
-USAGE
+ENVIRONMENT_OVERRIDES
 }
 
 remove_path_if_present() {
@@ -680,6 +689,7 @@ while [[ $# -gt 0 ]]; do
   case "$1" in
     --port)
       PORT="${2:?--port requires a value}"
+      PORT_OPTION_PROVIDED=1
       shift 2
       ;;
     --app-dir)
@@ -787,6 +797,14 @@ while [[ $# -gt 0 ]]; do
       DEBUG_ENABLED=1
       TRACE_ENABLED=1
       TRACE_FILE="${1#*=}"
+      shift
+      ;;
+    --list-env)
+      list_environment_overrides
+      exit 0
+      ;;
+    --list-ports)
+      LIST_PORTS=1
       shift
       ;;
     -y|--yes)
@@ -1008,6 +1026,13 @@ prompt_serial_port() {
   if [[ -n "${PORT}" ]]; then
     config_set "AIPI_SERIAL_PORT" "${PORT}"
     return
+  fi
+
+  if [[ "${PORT_OPTION_PROVIDED}" -eq 0 ]]; then
+    discover_micropython_ports "select" || true
+    if [[ -n "${PORT}" ]]; then
+      return
+    fi
   fi
 
   if config_has_key "AIPI_SERIAL_PORT"; then
@@ -1373,6 +1398,227 @@ has_esptool() {
 has_mpremote() {
   [[ -x "${VENV_DIR}/bin/mpremote" ]] \
     && "${VENV_DIR}/bin/mpremote" --help >/dev/null 2>&1
+}
+
+is_wsl_environment() {
+  if [[ -n "${WSL_DISTRO_NAME:-}" || -n "${WSL_INTEROP:-}" ]]; then
+    return 0
+  fi
+
+  [[ -r /proc/version ]] && grep -qi microsoft /proc/version
+}
+
+raw_serial_port_candidates() {
+  local candidate
+
+  for candidate in \
+    /dev/ttyACM* \
+    /dev/ttyUSB* \
+    /dev/ttyS[0-9]* \
+    /dev/cu.usbmodem* \
+    /dev/cu.usbserial* \
+    /dev/cu.SLAB_USBtoUART* \
+    /dev/cu.wchusbserial*; do
+    if [[ -e "${candidate}" ]]; then
+      printf '%s\n' "${candidate}"
+    fi
+  done
+}
+
+windows_com_port_candidates() {
+  if ! command -v powershell.exe >/dev/null 2>&1; then
+    return 0
+  fi
+
+  powershell.exe -NoProfile -Command '[System.IO.Ports.SerialPort]::GetPortNames() -join [Environment]::NewLine' 2>/dev/null \
+    | tr -d '\r' \
+    | sed '/^$/d' \
+    || true
+}
+
+wsl_com_port_device_candidates() {
+  local com_port
+  local com_number
+  local candidate
+
+  if ! is_wsl_environment; then
+    return
+  fi
+
+  while IFS= read -r com_port; do
+    case "${com_port}" in
+      COM[0-9]*)
+        com_number="${com_port#COM}"
+        candidate="/dev/ttyS${com_number}"
+        if [[ -e "${candidate}" ]]; then
+          printf '%s\n' "${candidate}"
+        fi
+        ;;
+    esac
+  done < <(windows_com_port_candidates)
+}
+
+mpremote_serial_port_candidates() {
+  local mpremote_bin="$1"
+
+  "${mpremote_bin}" connect list 2>/dev/null \
+    | awk '$1 ~ /^COM[0-9]+$/ || $1 ~ /^\/dev\/ttyACM/ || $1 ~ /^\/dev\/ttyUSB/ || $1 ~ /^\/dev\/ttyS[0-9]/ || $1 ~ /^\/dev\/cu\.usb/ || $1 ~ /^\/dev\/cu\.SLAB_USBtoUART/ || $1 ~ /^\/dev\/cu\.wchusbserial/ { print $1 }' \
+    || true
+}
+
+serial_probe_candidates() {
+  local mpremote_bin="$1"
+
+  {
+    if [[ -n "${PORT}" ]]; then
+      printf '%s\n' "${PORT}"
+    fi
+    mpremote_serial_port_candidates "${mpremote_bin}"
+    wsl_com_port_device_candidates
+    raw_serial_port_candidates
+  } | awk 'NF && !seen[$0]++'
+}
+
+print_raw_serial_port_report() {
+  local raw_candidates
+  local windows_candidates
+
+  raw_candidates="$(raw_serial_port_candidates | awk 'NF && !seen[$0]++')"
+  windows_candidates="$(windows_com_port_candidates | awk 'NF && !seen[$0]++')"
+
+  if [[ -n "${raw_candidates}" ]]; then
+    echo "Raw serial device candidates:"
+    printf '  %s\n' ${raw_candidates}
+  else
+    echo "Raw serial device candidates: none found."
+  fi
+
+  if [[ -n "${windows_candidates}" ]]; then
+    echo "Windows COM ports reported by Windows:"
+    printf '  %s\n' ${windows_candidates}
+  fi
+
+  if is_wsl_environment; then
+    cat <<'EOF'
+WSL note:
+  Windows COM names such as COM8 are not usually usable by Linux mpremote.
+  Try /dev/ttyS8 for COM8 when WSL exposes that port, or attach the USB serial
+  device to WSL so it appears as /dev/ttyACM* or /dev/ttyUSB*.
+EOF
+  fi
+}
+
+run_micropython_probe() {
+  local mpremote_bin="$1"
+  local candidate="$2"
+  local probe_code='import sys; print("AIPI_PROBE=ok"); print("platform=%s" % sys.platform); print("version=%s" % sys.version.split()[0])'
+
+  if command -v timeout >/dev/null 2>&1; then
+    timeout 4 "${mpremote_bin}" connect "${candidate}" resume exec "${probe_code}"
+  elif command -v gtimeout >/dev/null 2>&1; then
+    gtimeout 4 "${mpremote_bin}" connect "${candidate}" resume exec "${probe_code}"
+  else
+    "${mpremote_bin}" connect "${candidate}" resume exec "${probe_code}"
+  fi
+}
+
+probe_micropython_candidate() {
+  local mpremote_bin="$1"
+  local candidate="$2"
+  local output
+  local status
+  local platform
+  local version
+
+  set +e
+  output="$(run_micropython_probe "${mpremote_bin}" "${candidate}" 2>&1)"
+  status=$?
+  set -e
+
+  if [[ "${status}" -ne 0 ]] || ! printf '%s\n' "${output}" | grep -q '^AIPI_PROBE=ok$'; then
+    return 1
+  fi
+
+  platform="$(printf '%s\n' "${output}" | sed -n 's/^platform=//p' | head -n 1)"
+  version="$(printf '%s\n' "${output}" | sed -n 's/^version=//p' | head -n 1)"
+  printf '%s|%s|%s\n' "${candidate}" "${platform:-unknown}" "${version:-unknown}"
+}
+
+discover_micropython_ports() {
+  local mode="${1:-report}"
+  local mpremote_bin="${VENV_DIR}/bin/mpremote"
+  local candidates
+  local candidate
+  local responsive=""
+  local probe_result
+  local responsive_count
+  local selected_port
+  local port
+  local platform
+  local version
+
+  if [[ "${mode}" == "select" && "${PORT_DISCOVERY_ATTEMPTED}" -eq 1 ]]; then
+    return 1
+  fi
+
+  echo "MicroPython serial port discovery:"
+
+  if ! has_mpremote; then
+    echo "  mpremote probe skipped: ${mpremote_bin} is not installed or is not runnable."
+    print_raw_serial_port_report
+    return 1
+  fi
+
+  if [[ "${mode}" == "select" ]]; then
+    PORT_DISCOVERY_ATTEMPTED=1
+  fi
+
+  candidates="$(serial_probe_candidates "${mpremote_bin}")"
+  if [[ -z "${candidates}" ]]; then
+    echo "  No serial candidates were reported by mpremote or the host OS."
+    print_raw_serial_port_report
+    return 1
+  fi
+
+  echo "  Probing candidates with mpremote without intentionally resetting the device..."
+  while IFS= read -r candidate; do
+    [[ -n "${candidate}" ]] || continue
+    if probe_result="$(probe_micropython_candidate "${mpremote_bin}" "${candidate}")"; then
+      responsive="${responsive}${probe_result}"$'\n'
+    fi
+  done <<EOF
+${candidates}
+EOF
+
+  responsive_count="$(printf '%s\n' "${responsive}" | awk 'NF { count++ } END { print count + 0 }')"
+  if [[ "${responsive_count}" -eq 0 ]]; then
+    echo "  No responsive MicroPython device was found."
+    print_raw_serial_port_report
+    return 1
+  fi
+
+  echo "Responsive MicroPython ports:"
+  while IFS='|' read -r port platform version; do
+    [[ -n "${port}" ]] || continue
+    printf '  %s (platform=%s, MicroPython=%s)\n' "${port}" "${platform:-unknown}" "${version:-unknown}"
+  done <<EOF
+${responsive}
+EOF
+
+  if [[ "${mode}" == "select" && "${responsive_count}" -eq 1 ]]; then
+    selected_port="$(printf '%s\n' "${responsive}" | awk -F '|' 'NF { print $1; exit }')"
+    PORT="${selected_port}"
+    config_set "AIPI_SERIAL_PORT" "${PORT}"
+    echo "Using discovered MicroPython port: ${PORT}"
+    return 0
+  fi
+
+  if [[ "${mode}" == "select" ]]; then
+    echo "Multiple responsive MicroPython ports found; pass --port with the target port."
+    return 1
+  fi
+
+  return 0
 }
 
 collect_missing_prerequisites() {
@@ -2084,6 +2330,11 @@ main() {
   local stock_backup_summary
   local port_args=()
 
+  if [[ "${LIST_PORTS}" -eq 1 ]]; then
+    discover_micropython_ports "report" || true
+    return
+  fi
+
   require_command python3
   trace_event "phase" "name=main" "status=start"
   [[ -f "${SETUP_SCRIPT}" ]] || {
@@ -2125,6 +2376,14 @@ main() {
     trace_event "phase" "name=upload_prerequisites" "status=start"
     ensure_upload_prerequisites
     trace_event "phase" "name=upload_prerequisites" "status=complete"
+
+    if [[ -z "${PORT}" && "${PORT_OPTION_PROVIDED}" -eq 0 ]]; then
+      discover_micropython_ports "select" || true
+      if [[ -n "${PORT}" ]]; then
+        port_args=(--port "${PORT}")
+        connect_target="${PORT}"
+      fi
+    fi
 
     mpremote_bin="${VENV_DIR}/bin/mpremote"
 
