@@ -9,6 +9,7 @@ import unittest
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 SRC_ROOT = REPO_ROOT / "src"
+SRC_LIB_ROOT = SRC_ROOT / "lib"
 
 MODULES_TO_CLEAR = ("audio_playback", "playback_probe", "es8311", "pins")
 
@@ -113,9 +114,10 @@ def clear_imported_modules():
 
 def ensure_src_path():
     """Make the device-side source tree importable by host-side tests."""
-    src_path = str(SRC_ROOT)
-    if src_path not in sys.path:
-        sys.path.insert(0, src_path)
+    for source_root in (SRC_ROOT, SRC_LIB_ROOT):
+        source_path = str(source_root)
+        if source_path not in sys.path:
+            sys.path.insert(0, source_path)
 
 
 def make_wav(pcm, sample_rate=16000, bits_per_sample=16, channels=1, audio_format=1):

@@ -64,7 +64,7 @@ For unattended uploads, place the corresponding `AIPI_CREATE_LOCAL_WIFI_CONFIG`,
 them in the environment.
 
 `LOCAL_SERVICE_URL` must resolve to a local endpoint accepted by
-`src/local_endpoint.py`: RFC1918 IPv4, loopback or link-local IPv4 for bench
+`src/lib/local_endpoint.py`: RFC1918 IPv4, loopback or link-local IPv4 for bench
 testing, `.local` mDNS, or an explicitly approved operator-controlled hostname.
 Public IPv4 addresses, public DNS names, embedded credentials, query strings,
 fragments, and unsupported schemes are rejected before any request is issued.

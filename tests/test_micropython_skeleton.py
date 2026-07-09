@@ -10,6 +10,7 @@ import unittest
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 SRC_ROOT = REPO_ROOT / "src"
+SRC_LIB_ROOT = SRC_ROOT / "lib"
 
 MODULES_TO_CLEAR = ("boot", "pins")
 
@@ -22,9 +23,10 @@ def clear_imported_modules():
 
 def ensure_src_path():
     """Make the device-side source tree importable by host-side tests."""
-    src_path = str(SRC_ROOT)
-    if src_path not in sys.path:
-        sys.path.insert(0, src_path)
+    for source_root in (SRC_ROOT, SRC_LIB_ROOT):
+        source_path = str(source_root)
+        if source_path not in sys.path:
+            sys.path.insert(0, source_path)
 
 
 class MicropythonSkeletonTests(unittest.TestCase):
@@ -61,6 +63,18 @@ class MicropythonSkeletonTests(unittest.TestCase):
 
         self.assertNotIn("Pin(", boot_text)
         self.assertIn("safe_boot_startup()", boot_text)
+
+    def test_application_root_contains_only_startup_python_files(self):
+        """Only MicroPython startup files should live at the device root."""
+        root_python_files = {
+            path.name
+            for path in SRC_ROOT.glob("*.py")
+            if path.name != "local_wifi_config.py"
+        }
+
+        self.assertEqual(root_python_files, {"boot.py", "main.py"})
+        self.assertTrue((SRC_LIB_ROOT / "pins.py").exists())
+        self.assertTrue((SRC_LIB_ROOT / "push_to_talk.py").exists())
 
 
 if __name__ == "__main__":

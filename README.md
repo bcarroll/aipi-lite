@@ -192,28 +192,9 @@ push-to-talk application and opt-in hardware/service probes:
 
 - `src/boot.py`
 - `src/main.py`
-- `src/pins.py`
-- `src/status_led.py`
-- `src/button.py`
-- `src/io_probe.py`
-- `src/display.py`
-- `src/display_probe.py`
-- `src/aipi_lite_config.py`
-- `src/es8311.py`
-- `src/audio_probe.py`
-- `src/audio_capture.py`
-- `src/capture_probe.py`
-- `src/audio_playback.py`
-- `src/playback_probe.py`
-- `src/assistant_state.py`
-- `src/push_to_talk.py`
-- `src/reliability.py`
-- `src/service_contract.py`
-- `src/service_client.py`
-- `src/version.py`
-- `src/wifi_config.py`
-- `src/local_endpoint.py`
-- `src/wifi_probe.py`
+- ignored `src/local_wifi_config.py` when local Wi-Fi/service settings are
+  configured
+- application component modules under `src/lib/*.py`
 - `src/lib/st7735/`
 - `src/lib/drivers/`
 
@@ -223,22 +204,24 @@ sequence, drives GPIO9 speaker enable low, renders the boot screen, initializes
 available LED/display outputs, connects Wi-Fi and the local service through the
 push-to-talk controller, and then polls GPIO42 for press/release events. If
 startup fails, `main.py` prints the failure type and renders a visible error
-state when display or LED output is available. `pins.py` centralizes the
+state when display or LED output is available. The remaining application
+modules now live under `src/lib/`, which is uploaded to device `/lib` so
+MicroPython can import them by bare module name. `pins.py` centralizes the
 documented pin map for later hardware probe branches. `aipi_lite_config.py`
 remains as a compatibility shim for the imported display baseline. `es8311.py`
 provides codec I2C control and the speaker amplifier gate; `audio_probe.py` is
-the opt-in ES8311 hardware probe. `audio_capture.py` and `capture_probe.py`
-add bounded 16 kHz 16-bit mono microphone capture and WAV packaging helpers for
-the ES8311/I2S path. `audio_playback.py` and `playback_probe.py` add bounded
-16 kHz 16-bit mono PCM/WAV speaker playback and a generated low-volume tone
-probe. `service_contract.py` and `service_client.py` define the local assistant
-service API and client. `assistant_state.py`, `push_to_talk.py`, and
-`reliability.py` add the local-only assistant state machine, push-to-talk
-exchange flow, bounded retries, diagnostics, and conservative power
-observations. `version.py` records MVP metadata. `wifi_probe.py` connects only
-to configured local Wi-Fi and calls only a local `/health` endpoint after
-endpoint policy validation passes. External MicroPython display driver source is
-tracked under `src/lib/drivers/` so a normal application upload includes it.
+the opt-in ES8311 hardware probe. `audio_capture.py` and `capture_probe.py` add
+bounded 16 kHz 16-bit mono microphone capture and WAV packaging helpers for the
+ES8311/I2S path. `audio_playback.py` and `playback_probe.py` add bounded 16 kHz
+16-bit mono PCM/WAV speaker playback and a generated low-volume tone probe.
+`service_contract.py` and `service_client.py` define the local assistant service
+API and client. `assistant_state.py`, `push_to_talk.py`, and `reliability.py`
+add the local-only assistant state machine, push-to-talk exchange flow, bounded
+retries, diagnostics, and conservative power observations. `version.py` records
+MVP metadata. `wifi_probe.py` connects only to configured local Wi-Fi and calls
+only a local `/health` endpoint after endpoint policy validation passes.
+External MicroPython display driver source is tracked under `src/lib/drivers/`
+so a normal application upload includes it.
 
 The GPIO status/input probe remains opt-in so normal boot stays recoverable. To
 cycle the GPIO46 WS2812/NeoPixel status LED states and print debounced GPIO42

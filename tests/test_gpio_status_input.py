@@ -8,6 +8,7 @@ import unittest
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 SRC_ROOT = REPO_ROOT / "src"
+SRC_LIB_ROOT = SRC_ROOT / "lib"
 
 MODULES_TO_CLEAR = ("button", "io_probe", "pins", "status_led", "machine", "neopixel")
 
@@ -20,9 +21,10 @@ def clear_imported_modules():
 
 def ensure_src_path():
     """Make the device-side source tree importable by host-side tests."""
-    src_path = str(SRC_ROOT)
-    if src_path not in sys.path:
-        sys.path.insert(0, src_path)
+    for source_root in (SRC_ROOT, SRC_LIB_ROOT):
+        source_path = str(source_root)
+        if source_path not in sys.path:
+            sys.path.insert(0, source_path)
 
 
 class FakeInputPin:
@@ -230,7 +232,7 @@ class GpioStatusInputTests(unittest.TestCase):
 
     def test_io_probe_avoids_other_hardware_subsystems(self):
         """The GPIO probe should not initialize display, Wi-Fi, audio, or GPIO10."""
-        probe_text = (SRC_ROOT / "io_probe.py").read_text(encoding="utf-8")
+        probe_text = (SRC_LIB_ROOT / "io_probe.py").read_text(encoding="utf-8")
 
         self.assertNotIn("aipi_lite_config", probe_text)
         self.assertNotIn("network", probe_text)
