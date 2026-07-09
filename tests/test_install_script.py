@@ -124,6 +124,82 @@ class InstallScriptTests(unittest.TestCase):
         self.assertIn("upload_application", self.script_text)
         self.assertIn("sha256_file()", self.script_text)
 
+    def test_help_points_to_env_listing_without_printing_full_list(self):
+        """Installer help should mention --list-env without printing every variable."""
+        result = subprocess.run(
+            [str(INSTALL_SCRIPT), "--help"],
+            cwd=REPO_ROOT,
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            check=False,
+        )
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("--list-env", result.stdout)
+        self.assertIn("--list-ports", result.stdout)
+        self.assertIn("List supported environment overrides and exit.", result.stdout)
+        self.assertNotIn("Environment overrides:", result.stdout)
+        self.assertNotIn("AIPI_SERIAL_PORT", result.stdout)
+
+    def test_list_ports_reports_responsive_micropython_device(self):
+        """The list-ports diagnostic should probe and report responsive MicroPython ports."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            repo_root = Path(tmpdir)
+            tmp_install, _app_dir = self._make_upload_fixture(repo_root)
+            mpremote = repo_root / "tools" / ".local" / "micropython-venv" / "bin" / "mpremote"
+            mpremote.write_text(
+                "#!/usr/bin/env bash\n"
+                "printf '%s\\n' \"$*\" >> \"${AIPI_FAKE_MPREMOTE_LOG:-mpremote.log}\"\n"
+                "if [[ \"$1\" == \"--help\" ]]; then exit 0; fi\n"
+                "if [[ \"$1\" == \"connect\" && \"$2\" == \"list\" ]]; then\n"
+                "  printf '/dev/ttyS8 None 0000:0000 None None\\n'\n"
+                "  exit 0\n"
+                "fi\n"
+                "if [[ \"$1\" == \"connect\" && \"$2\" == \"/dev/ttyS8\" && \"$3\" == \"resume\" && \"$4\" == \"exec\" ]]; then\n"
+                "  printf 'AIPI_PROBE=ok\\nplatform=esp32\\nversion=1.28.0\\n'\n"
+                "  exit 0\n"
+                "fi\n"
+                "exit 1\n",
+                encoding="utf-8",
+            )
+            mpremote.chmod(0o755)
+
+            result = subprocess.run(
+                [str(tmp_install), "--list-ports"],
+                cwd=repo_root,
+                text=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                check=False,
+            )
+
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertIn("MicroPython serial port discovery:", result.stdout)
+            self.assertIn("Responsive MicroPython ports:", result.stdout)
+            self.assertIn("/dev/ttyS8 (platform=esp32, MicroPython=1.28.0)", result.stdout)
+            self.assertIn(
+                "connect /dev/ttyS8 resume exec",
+                (repo_root / "mpremote.log").read_text(encoding="utf-8"),
+            )
+
+    def test_list_env_outputs_supported_environment_overrides(self):
+        """The --list-env option should print supported AIPI_* variables and exit."""
+        result = subprocess.run(
+            [str(INSTALL_SCRIPT), "--list-env"],
+            cwd=REPO_ROOT,
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            check=False,
+        )
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("Environment overrides:", result.stdout)
+        self.assertIn("AIPI_SERIAL_PORT", result.stdout)
+        self.assertIn("AIPI_INSTALL_TRACE_FILE", result.stdout)
+        self.assertNotIn("Usage:", result.stdout)
+
     def test_trace_mode_creates_ignored_artifact_for_cleanup_run(self):
         """A trace cleanup run should create debug and trace artifacts only under tools/.local."""
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -314,6 +390,56 @@ class InstallScriptTests(unittest.TestCase):
             self.assertIn("LOCAL_SERVICE_URL = 'http://192.168.1.10:8080'", config_text)
             self.assertIn("APPROVED_LOCAL_HOSTS = ('assistant.lan', 'lab.local')", config_text)
             self.assertIn("local_wifi_config.py", (repo_root / "mpremote.log").read_text(encoding="utf-8"))
+
+    def test_no_port_install_uses_single_discovered_micropython_port(self):
+        """A no-port upload should use one responsive discovered MicroPython port."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            repo_root = Path(tmpdir)
+            tmp_install, _app_dir = self._make_upload_fixture(repo_root)
+            mpremote = repo_root / "tools" / ".local" / "micropython-venv" / "bin" / "mpremote"
+            mpremote.write_text(
+                "#!/usr/bin/env bash\n"
+                "printf '%s\\n' \"$*\" >> \"${AIPI_FAKE_MPREMOTE_LOG:-mpremote.log}\"\n"
+                "if [[ \"$1\" == \"--help\" ]]; then exit 0; fi\n"
+                "if [[ \"$1\" == \"connect\" && \"$2\" == \"list\" ]]; then\n"
+                "  printf '/dev/ttyS8 None 0000:0000 None None\\n'\n"
+                "  exit 0\n"
+                "fi\n"
+                "if [[ \"$1\" == \"connect\" && \"$2\" == \"/dev/ttyS8\" && \"$3\" == \"resume\" && \"$4\" == \"exec\" ]]; then\n"
+                "  printf 'AIPI_PROBE=ok\\nplatform=esp32\\nversion=1.28.0\\n'\n"
+                "  exit 0\n"
+                "fi\n"
+                "exit 0\n",
+                encoding="utf-8",
+            )
+            mpremote.chmod(0o755)
+            (repo_root / ".conf").write_text(
+                "AIPI_SERIAL_PORT=auto\n"
+                "AIPI_CONFIRM_UPLOAD=yes\n"
+                "AIPI_CREATE_LOCAL_WIFI_CONFIG=no\n",
+                encoding="utf-8",
+            )
+
+            result = subprocess.run(
+                [str(tmp_install), "--no-reset"],
+                cwd=repo_root,
+                stdin=subprocess.DEVNULL,
+                text=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                check=False,
+            )
+
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertIn("Using discovered MicroPython port: /dev/ttyS8", result.stdout)
+            self.assertIn("Port: /dev/ttyS8", result.stdout)
+            self.assertIn(
+                "AIPI_SERIAL_PORT=/dev/ttyS8",
+                (repo_root / ".conf").read_text(encoding="utf-8"),
+            )
+            mpremote_log = (repo_root / "mpremote.log").read_text(encoding="utf-8")
+            self.assertIn("connect /dev/ttyS8 resume exec", mpremote_log)
+            self.assertIn("connect /dev/ttyS8 fs cp", mpremote_log)
 
     def test_existing_local_wifi_config_is_preserved_by_default(self):
         """Existing Wi-Fi config should not be overwritten without confirmation."""
