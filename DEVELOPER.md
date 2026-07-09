@@ -43,6 +43,10 @@ export AIPI_PORT="/dev/cu.usbmodem31101"
 export AIPI_DEVICE_LABEL="bench-a"
 ```
 
+If the serial path is uncertain, run `./install.sh --list-ports` first. On WSL,
+use the Linux path reported by the diagnostic, such as `/dev/ttyS8` for a
+Windows `COM8` mapping when WSL exposes it.
+
   To comment on an existing issue instead of creating a new one, set
   `AIPI_GITHUB_ISSUE="OWNER/REPO#123"` and use `--issue` in place of `--gh`.
 

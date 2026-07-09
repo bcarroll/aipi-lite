@@ -107,8 +107,17 @@ local Wi-Fi config generation values.
 Run `./install.sh --list-env` to print the supported environment override names
 without expanding the main help screen.
 
-Run without `--port` to let `mpremote` auto-detect the attached MicroPython
-device:
+Run `./install.sh --list-ports` to probe available serial ports before an
+upload. The diagnostic uses the repo-local `mpremote` when it is installed,
+reports responsive MicroPython ports, and falls back to raw serial candidates
+when no MicroPython device responds. On WSL, Windows names such as `COM8`
+usually need the Linux device path, such as `/dev/ttyS8` when that mapping is
+available, or a USB serial attachment that appears as `/dev/ttyACM*` or
+`/dev/ttyUSB*`.
+
+Run without `--port` to have the installer run the same discovery routine before
+falling back to `mpremote` auto-detect. If exactly one responsive MicroPython
+device is found, the installer stores and uses that port for the upload:
 
 ```bash
 ./install.sh
