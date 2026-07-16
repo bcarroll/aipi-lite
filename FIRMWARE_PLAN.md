@@ -263,15 +263,17 @@ metadata, and redacted local artifacts for later analysis.
 
 ## First Implementation Milestone
 
-Create a minimal MicroPython hardware probe under `src/` with:
+Create a minimal MicroPython hardware probe under `src/` with only startup and
+operator configuration files at the application root. Application components
+belong under `src/lib/`, which uploads to device `/lib`:
 
-- `boot.py` for safe startup defaults.
-- `main.py` for a serial-visible bring-up sequence.
-- `pins.py` with constants from `SPEC.md`.
-- `display_probe.py` for LCD/backlight.
-- `io_probe.py` for button and WS2812 LED.
-- `wifi_probe.py` for local `/health` check.
-- `audio_probe.py` for ES8311/I2C/I2S experiments.
+- `src/boot.py` for safe startup defaults.
+- `src/main.py` for a serial-visible bring-up sequence.
+- `src/lib/pins.py` with constants from `SPEC.md`.
+- `src/lib/display_probe.py` for LCD/backlight.
+- `src/lib/io_probe.py` for button and WS2812 LED.
+- `src/lib/wifi_probe.py` for local `/health` check.
+- `src/lib/audio_probe.py` for ES8311/I2C/I2S experiments.
 
 The first success condition is not a full assistant. The first success condition
 is proven control of display, LED, button, Wi-Fi, ES8311, microphone capture,
@@ -287,15 +289,15 @@ baseline:
 | --- | --- | --- |
 | Flashing support | Implemented for backup/recovery milestone | `install.sh`, `RECOVERY.md`, `tools/setup_micropython_tools.sh`, `tools/README.md`, and `README.md` document and automate upload-only application installs by default, explicit installer self-update, sanitized debug artifacts, exact-size adaptive stock backup, structured `stock_backup_blocked` trace diagnostics, prerequisite cleanup, opt-in MicroPython flashing, source upload including tracked `src/lib` libraries, and stock restore using ignored local artifacts. |
 | MicroPython application entrypoint | Implemented | `src/main.py` renders a boot status screen, keeps GPIO10 board-power untouched, disables the speaker gate by default, initializes available status outputs, connects the local Wi-Fi/service path through the push-to-talk controller, and polls GPIO42 for press/release events. |
-| Pin mapping | Partially implemented | `src/display.py` uses GPIO3 backlight, GPIO15 CS, GPIO7 D/C, GPIO18 reset, GPIO16 SCLK, and GPIO17 MOSI, matching the LCD pins in `SPEC.md`. |
-| Display bring-up | Implemented, hardware validation pending | `src/display.py` wraps ST7735 setup, PWM backlight control, text layout, and named status screens; `src/display_probe.py` cycles boot, Wi-Fi, ready, recording, processing, speaking, and error screens. |
-| GPIO status LED and side button | Implemented, hardware validation pending | `src/status_led.py`, `src/button.py`, `src/io_probe.py`, and `tests/test_gpio_status_input.py` add GPIO46 status states, GPIO42 active-low debounce events, and an opt-in GPIO-only serial probe. |
-| Wi-Fi and local-only service policy | Implemented, hardware validation pending | `src/wifi_config.py`, `src/local_endpoint.py`, and `src/wifi_probe.py` load ignored local Wi-Fi config, reject public service endpoints by default, call only local `/health`, and report health state through serial plus available LED/display modules. |
-| ES8311 audio control and I2S audio | Codec control, microphone capture, and speaker playback implemented; hardware validation pending | `src/es8311.py` and `src/audio_probe.py` configure the ES8311 over I2C at expected address `0x18`, keep the DAC muted, and default GPIO9 speaker enable off. `src/audio_capture.py` and `src/capture_probe.py` add bounded 16 kHz 16-bit mono capture, WAV packaging, and serial level metrics. `src/audio_playback.py` and `src/playback_probe.py` add bounded 16 kHz 16-bit mono PCM/WAV speaker playback, generated tone output, GPIO9 gate timing, and write/underrun metrics. |
-| Local service contract | Implemented | `src/service_contract.py`, `src/service_client.py`, `service/mock_service.py`, `service/README.md`, and `tests/test_local_service_contract.py` define `/health`, `/session`, `/audio`, `/response/{session_id}`, and `/audio/{response_id}.wav` with a local-only firmware client and deterministic mock service. |
-| Push-to-talk assistant flow | Implemented, hardware validation pending | `src/main.py`, `src/assistant_state.py`, `src/push_to_talk.py`, `src/reliability.py`, `tests/test_main_startup.py`, and `tests/test_push_to_talk_flow.py` add normal-boot startup for the local-only state machine, GPIO42 press/release handling, bounded capture handoff, local service exchange, response text/audio handling, playback, bounded retries, diagnostics, and recoverable error states. |
-| MVP release packaging | Implemented, hardware validation pending | `src/version.py`, `MVP.md`, `README.md`, `src/README.md`, and `tests/test_mvp_release.py` add local-only version metadata, install/configuration guidance, validation checklist, no-cloud network verification, and a validation report template. |
-| On-device inference feasibility | Implemented, hardware validation pending | `src/inference_probe.py`, `INFERENCE_FEASIBILITY.md`, `dev_install.sh`, `dev_install.cmd`, `tools/windows_installer.py`, and host tests add an offline-first simulated inference probe, deterministic local prompt fixture, model metadata validation, no-network policy checks, and redacted GitHub-ready bench capture on Unix or Windows. No supported model runtime or inference routing has been imported. |
+| Pin mapping | Partially implemented | `src/lib/display.py` uses GPIO3 backlight, GPIO15 CS, GPIO7 D/C, GPIO18 reset, GPIO16 SCLK, and GPIO17 MOSI, matching the LCD pins in `SPEC.md`. |
+| Display bring-up | Implemented, hardware validation pending | `src/lib/display.py` wraps ST7735 setup, PWM backlight control, text layout, and named status screens; `src/lib/display_probe.py` cycles boot, Wi-Fi, ready, recording, processing, speaking, and error screens. |
+| GPIO status LED and side button | Implemented, hardware validation pending | `src/lib/status_led.py`, `src/lib/button.py`, `src/lib/io_probe.py`, and `tests/test_gpio_status_input.py` add GPIO46 status states, GPIO42 active-low debounce events, and an opt-in GPIO-only serial probe. |
+| Wi-Fi and local-only service policy | Implemented, hardware validation pending | `src/lib/wifi_config.py`, `src/lib/local_endpoint.py`, and `src/lib/wifi_probe.py` load ignored local Wi-Fi config, reject public service endpoints by default, call only local `/health`, and report health state through serial plus available LED/display modules. |
+| ES8311 audio control and I2S audio | Codec control, microphone capture, and speaker playback implemented; hardware validation pending | `src/lib/es8311.py` and `src/lib/audio_probe.py` configure the ES8311 over I2C at expected address `0x18`, keep the DAC muted, and default GPIO9 speaker enable off. `src/lib/audio_capture.py` and `src/lib/capture_probe.py` add bounded 16 kHz 16-bit mono capture, WAV packaging, and serial level metrics. `src/lib/audio_playback.py` and `src/lib/playback_probe.py` add bounded 16 kHz 16-bit mono PCM/WAV speaker playback, generated tone output, GPIO9 gate timing, and write/underrun metrics. |
+| Local service contract | Implemented | `src/lib/service_contract.py`, `src/lib/service_client.py`, `service/mock_service.py`, `service/README.md`, and `tests/test_local_service_contract.py` define `/health`, `/session`, `/audio`, `/response/{session_id}`, and `/audio/{response_id}.wav` with a local-only firmware client and deterministic mock service. |
+| Push-to-talk assistant flow | Implemented, hardware validation pending | `src/main.py`, `src/lib/assistant_state.py`, `src/lib/push_to_talk.py`, `src/lib/reliability.py`, `tests/test_main_startup.py`, and `tests/test_push_to_talk_flow.py` add normal-boot startup for the local-only state machine, GPIO42 press/release handling, bounded capture handoff, local service exchange, response text/audio handling, playback, bounded retries, diagnostics, and recoverable error states. |
+| MVP release packaging | Implemented, hardware validation pending | `src/lib/version.py`, `MVP.md`, `README.md`, `src/README.md`, and `tests/test_mvp_release.py` add local-only version metadata, install/configuration guidance, validation checklist, no-cloud network verification, and a validation report template. |
+| On-device inference feasibility | Implemented, hardware validation pending | `src/lib/inference_probe.py`, `INFERENCE_FEASIBILITY.md`, `dev_install.sh`, `dev_install.cmd`, `tools/windows_installer.py`, and host tests add an offline-first simulated inference probe, deterministic local prompt fixture, model metadata validation, no-network policy checks, and redacted GitHub-ready bench capture on Unix or Windows. No supported model runtime or inference routing has been imported. |
 
 The imported baseline should be treated as hardware evidence for the display
 branch and as a starting point for refactoring into the planned firmware layout.

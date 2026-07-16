@@ -7,13 +7,15 @@ import unittest
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 SRC_ROOT = REPO_ROOT / "src"
+SRC_LIB_ROOT = SRC_ROOT / "lib"
 
 
 def ensure_src_path():
     """Make the device-side source tree importable by host-side tests."""
-    src_path = str(SRC_ROOT)
-    if src_path not in sys.path:
-        sys.path.insert(0, src_path)
+    for source_root in (SRC_ROOT, SRC_LIB_ROOT):
+        source_path = str(source_root)
+        if source_path not in sys.path:
+            sys.path.insert(0, source_path)
 
 
 class PinMapTests(unittest.TestCase):

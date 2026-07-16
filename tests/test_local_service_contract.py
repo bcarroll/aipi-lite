@@ -9,6 +9,7 @@ import unittest
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 SRC_ROOT = REPO_ROOT / "src"
+SRC_LIB_ROOT = SRC_ROOT / "lib"
 
 MODULES_TO_CLEAR = (
     "local_endpoint",
@@ -75,12 +76,10 @@ def clear_imported_modules():
 
 def ensure_paths():
     """Make firmware and service modules importable by host tests."""
-    src_path = str(SRC_ROOT)
-    repo_path = str(REPO_ROOT)
-    if src_path not in sys.path:
-        sys.path.insert(0, src_path)
-    if repo_path not in sys.path:
-        sys.path.insert(0, repo_path)
+    for source_root in (REPO_ROOT, SRC_ROOT, SRC_LIB_ROOT):
+        source_path = str(source_root)
+        if source_path not in sys.path:
+            sys.path.insert(0, source_path)
 
 
 class LocalServiceClientTests(unittest.TestCase):

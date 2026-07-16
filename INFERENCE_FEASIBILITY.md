@@ -33,7 +33,7 @@ Non-goals:
 
 | Runtime / model path | Status | Notes |
 | --- | --- | --- |
-| MicroPython deterministic fixture | Implemented for spike | `src/inference_probe.py` returns fixed local responses and measures resource use under simulated load. |
+| MicroPython deterministic fixture | Implemented for spike | `src/lib/inference_probe.py` returns fixed local responses and measures resource use under simulated load. |
 | MicroPython tiny intent table | Candidate | Could fit if heap remains stable and controls stay responsive. No artifact is committed yet. |
 | ESP-IDF native inference | Candidate fallback | Consider only if MicroPython cannot host a useful local feature or timing remains unstable. |
 | Larger LLM or speech model | Deferred | Requires memory, flash, thermal, latency, license, and provenance evidence before any runtime work. |
@@ -44,7 +44,7 @@ does not load model binaries.
 
 ## Probe Behavior
 
-`src/inference_probe.py` provides an explicit offline probe:
+`src/lib/inference_probe.py` provides an explicit offline probe:
 
 - Captures heap and flash metrics when the runtime exposes them.
 - Runs a bounded simulated CPU and memory workload.
