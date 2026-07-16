@@ -89,6 +89,38 @@ path while the installer writes detailed trace data under `tools/.local/debug/`.
 See [DEVELOPER.md](DEVELOPER.md) for the concise connected-device test and
 GitHub reporting workflow.
 
+### Windows CMD workflow
+
+Windows 10 or later operators can use native Command Prompt entry points for
+the same application-first upload path. Install Python 3 for Windows with the
+`py` launcher (or make `python` available on `PATH`), connect the already
+MicroPython-flashed AIPI-Lite by USB-C, then identify its `COM` port:
+
+```cmd
+install.cmd --list-ports
+install.cmd --port COM3 --yes
+```
+
+The first normal run creates an ignored local virtual environment under
+`tools\.local\micropython-venv` and installs `mpremote`. `--yes` explicitly
+approves that prerequisite setup; omit it to receive an interactive prompt.
+The upload copies `src\` to the device and resets it. Add `--no-reset` to leave
+the device running after the copy.
+
+For local developer captures, use `dev_install.cmd` with its installer options
+after `--`:
+
+```cmd
+dev_install.cmd --device-label bench-a --hardware-note "display readable" -- --port COM3 --yes
+```
+
+It displays installer output and writes raw and redacted transcripts plus
+non-secret metadata under ignored `tools\.local\dev-install\`. Use
+`--prepare-only` to create those local artifacts without uploading to a device.
+The first Windows release intentionally does not support firmware flashing,
+backup, restore, GitHub issue posting, or trace artifacts; use the existing
+Unix scripts for those workflows.
+
 If local prerequisites are missing, the installer prompts before downloading or
 installing components under ignored `tools/.local/`, then continues with the
 upload workflow after approval. The default setup path installs `mpremote`,
