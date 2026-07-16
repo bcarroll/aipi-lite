@@ -75,8 +75,8 @@ tooling directories.
 | `feat/03-gpio-status-input` | Implemented, hardware validated | `src/lib/status_led.py`, `src/lib/button.py`, `src/lib/io_probe.py`, and `tests/test_gpio_status_input.py` add GPIO46 status states, GPIO42 active-low debounce events, a GPIO-only serial probe, and host regression coverage. Operator hardware validation on 2026-06-25 observed the GPIO46 LED blink several colors, recorded the GPIO42 button press correctly, and reported no errors. | Capture a full `io_probe` serial transcript during a future bench run if exact output evidence is needed. |
 | `feat/05-local-wifi-policy` | Implemented, hardware validation pending | `src/lib/wifi_config.py`, `src/lib/local_endpoint.py`, `src/lib/wifi_probe.py`, `.gitignore`, `install.sh`, and `tests/test_wifi_policy.py` add ignored local config loading, installer-assisted `local_wifi_config.py` creation, local-only endpoint validation, a Wi-Fi `/health` probe, and host-side policy coverage. | Run `wifi_probe.run_probe()` on physical hardware with a local service and record connection, endpoint, LED, and display behavior. |
 | `feat/06-es8311-codec-control` | Implemented, hardware validation pending | `src/lib/es8311.py`, `src/lib/audio_probe.py`, `src/main.py`, and `tests/test_es8311_codec.py` add ES8311 I2C detection, register setup, GPIO9 speaker gate defaults, and host-side regression coverage. | Run `audio_probe.run_probe()` on physical hardware and record the observed scan and audio behavior. |
-| `feat/07-audio-capture` | Implemented, hardware validation pending | `src/lib/audio_capture.py`, `src/lib/capture_probe.py`, and `tests/test_audio_capture.py` add bounded 16 kHz 16-bit mono I2S capture, WAV packaging, capture metrics, an opt-in capture probe, and host-side coverage. | Run `capture_probe.run_probe()` on physical hardware and record gain, clipping, noise floor, dropped-sample behavior, and whether MicroPython MCLK output works on GPIO6. |
-| `feat/08-audio-playback` | Implemented, hardware validation pending | `src/lib/audio_playback.py`, `src/lib/playback_probe.py`, and `tests/test_audio_playback.py` add bounded 16 kHz 16-bit mono PCM/WAV playback, generated low-volume test tone output, I2S TX setup on GPIO6/GPIO11/GPIO12/GPIO14, GPIO9 speaker enable timing, DAC mute/unmute safety, and host-side coverage for format rejection and write metrics. | Run `playback_probe.run_probe()` on physical hardware and record volume, output noise, underruns, and whether MicroPython MCLK output works on GPIO6 for playback. |
+| `feat/07-audio-capture` | Implemented, hardware validation pending | `src/lib/audio_capture.py`, `src/lib/capture_probe.py`, and `tests/test_audio_capture.py` add bounded 16 kHz 16-bit mono I2S capture, WAV packaging, capture metrics, an opt-in capture probe, BCLK-derived ES8311 clocking, and host-side coverage. | Run `capture_probe.run_probe()` on physical hardware and record gain, clipping, noise floor, dropped-sample behavior, and BCLK-derived codec behavior. |
+| `feat/08-audio-playback` | Implemented, hardware validation pending | `src/lib/audio_playback.py`, `src/lib/playback_probe.py`, and `tests/test_audio_playback.py` add bounded 16 kHz 16-bit mono PCM/WAV playback, generated low-volume test tone output, I2S TX setup on GPIO11/GPIO12/GPIO14, BCLK-derived ES8311 clocking, GPIO9 speaker enable timing, DAC mute/unmute safety, and host-side coverage for format rejection and write metrics. | Run `playback_probe.run_probe()` on physical hardware and record volume, output noise, underruns, and BCLK-derived codec behavior. |
 | `feat/09-local-service-contract` | Implemented | `src/lib/service_contract.py`, `src/lib/service_client.py`, `service/mock_service.py`, `service/README.md`, and `tests/test_local_service_contract.py` define the local-only API, stdlib mock service, firmware client, request/response payloads, error handling, and host-side contract coverage. | Use the client during `feat/10-push-to-talk-flow` integration and validate it against the mock service from device hardware. |
 | `feat/10-push-to-talk-flow` | Implemented, hardware validation pending | `src/main.py`, `src/lib/assistant_state.py`, `src/lib/push_to_talk.py`, `tests/test_main_startup.py`, and `tests/test_push_to_talk_flow.py` add the assistant state machine, normal-boot push-to-talk startup, shared LED/display/serial state output, button press/release handling, bounded capture handoff, local service exchange, response playback, recoverable error states, and host-side flow coverage. | Run one complete exchange on physical hardware against the mock service and record capture, upload, response text, playback, and visible state behavior. |
 | `feat/11-reliability-power-errors` | Implemented, hardware validation pending | `src/lib/reliability.py`, `src/lib/push_to_talk.py`, `MVP.md`, and `tests/test_reliability.py` add bounded retry/backoff, retry diagnostics, reconnect helper, runtime diagnostics formatting, GPIO21 charge-pulse observation, and GPIO10 board-power guarding. | Validate repeated sessions, Wi-Fi/service recovery, serial diagnostics, GPIO21 observations, and that GPIO10 remains unchanged on hardware. |
@@ -418,9 +418,10 @@ Implementation notes:
 
 - The expected ES8311 I2C address is `0x18` in 7-bit notation; `0x19` is
   accepted as the alternate CE-state address.
-- The initial register sequence configures 16 kHz, 16-bit I2S with MCLK on
-  GPIO6, analog microphone input, muted DAC output, and GPIO9 speaker-enable
-  held low by default.
+- The initial register sequence configures 16 kHz, 16-bit I2S with the ES8311
+  deriving its internal clock from GPIO14 BCLK, analog microphone input, muted
+  DAC output, and GPIO9 speaker-enable held low by default. The physical GPIO6
+  MCLK connection remains undriven by standard MicroPython I2S.
 - The shutdown sequence mutes the DAC and powers down the ADC/DAC path. Physical
   validation still needs to confirm microphone gain, playback volume, output
   noise, and repeated reset behavior on the target device.
@@ -432,7 +433,8 @@ Purpose: capture microphone audio from the ES8311/I2S path.
 Expected commits:
 
 - `firmware: add I2S microphone capture`
-  - Use GPIO6 MCLK, GPIO13 DIN, GPIO12 LRCLK/WS, and GPIO14 BCLK.
+  - Use GPIO13 DIN, GPIO12 LRCLK/WS, and GPIO14 BCLK; derive the codec clock
+    from BCLK.
   - Start with bounded mono PCM capture.
   - Record sample rate, bit depth, and channel format.
 
@@ -463,15 +465,16 @@ Acceptance criteria:
 Implementation notes:
 
 - `audio_capture.py` configures I2S RX for 16 kHz, 16-bit, mono PCM using
-  GPIO6 MCLK, GPIO13 DIN, GPIO12 LRCLK/WS, and GPIO14 BCLK.
+  GPIO13 DIN, GPIO12 LRCLK/WS, and GPIO14 BCLK; the ES8311 derives its clock
+  from BCLK.
 - Capture requests are bounded by `MAX_CAPTURE_BYTES` before allocation, and
   `capture_pcm()` deinitializes owned I2S objects after reading.
 - WAV packaging is available through `wav_bytes()` for REPL extraction or later
   local-service upload work; `capture_probe.py` keeps the speaker amplifier gate
   disabled and reports byte count, sample count, peak level, and clipping count.
-- Physical validation still needs to confirm the MicroPython I2S constructor
-  accepts the `mck` pin on the target firmware image and to record microphone
-  gain, noise, clipping, and dropped-sample observations.
+- Physical validation still needs to record microphone gain, noise, clipping,
+  dropped-sample observations, and BCLK-derived codec behavior on the target
+  firmware image.
 
 ### `feat/08-audio-playback`
 
@@ -480,7 +483,8 @@ Purpose: play local audio through the ES8311 speaker path.
 Expected commits:
 
 - `firmware: add I2S speaker playback`
-  - Use GPIO6 MCLK, GPIO11 DOUT, GPIO12 LRCLK/WS, and GPIO14 BCLK.
+  - Use GPIO11 DOUT, GPIO12 LRCLK/WS, and GPIO14 BCLK; derive the codec clock
+    from BCLK.
   - Enable GPIO9 only while playback is active.
   - Start with WAV/PCM playback at a fixed tested format.
 
@@ -510,16 +514,17 @@ Implementation notes:
   payloads with matching format fields. Unsupported sample rates, channel
   counts, bit depths, non-PCM formats, oversized payloads, and unaligned PCM
   fail before I2S writes.
-- I2S TX uses GPIO6 MCLK, GPIO11 DOUT, GPIO12 LRCLK/WS, and GPIO14 BCLK with
-  bounded write chunks. Partial frame writes are rejected; partial aligned
-  writes are retried and counted as underruns for serial diagnostics.
+- I2S TX uses GPIO11 DOUT, GPIO12 LRCLK/WS, and GPIO14 BCLK with bounded write
+  chunks; the ES8311 derives its clock from BCLK. Partial frame writes are
+  rejected; partial aligned writes are retried and counted as underruns for
+  serial diagnostics.
 - `playback_probe.py` initializes the ES8311 output path, generates a short
   low-volume test tone, unmutes the DAC only during playback, enables GPIO9
   only while I2S samples are being written, and always disables GPIO9 plus
   mutes the DAC before returning.
 - Physical validation still needs to confirm audible output, safe volume,
-  output noise, underrun behavior, and MicroPython MCLK behavior on the target
-  firmware image.
+  output noise, underrun behavior, and BCLK-derived codec behavior on the
+  target firmware image.
 
 ### `feat/09-local-service-contract`
 

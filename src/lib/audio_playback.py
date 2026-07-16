@@ -5,7 +5,6 @@ import struct
 from pins import AUDIO_I2S_BCLK
 from pins import AUDIO_I2S_DOUT
 from pins import AUDIO_I2S_LRCLK
-from pins import AUDIO_I2S_MCLK
 
 DEFAULT_I2S_BUS_ID = 0
 DEFAULT_SAMPLE_RATE = 16000
@@ -191,7 +190,6 @@ def create_i2s(
             sck=pin_factory(AUDIO_I2S_BCLK),
             ws=pin_factory(AUDIO_I2S_LRCLK),
             sd=pin_factory(AUDIO_I2S_DOUT),
-            mck=pin_factory(AUDIO_I2S_MCLK),
             mode=i2s_factory.TX,
             bits=config.bits_per_sample,
             format=i2s_factory.MONO,

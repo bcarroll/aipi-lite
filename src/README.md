@@ -142,15 +142,18 @@ import audio_probe
 audio_probe.run_probe()
 ```
 
-The probe prints the I2C scan result, initializes the codec for 16 kHz 16-bit
-I2S with MCLK on GPIO6, keeps the DAC muted, briefly enables the GPIO9 speaker
-amplifier gate, and disables it again before returning.
+The probe prints the I2C scan result and initializes the codec for 16 kHz,
+16-bit I2S using GPIO14 BCLK as its clock source. Standard MicroPython I2S does
+not drive the physical GPIO6 MCLK connection. The probe keeps the DAC muted,
+briefly enables the GPIO9 speaker amplifier gate, and disables it again before
+returning.
 
 ## Microphone Capture Probe
 
 The capture milestone adds bounded I2S microphone capture on the ES8311 audio
-path using GPIO6 MCLK, GPIO13 DIN, GPIO12 LRCLK/WS, and GPIO14 BCLK. The
-default capture format is 16 kHz, 16-bit, mono PCM with WAV packaging helpers.
+path using GPIO13 DIN, GPIO12 LRCLK/WS, and GPIO14 BCLK. The ES8311 derives its
+internal clock from the fixed 64-times-sample-rate BCLK. The default capture
+format is 16 kHz, 16-bit, mono PCM with WAV packaging helpers.
 
 Run the probe explicitly when the device is ready to validate microphone input:
 
@@ -168,9 +171,10 @@ service upload code when an off-device WAV artifact is needed.
 ## Speaker Playback Probe
 
 The playback milestone adds bounded I2S speaker output on the ES8311 audio path
-using GPIO6 MCLK, GPIO11 DOUT, GPIO12 LRCLK/WS, and GPIO14 BCLK. The supported
-format is 16 kHz, 16-bit, mono PCM, either as raw PCM bytes or as a RIFF/WAVE
-file with matching format fields.
+using GPIO11 DOUT, GPIO12 LRCLK/WS, and GPIO14 BCLK. The ES8311 derives its
+internal clock from the fixed 64-times-sample-rate BCLK. The supported format is
+16 kHz, 16-bit, mono PCM, either as raw PCM bytes or as a RIFF/WAVE file with
+matching format fields.
 
 Run the probe explicitly when the device is ready to validate speaker output:
 

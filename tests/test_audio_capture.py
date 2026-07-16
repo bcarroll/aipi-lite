@@ -123,8 +123,8 @@ class AudioCaptureTests(unittest.TestCase):
         with self.assertRaises(self.audio_capture.AudioCaptureError):
             config.validate_target_size()
 
-    def test_create_i2s_uses_documented_microphone_pins(self):
-        """create_i2s should wire the ES8311 microphone path to documented pins."""
+    def test_create_i2s_uses_documented_three_wire_microphone_pins(self):
+        """create_i2s should wire the ES8311 microphone path to three I2S pins."""
         config = self.audio_capture.AudioCaptureConfig(buffer_bytes=4096)
 
         i2s = self.audio_capture.create_i2s(
@@ -139,10 +139,10 @@ class AudioCaptureTests(unittest.TestCase):
         self.assertEqual(i2s.kwargs["bits"], 16)
         self.assertEqual(i2s.kwargs["rate"], 16000)
         self.assertEqual(i2s.kwargs["ibuf"], 4096)
-        self.assertEqual(i2s.kwargs["mck"].pin_id, 6)
         self.assertEqual(i2s.kwargs["sd"].pin_id, 13)
         self.assertEqual(i2s.kwargs["ws"].pin_id, 12)
         self.assertEqual(i2s.kwargs["sck"].pin_id, 14)
+        self.assertNotIn("mck", i2s.kwargs)
 
     def test_create_i2s_reports_constructor_rejection(self):
         """create_i2s should raise a capture error when I2S rejects config."""
@@ -151,7 +151,7 @@ class AudioCaptureTests(unittest.TestCase):
 
             def __init__(self, bus_id, **kwargs):
                 """Raise the same exception shape as a strict constructor."""
-                raise TypeError("unexpected keyword argument 'mck'")
+                raise TypeError("unsupported I2S configuration")
 
         with self.assertRaises(self.audio_capture.AudioCaptureError) as raised:
             self.audio_capture.create_i2s(
