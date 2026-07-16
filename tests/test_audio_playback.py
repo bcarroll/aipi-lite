@@ -170,8 +170,8 @@ class AudioPlaybackTests(unittest.TestCase):
         with self.assertRaises(self.audio_playback.AudioPlaybackError):
             self.audio_playback.validate_pcm(b"\x00" * 8, config=self.audio_playback.AudioPlaybackConfig(max_playback_bytes=4))
 
-    def test_create_i2s_uses_documented_speaker_pins(self):
-        """create_i2s should wire the ES8311 speaker path to documented pins."""
+    def test_create_i2s_uses_documented_three_wire_speaker_pins(self):
+        """create_i2s should wire the ES8311 speaker path to three I2S pins."""
         config = self.audio_playback.AudioPlaybackConfig(buffer_bytes=4096)
 
         i2s = self.audio_playback.create_i2s(
@@ -186,10 +186,10 @@ class AudioPlaybackTests(unittest.TestCase):
         self.assertEqual(i2s.kwargs["bits"], 16)
         self.assertEqual(i2s.kwargs["rate"], 16000)
         self.assertEqual(i2s.kwargs["ibuf"], 4096)
-        self.assertEqual(i2s.kwargs["mck"].pin_id, 6)
         self.assertEqual(i2s.kwargs["sd"].pin_id, 11)
         self.assertEqual(i2s.kwargs["ws"].pin_id, 12)
         self.assertEqual(i2s.kwargs["sck"].pin_id, 14)
+        self.assertNotIn("mck", i2s.kwargs)
 
     def test_parse_wav_accepts_supported_pcm_and_rejects_other_formats(self):
         """WAV parsing should accept only the supported output format."""

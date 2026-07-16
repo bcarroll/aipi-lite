@@ -260,8 +260,10 @@ remains as a compatibility shim for the imported display baseline. `es8311.py`
 provides codec I2C control and the speaker amplifier gate; `audio_probe.py` is
 the opt-in ES8311 hardware probe. `audio_capture.py` and `capture_probe.py` add
 bounded 16 kHz 16-bit mono microphone capture and WAV packaging helpers for the
-ES8311/I2S path. `audio_playback.py` and `playback_probe.py` add bounded 16 kHz
-16-bit mono PCM/WAV speaker playback and a generated low-volume tone probe.
+ES8311/I2S path. The codec derives its internal clock from standard MicroPython
+BCLK rather than an application-driven MCLK pin. `audio_playback.py` and
+`playback_probe.py` add bounded 16 kHz 16-bit mono PCM/WAV speaker playback and
+a generated low-volume tone probe.
 `service_contract.py` and `service_client.py` define the local assistant service
 API and client. `assistant_state.py`, `push_to_talk.py`, and `reliability.py`
 add the local-only assistant state machine, push-to-talk exchange flow, bounded

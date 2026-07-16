@@ -134,6 +134,8 @@ class ES8311CodecControlTests(unittest.TestCase):
         self.assertEqual(sequence, self.es8311.initialization_sequence(self.es8311.MODE_BOTH))
         self.assertEqual(fake_i2c.writes, [(0x18, register, value) for register, value in sequence])
         self.assertEqual(fake_i2c.writes[:2], [(0x18, 0x00, 0x1F), (0x18, 0x00, 0x00)])
+        self.assertIn((0x18, 0x01, 0x9F), fake_i2c.writes)
+        self.assertIn((0x18, 0x02, 0x10), fake_i2c.writes)
         self.assertIn((0x18, 0x31, 0x60), fake_i2c.writes)
         self.assertEqual(fake_i2c.writes[-1], (0x18, 0x00, 0x80))
 

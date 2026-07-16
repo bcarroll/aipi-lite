@@ -51,10 +51,13 @@ RESET_SEQUENCE = (
     (REG_RESET, 0x00),
 )
 
-# 16 kHz, 16-bit I2S, MCLK = sample_rate * 256 = 4.096 MHz.
-CLOCK_SEQUENCE_16K_MCLK = (
-    (REG_CLK_MANAGER_01, 0x3F),
-    (REG_CLK_MANAGER_02, 0x00),
+# Standard MicroPython I2S provides BCLK, LRCLK/WS, and serial data. At the
+# fixed 16 kHz, 16-bit mono configuration it generates BCLK at 1.024 MHz
+# (64 x Fs). Select BCLK as the ES8311 clock source and multiply it by four
+# to retain the codec's 4.096 MHz internal clock.
+CLOCK_SEQUENCE_16K_BCLK_DERIVED = (
+    (REG_CLK_MANAGER_01, 0x9F),
+    (REG_CLK_MANAGER_02, 0x10),
     (REG_CLK_MANAGER_03, 0x10),
     (REG_CLK_MANAGER_04, 0x20),
     (REG_CLK_MANAGER_05, 0x00),
@@ -126,7 +129,7 @@ def find_expected_address(addresses, expected_addresses=EXPECTED_I2C_ADDRESSES):
 
 def initialization_sequence(mode=MODE_BOTH):
     """Return the ES8311 register sequence for the requested codec mode."""
-    common = RESET_SEQUENCE + CLOCK_SEQUENCE_16K_MCLK + FORMAT_SEQUENCE_16BIT_I2S
+    common = RESET_SEQUENCE + CLOCK_SEQUENCE_16K_BCLK_DERIVED + FORMAT_SEQUENCE_16BIT_I2S
     if mode == MODE_INPUT:
         return common + INPUT_INITIALIZATION_SEQUENCE + POWER_ON_SEQUENCE
     if mode == MODE_OUTPUT:
