@@ -304,7 +304,7 @@ class DevInstallCaptureTests(unittest.TestCase):
                 ],
                 """
                 #!/usr/bin/env bash
-                printf 'installer token=localvalue args:%s\\n' "$*"
+                printf 'installer token=localvalue wifi_config=%s args:%s\\n' "${AIPI_CREATE_LOCAL_WIFI_CONFIG}" "$*"
                 exit 0
                 """,
                 """
@@ -328,6 +328,8 @@ class DevInstallCaptureTests(unittest.TestCase):
             self.assertIn("Inference decision: candidate_supported", result.stdout)
             self.assertIn("Created GitHub issue: https://github.com/owner/repo/issues/88", result.stdout)
             self.assertIn("inference_probe: decision=candidate_supported", artifacts["install-transcript-raw.txt"])
+            self.assertIn("wifi_config=no", artifacts["install-transcript-raw.txt"])
+            self.assertIn("args:--port /dev/cu.TEST --no-reset", artifacts["install-transcript-raw.txt"])
             self.assertIn("inference_probe_status=0", artifacts["run-metadata.txt"])
             self.assertIn("inference_decision=candidate_supported", artifacts["run-metadata.txt"])
             self.assertIn("- display=pass", artifacts["run-metadata.txt"])

@@ -62,7 +62,9 @@ Use the opt-in inference mode to upload the current application tree, run the
 offline `inference_probe`, and create one redacted GitHub issue with the bench
 evidence. It requires an explicit serial port and rejects flash, restore,
 backup, cleanup, help, and self-update operations so the run stays
-application-first.
+application-first. It disables generated Wi-Fi configuration and appends
+`--no-reset` before running the probe so the normal Wi-Fi application flow is
+not started during the capture.
 
 ```bash
 ./dev_install.sh \

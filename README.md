@@ -309,8 +309,9 @@ mpremote connect /dev/cu.usbmodem31101 exec "import inference_probe; inference_p
 For a repeatable application-first bench run with a redacted, GitHub-ready
 report, use the developer wrapper's inference mode. It requires one explicit
 serial port, uploads the current `src/` application tree without flashing or
-backing up firmware, then runs the offline probe. Record the physical checks
-from the operator's observation; omitted checks remain `not-observed`.
+backing up firmware, disables generated Wi-Fi configuration, avoids a device
+reset into normal startup, then runs the offline probe. Record the physical
+checks from the operator's observation; omitted checks remain `not-observed`.
 
 ```bash
 ./dev_install.sh \

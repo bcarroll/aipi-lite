@@ -32,7 +32,9 @@ The supported form is:
 This prevents the wrapper from issuing the probe against an ambiguous device.
 The normal installer remains responsible for uploading the current `src/`
 application tree. Its existing defaults continue to skip stock backup, erase,
-and MicroPython flashing.
+and MicroPython flashing. The wrapper also disables generated local Wi-Fi
+configuration and appends `--no-reset` unless it was already supplied, so the
+normal Wi-Fi application flow cannot start as part of the capture.
 
 `--inference-check NAME=STATUS` is repeatable. Supported names are `display`,
 `status-led`, `button`, and `offline`; supported statuses are `pass`, `fail`,

@@ -71,7 +71,7 @@ Use `dev_install.sh --inference-probe` when the current application should be
 uploaded, the probe evidence should be captured, and the redacted result should
 be prepared as a new GitHub issue. The mode remains offline-first: it does not
 configure Wi-Fi, call an endpoint, load a model, use the speaker, back up
-firmware, or flash firmware.
+firmware, flash firmware, or reset into the normal Wi-Fi application flow.
 
 ```bash
 ./dev_install.sh \

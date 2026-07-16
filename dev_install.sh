@@ -223,6 +223,7 @@ validate_dev_options() {
 validate_inference_options() {
   local arg
   local index
+  local no_reset_requested=0
   local port_count=0
   local port_value=""
 
@@ -246,6 +247,9 @@ validate_inference_options() {
         fi
         port_count=$((port_count + 1))
         ;;
+      --no-reset)
+        no_reset_requested=1
+        ;;
       --clean-tools|--clean-prereqs|-h|--help|--self-update|--flash-micropython|--backup-stock|--restore|--restore-backup|--restore-backup=*|--skip-erase)
         echo "error: --inference-probe only supports an application-first install; remove ${arg}" >&2
         return 1
@@ -259,6 +263,9 @@ validate_inference_options() {
   fi
 
   INFERENCE_PORT="${port_value}"
+  if [[ "${no_reset_requested}" -eq 0 ]]; then
+    INSTALL_ARGS+=("--no-reset")
+  fi
   validate_inference_checks
 }
 
@@ -713,7 +720,11 @@ run_installer() {
   chmod 600 "${raw_transcript}"
 
   set +e
-  "${INSTALL_SCRIPT}" "${INSTALL_ARGS[@]}" 2>&1 | tee "${raw_transcript}"
+  if [[ "${INFERENCE_PROBE_REQUESTED}" -eq 1 ]]; then
+    AIPI_CREATE_LOCAL_WIFI_CONFIG=no "${INSTALL_SCRIPT}" "${INSTALL_ARGS[@]}" 2>&1 | tee "${raw_transcript}"
+  else
+    "${INSTALL_SCRIPT}" "${INSTALL_ARGS[@]}" 2>&1 | tee "${raw_transcript}"
+  fi
   pipeline_status=("${PIPESTATUS[@]}")
 
   install_status="${pipeline_status[0]}"
