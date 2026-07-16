@@ -98,6 +98,24 @@ If `gh` is unavailable or unauthenticated, the wrapper leaves the redacted
 the actual installer/probe exit status. A `defer_inference` or
 `offline_unsupported` decision is recorded evidence, not a wrapper failure.
 
+### Windows Captured Bench Run
+
+On the Windows machine physically connected to the AIPI-Lite, use the native
+Command Prompt wrapper. It runs independently and publishes the same redacted
+evidence for later GitHub Issue Worker review:
+
+```cmd
+gh auth login
+dev_install.cmd --inference-probe --gh bcarroll/aipi-lite --device-label bench-a --inference-check display=pass --inference-check status-led=pass --inference-check button=pass --inference-check offline=pass -- --port COM3 --yes
+```
+
+The `COM` port must be explicit. Inference mode forces a no-reset upload, then
+runs the offline probe without generating Wi-Fi configuration or starting the
+normal application flow. `--gh OWNER/REPO` creates a new issue; bare `--gh`
+uses a GitHub `origin` remote when it can be resolved. A missing or
+unauthenticated `gh` CLI leaves the redacted body in ignored
+`tools\.local\dev-install\` without changing the real validation result.
+
 ## Success Criteria
 
 The spike can proceed toward `feat/14-on-device-inference` only if a hardware

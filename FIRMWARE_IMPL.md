@@ -81,7 +81,7 @@ tooling directories.
 | `feat/10-push-to-talk-flow` | Implemented, hardware validation pending | `src/main.py`, `src/assistant_state.py`, `src/push_to_talk.py`, `tests/test_main_startup.py`, and `tests/test_push_to_talk_flow.py` add the assistant state machine, normal-boot push-to-talk startup, shared LED/display/serial state output, button press/release handling, bounded capture handoff, local service exchange, response playback, recoverable error states, and host-side flow coverage. | Run one complete exchange on physical hardware against the mock service and record capture, upload, response text, playback, and visible state behavior. |
 | `feat/11-reliability-power-errors` | Implemented, hardware validation pending | `src/reliability.py`, `src/push_to_talk.py`, `MVP.md`, and `tests/test_reliability.py` add bounded retry/backoff, retry diagnostics, reconnect helper, runtime diagnostics formatting, GPIO21 charge-pulse observation, and GPIO10 board-power guarding. | Validate repeated sessions, Wi-Fi/service recovery, serial diagnostics, GPIO21 observations, and that GPIO10 remains unchanged on hardware. |
 | `feat/12-mvp-release` | Implemented, hardware validation pending | `src/version.py`, `MVP.md`, `README.md`, `src/README.md`, and `tests/test_mvp_release.py` add local-only MVP version metadata, install/configuration guidance, validation checklist, report template, and no-cloud verification expectations. | Complete the MVP validation report from a physical hardware run and record tested MicroPython/runtime versions. |
-| `spike/13-on-device-inference-feasibility` | Implemented, hardware validation pending | `src/inference_probe.py`, `INFERENCE_FEASIBILITY.md`, `README.md`, `src/README.md`, and `tests/test_inference_probe.py` add an offline-first simulated inference resource probe, deterministic local prompt fixture, model metadata validation, no-network policy checks, and a feasibility report template. | Run `inference_probe.run_probe()` on physical hardware and record heap, flash, timing, button, LED, display, and decision behavior. Speaker output is not required for this validation path. |
+| `spike/13-on-device-inference-feasibility` | Implemented, hardware validation pending | `src/inference_probe.py`, `INFERENCE_FEASIBILITY.md`, `README.md`, `src/README.md`, `dev_install.sh`, `dev_install.cmd`, `tools/windows_installer.py`, and host tests add an offline-first simulated inference resource probe, deterministic local prompt fixture, model metadata validation, no-network policy checks, a feasibility report template, and redacted GitHub-ready bench capture on Unix or Windows. | Run the appropriate `dev_install` inference capture on physical hardware and record heap, flash, timing, button, LED, display, and decision behavior. Speaker output is not required for this validation path. |
 | `feat/14-on-device-inference` | Not started | No imported inference runtime integration. | Add only after feasibility is proven. |
 
 ## Hardware Validation Notes
@@ -799,6 +799,11 @@ Implementation notes:
 - The current feasibility decision remains `defer_inference` until a physical
   hardware run records heap, flash, timing, button, LED, and display behavior.
   A disconnected speaker does not block this validation path.
+- `dev_install.sh` and `dev_install.cmd` can each run the offline probe after
+  an application-only, no-reset upload and independently create a redacted
+  GitHub issue when the connected host explicitly supplies `--gh` plus an
+  authenticated GitHub CLI. Failed GitHub publishing leaves the issue body in
+  ignored local tooling without changing the measured validation result.
 
 ### `feat/14-on-device-inference`
 

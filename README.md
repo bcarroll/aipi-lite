@@ -117,9 +117,24 @@ dev_install.cmd --device-label bench-a --hardware-note "display readable" -- --p
 It displays installer output and writes raw and redacted transcripts plus
 non-secret metadata under ignored `tools\.local\dev-install\`. Use
 `--prepare-only` to create those local artifacts without uploading to a device.
-The first Windows release intentionally does not support firmware flashing,
-backup, restore, GitHub issue posting, or trace artifacts; use the existing
-Unix scripts for those workflows.
+For an offline inference feasibility run that independently publishes its
+redacted report, use the Windows developer wrapper with a locally authenticated
+GitHub CLI:
+
+```cmd
+gh auth login
+dev_install.cmd --inference-probe --gh bcarroll/aipi-lite --device-label bench-a --inference-check display=pass --inference-check status-led=pass --inference-check button=pass --inference-check offline=pass -- --port COM3 --yes
+```
+
+Inference mode forces a no-reset application upload, runs the explicit offline
+probe, and creates one new GitHub issue only when `--gh` is supplied. It does
+not configure Wi-Fi, call an endpoint, load a model, play speaker audio, back
+up firmware, or flash firmware. The published body excludes raw transcripts,
+COM ports, secrets, MAC addresses, and local paths. If `gh` is unavailable or
+cannot create the issue, the redacted `github-issue-body.md` remains under
+ignored `tools\.local\dev-install\` and the installer/probe result is
+preserved. Windows still does not support firmware flashing, backup, restore,
+or trace artifacts; use the Unix scripts for those workflows.
 
 If local prerequisites are missing, the installer prompts before downloading or
 installing components under ignored `tools/.local/`, then continues with the

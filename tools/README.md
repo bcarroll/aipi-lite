@@ -88,6 +88,25 @@ keeping raw output, the local artifact path, and serial-device path local.
 installer or probe exit status. Set `AIPI_DEV_MPREMOTE` only when an alternate
 local `mpremote` command is required, such as host-side test fixtures.
 
+### Windows Inference Feasibility Capture
+
+The Windows machine attached to the device can independently create the same
+GitHub issue through the native CMD wrapper. Install Python 3 and the GitHub
+CLI on that machine, authenticate `gh`, then run this from the repository root:
+
+```cmd
+gh auth login
+dev_install.cmd --inference-probe --gh bcarroll/aipi-lite --device-label bench-a --inference-check display=pass --inference-check status-led=pass --inference-check button=pass --inference-check offline=pass -- --port COM3 --yes
+```
+
+The command forces a no-reset application upload, runs only the offline probe,
+and writes raw/redacted artifacts plus `github-issue-body.md` under ignored
+`tools\.local\dev-install\`. It creates a new issue only with `--gh`; failed
+repository resolution, missing GitHub tooling, or GitHub authentication/creation
+failure leaves that redacted body local without masking the application or probe
+result. The issue body excludes COM ports, secrets, MAC addresses, and local
+paths.
+
 For deeper hardware feedback, pass installer tracing through the wrapper:
 
 ```bash
