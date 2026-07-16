@@ -56,6 +56,36 @@ after bench triage when one should be attached to a chosen tracker. If GitHub
 tooling is missing or unauthenticated, the local issue body remains available
 for manual review.
 
+### On-Device Inference Feasibility Capture
+
+Use the opt-in inference mode to upload the current application tree, run the
+offline `inference_probe`, and create one redacted GitHub issue with the bench
+evidence. It requires an explicit serial port and rejects flash, restore,
+backup, cleanup, help, and self-update operations so the run stays
+application-first.
+
+```bash
+./dev_install.sh \
+  --inference-probe \
+  --gh \
+  --device-label bench-a \
+  --inference-check display=pass \
+  --inference-check status-led=pass \
+  --inference-check button=pass \
+  --inference-check offline=pass \
+  -- --port /dev/cu.usbmodem31101
+```
+
+The check names are `display`, `status-led`, `button`, and `offline`; each
+value is `pass`, `fail`, or `not-observed`. The wrapper does not infer physical
+observations that were not supplied. It captures the stable probe serial lines,
+feasibility decision, and operator checks in the redacted issue body while
+keeping raw output, the local artifact path, and serial-device path local.
+`--prepare-only` skips the GitHub create step. A missing or unauthenticated
+`gh` CLI also leaves the redacted body local without masking the actual
+installer or probe exit status. Set `AIPI_DEV_MPREMOTE` only when an alternate
+local `mpremote` command is required, such as host-side test fixtures.
+
 For deeper hardware feedback, pass installer tracing through the wrapper:
 
 ```bash

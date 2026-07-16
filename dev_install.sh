@@ -6,6 +6,7 @@ TOOLS_ROOT="${SCRIPT_DIR}/tools/.local"
 CAPTURE_ROOT="${TOOLS_ROOT}/dev-install"
 INSTALL_SCRIPT="${AIPI_DEV_INSTALL_SCRIPT:-${SCRIPT_DIR}/install.sh}"
 GH_BIN="${AIPI_DEV_GH_BIN:-gh}"
+MPREMOTE_BIN="${AIPI_DEV_MPREMOTE:-${TOOLS_ROOT}/micropython-venv/bin/mpremote}"
 MAX_ISSUE_TRANSCRIPT_BYTES="${AIPI_DEV_INSTALL_MAX_ISSUE_BYTES:-45000}"
 
 CAPTURE_DIR=""
@@ -15,8 +16,13 @@ GITHUB_CREATE_REPO=""
 GITHUB_ISSUE_TITLE=""
 DEVICE_LABEL=""
 PREPARE_ONLY=0
+INFERENCE_PROBE_REQUESTED=0
 INSTALL_ARGS=()
 HARDWARE_NOTES=()
+INFERENCE_CHECKS=()
+INFERENCE_PORT=""
+INFERENCE_DECISION=""
+INFERENCE_REASON=""
 
 usage() {
   cat <<'USAGE'
@@ -45,6 +51,12 @@ Developer options:
   --device-label LABEL    Optional non-secret device or bench label for
                           hardware validation context.
   --hardware-note TEXT    Optional hardware validation note. May be repeated.
+  --inference-probe       After a successful application-only install, run the
+                          offline on-device inference feasibility probe.
+  --inference-check NAME=STATUS
+                          Record a physical check for display, status-led,
+                          button, or offline. STATUS is pass, fail, or
+                          not-observed. May be repeated with unique names.
   --clean-tools, --clean-prereqs
                           Pass the installer cleanup option through and capture
                           the cleanup transcript.
@@ -59,6 +71,7 @@ Environment overrides:
   AIPI_GITHUB_REPO
   AIPI_DEV_INSTALL_SCRIPT
   AIPI_DEV_GH_BIN
+  AIPI_DEV_MPREMOTE
   AIPI_DEV_INSTALL_MAX_ISSUE_BYTES
 USAGE
 }
@@ -77,6 +90,7 @@ redact_stream() {
     -e 's/([Aa]uthorization:[[:space:]]*(Bearer|Basic))[[:space:]]+[^[:space:]]+/\1 <redacted>/g' \
     -e 's/([Pp][Aa][Ss][Ss][Ww][Oo][Rr][Dd]|[Pp][Aa][Ss][Ss][Ww][Dd]|[Tt][Oo][Kk][Ee][Nn]|[Ss][Ee][Cc][Rr][Ee][Tt]|[Kk][Ee][Yy])([=:])([^[:space:]]+)/\1\2<redacted>/g' \
     -e 's/([Ss][Ss][Ii][Dd])([=:])([^[:space:]]+)/\1\2<redacted>/g' \
+    -e 's#/dev/(cu|tty)[^[:space:]]+#<redacted-serial-port>#g' \
     -e 's/([[:xdigit:]]{2}:){5}[[:xdigit:]]{2}/<redacted-mac>/g' |
     if [[ -n "${escaped_home}" ]]; then
       sed "s|${escaped_home}|<home>|g"
@@ -157,6 +171,18 @@ parse_args() {
         HARDWARE_NOTES+=("${1#*=}")
         shift
         ;;
+      --inference-probe)
+        INFERENCE_PROBE_REQUESTED=1
+        shift
+        ;;
+      --inference-check)
+        INFERENCE_CHECKS+=("${2:?--inference-check requires NAME=STATUS}")
+        shift 2
+        ;;
+      --inference-check=*)
+        INFERENCE_CHECKS+=("${1#*=}")
+        shift
+        ;;
       --clean-tools|--clean-prereqs|--trace)
         INSTALL_ARGS+=("$1")
         shift
@@ -184,7 +210,118 @@ validate_dev_options() {
     return 2
   fi
 
+  if [[ "${INFERENCE_PROBE_REQUESTED}" -eq 1 ]]; then
+    validate_inference_options || return 1
+  elif [[ "${#INFERENCE_CHECKS[@]}" -gt 0 ]]; then
+    echo "error: --inference-check requires --inference-probe" >&2
+    return 1
+  fi
+
   return 0
+}
+
+validate_inference_options() {
+  local arg
+  local index
+  local port_count=0
+  local port_value=""
+
+  for ((index = 0; index < ${#INSTALL_ARGS[@]}; index += 1)); do
+    arg="${INSTALL_ARGS[${index}]}"
+    case "${arg}" in
+      --port)
+        if [[ $((index + 1)) -ge ${#INSTALL_ARGS[@]} || -z "${INSTALL_ARGS[$((index + 1))]}" ]]; then
+          echo "error: --inference-probe requires --port PORT" >&2
+          return 1
+        fi
+        port_value="${INSTALL_ARGS[$((index + 1))]}"
+        port_count=$((port_count + 1))
+        index=$((index + 1))
+        ;;
+      --port=*)
+        port_value="${arg#*=}"
+        if [[ -z "${port_value}" ]]; then
+          echo "error: --inference-probe requires --port PORT" >&2
+          return 1
+        fi
+        port_count=$((port_count + 1))
+        ;;
+      --clean-tools|--clean-prereqs|-h|--help|--self-update|--flash-micropython|--backup-stock|--restore|--restore-backup|--restore-backup=*|--skip-erase)
+        echo "error: --inference-probe only supports an application-first install; remove ${arg}" >&2
+        return 1
+        ;;
+    esac
+  done
+
+  if [[ "${port_count}" -ne 1 ]]; then
+    echo "error: --inference-probe requires exactly one explicit --port PORT" >&2
+    return 1
+  fi
+
+  INFERENCE_PORT="${port_value}"
+  validate_inference_checks
+}
+
+validate_inference_checks() {
+  local check
+  local existing
+  local name
+  local status
+  local seen_names="|"
+
+  if [[ -z "${INFERENCE_CHECKS[0]:-}" ]]; then
+    return 0
+  fi
+
+  for check in "${INFERENCE_CHECKS[@]}"; do
+    if [[ "${check}" != *=* ]]; then
+      echo "error: --inference-check must use NAME=STATUS" >&2
+      return 1
+    fi
+    name="${check%%=*}"
+    status="${check#*=}"
+    case "${name}" in
+      display|status-led|button|offline)
+        ;;
+      *)
+        echo "error: unsupported inference check: ${name}" >&2
+        return 1
+        ;;
+    esac
+    case "${status}" in
+      pass|fail|not-observed)
+        ;;
+      *)
+        echo "error: unsupported inference check status: ${status}" >&2
+        return 1
+        ;;
+    esac
+    if [[ "${seen_names}" == *"|${name}|"* ]]; then
+      echo "error: duplicate inference check: ${name}" >&2
+      return 1
+    fi
+    seen_names="${seen_names}${name}|"
+  done
+
+  return 0
+}
+
+inference_check_status() {
+  local expected_name="$1"
+  local check
+
+  if [[ -z "${INFERENCE_CHECKS[0]:-}" ]]; then
+    printf '%s\n' "not-observed"
+    return 0
+  fi
+
+  for check in "${INFERENCE_CHECKS[@]}"; do
+    if [[ "${check%%=*}" == "${expected_name}" ]]; then
+      printf '%s\n' "${check#*=}"
+      return 0
+    fi
+  done
+  printf '%s\n' "not-observed"
 }
 
 ensure_capture_dir() {
@@ -219,6 +356,8 @@ validate_max_issue_bytes() {
 write_metadata() {
   local metadata_file="$1"
   local install_status="$2"
+  local probe_status="$3"
+  local raw_transcript="$4"
   local note
 
   {
@@ -231,7 +370,24 @@ write_metadata() {
     printf 'git_branch=%s\n' "$(git_value unknown git -C "${SCRIPT_DIR}" branch --show-current)"
     printf 'git_commit=%s\n' "$(git_value unknown git -C "${SCRIPT_DIR}" rev-parse HEAD)"
     printf 'git_status=%s\n' "$(git_value unavailable git -C "${SCRIPT_DIR}" status --short --branch)"
-    printf 'capture_dir=%s\n' "${CAPTURE_DIR}"
+    if [[ "${INFERENCE_PROBE_REQUESTED}" -eq 1 ]]; then
+      printf 'capture_dir=local-only\n'
+      printf 'inference_probe_requested=yes\n'
+      printf 'inference_probe_status=%s\n' "${probe_status}"
+      printf 'inference_decision=%s\n' "${INFERENCE_DECISION:-not-reported}"
+      printf 'inference_reason=%s\n' "${INFERENCE_REASON:-not-reported}"
+      printf 'inference_checks=\n'
+      printf -- '- display=%s\n' "$(inference_check_status display)"
+      printf -- '- status-led=%s\n' "$(inference_check_status status-led)"
+      printf -- '- button=%s\n' "$(inference_check_status button)"
+      printf -- '- offline=%s\n' "$(inference_check_status offline)"
+      printf 'inference_probe_serial_lines=\n'
+      if ! grep '^inference_probe:' "${raw_transcript}"; then
+        printf -- '- none\n'
+      fi
+    else
+      printf 'capture_dir=%s\n' "${CAPTURE_DIR}"
+    fi
     if [[ "${#HARDWARE_NOTES[@]}" -gt 0 ]]; then
       printf 'hardware_notes=\n'
       for note in "${HARDWARE_NOTES[@]}"; do
@@ -242,6 +398,29 @@ write_metadata() {
     fi
   } | redact_stream >"${metadata_file}"
   chmod 600 "${metadata_file}"
+}
+
+append_inference_issue_section() {
+  local redacted_transcript="$1"
+  local probe_status="$2"
+
+  printf '## On-Device Inference Feasibility\n\n'
+  printf -- '- Probe execution status: `%s`\n' "${probe_status}"
+  printf -- '- Decision: `%s`\n' "${INFERENCE_DECISION:-not-reported}"
+  printf -- '- Reason: %s\n\n' "${INFERENCE_REASON:-not-reported}" | redact_stream
+
+  printf '### Operator Checks\n\n'
+  printf -- '- Display updated during load: `%s`\n' "$(inference_check_status display)"
+  printf -- '- GPIO46 status LED updated during load: `%s`\n' "$(inference_check_status status-led)"
+  printf -- '- GPIO42 button remained responsive: `%s`\n' "$(inference_check_status button)"
+  printf -- '- No Wi-Fi or endpoint required: `%s`\n\n' "$(inference_check_status offline)"
+
+  printf '### Probe Serial Report\n\n'
+  printf '```text\n'
+  if ! grep '^inference_probe:' "${redacted_transcript}"; then
+    printf 'No stable inference probe serial lines were captured.\n'
+  fi
+  printf '```\n\n'
 }
 
 append_transcript_for_issue() {
@@ -266,6 +445,7 @@ write_issue_body() {
   local metadata_file="$2"
   local redacted_transcript="$3"
   local install_status="$4"
+  local probe_status="$5"
   local command_line
   local note
 
@@ -276,7 +456,12 @@ write_issue_body() {
     printf -- '- Installer exit status: `%s`\n' "${install_status}"
     printf -- '- Device label: `%s`\n' "${DEVICE_LABEL:-unspecified}" | redact_stream
     printf -- '- Installer arguments: `%s`\n' "${command_line}"
-    printf -- '- Local artifact directory: `%s`\n\n' "${CAPTURE_DIR}" | redact_stream
+    if [[ "${INFERENCE_PROBE_REQUESTED}" -eq 1 ]]; then
+      printf '%s\n\n' '- Local artifact directory: local-only (not included in this issue)'
+      append_inference_issue_section "${redacted_transcript}" "${probe_status}"
+    else
+      printf -- '- Local artifact directory: `%s`\n\n' "${CAPTURE_DIR}" | redact_stream
+    fi
 
     printf '## Hardware Validation Context\n\n'
     if [[ "${#HARDWARE_NOTES[@]}" -gt 0 ]]; then
@@ -399,7 +584,11 @@ default_github_issue_title() {
   local install_status="$1"
   local title
 
-  title="AIPI-Lite install capture: ${DEVICE_LABEL:-unspecified-device} status ${install_status} $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+  if [[ "${INFERENCE_PROBE_REQUESTED}" -eq 1 ]]; then
+    title="AIPI-Lite inference feasibility: ${DEVICE_LABEL:-unspecified-device} status ${install_status} $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+  else
+    title="AIPI-Lite install capture: ${DEVICE_LABEL:-unspecified-device} status ${install_status} $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+  fi
   printf '%s\n' "${title}" | redact_stream
 }
 
@@ -536,12 +725,63 @@ run_installer() {
   return "${install_status}"
 }
 
+run_inference_probe() {
+  local raw_transcript="$1"
+  local pipeline_status
+  local probe_status
+  local tee_status
+
+  printf 'Running offline on-device inference feasibility probe.\n' | tee -a "${raw_transcript}"
+  if [[ ! -x "${MPREMOTE_BIN}" ]]; then
+    printf 'error: mpremote is not executable: %s\n' "${MPREMOTE_BIN}" | tee -a "${raw_transcript}" >&2
+    return 127
+  fi
+
+  set +e
+  "${MPREMOTE_BIN}" connect "${INFERENCE_PORT}" exec "import inference_probe; inference_probe.run_probe()" 2>&1 | tee -a "${raw_transcript}"
+  pipeline_status=("${PIPESTATUS[@]}")
+
+  probe_status="${pipeline_status[0]}"
+  tee_status="${pipeline_status[1]:-0}"
+  if [[ "${tee_status}" -ne 0 ]]; then
+    echo "warning: tee exited with status ${tee_status}; probe transcript may be incomplete" >&2
+  fi
+
+  return "${probe_status}"
+}
+
+capture_inference_decision() {
+  local raw_transcript="$1"
+  local decision_line
+
+  decision_line="$(grep '^inference_probe: decision=' "${raw_transcript}" | tail -n 1 || true)"
+  if [[ -z "${decision_line}" ]]; then
+    return 1
+  fi
+
+  INFERENCE_DECISION="${decision_line#*decision=}"
+  INFERENCE_DECISION="${INFERENCE_DECISION%% *}"
+  INFERENCE_REASON="${decision_line#* reason=}"
+  if [[ "${INFERENCE_REASON}" == "${decision_line}" ]]; then
+    INFERENCE_REASON="not-reported"
+  fi
+
+  case "${INFERENCE_DECISION}" in
+    candidate_supported|defer_inference|offline_unsupported)
+      return 0
+      ;;
+  esac
+  return 1
+}
+
 main() {
   local raw_transcript
   local redacted_transcript
   local metadata_file
   local issue_body
   local install_status=0
+  local probe_status="not-requested"
+  local validation_status=0
 
   parse_args "$@"
   if ! validate_dev_options; then
@@ -563,19 +803,40 @@ main() {
   install_status=$?
   set -e
 
+  validation_status="${install_status}"
+  if [[ "${INFERENCE_PROBE_REQUESTED}" -eq 1 ]]; then
+    if [[ "${install_status}" -eq 0 ]]; then
+      set +e
+      run_inference_probe "${raw_transcript}"
+      probe_status=$?
+      set -e
+      if [[ "${probe_status}" -eq 0 ]] && ! capture_inference_decision "${raw_transcript}"; then
+        printf 'error: inference probe did not report a valid feasibility decision\n' | tee -a "${raw_transcript}" >&2
+        probe_status=1
+      fi
+      validation_status="${probe_status}"
+    else
+      probe_status="not-run"
+    fi
+  fi
+
   redact_stream <"${raw_transcript}" >"${redacted_transcript}"
   chmod 600 "${redacted_transcript}"
-  write_metadata "${metadata_file}" "${install_status}"
-  write_issue_body "${issue_body}" "${metadata_file}" "${redacted_transcript}" "${install_status}"
-  report_issue_body "${issue_body}" "${install_status}" || true
+  write_metadata "${metadata_file}" "${install_status}" "${probe_status}" "${raw_transcript}"
+  write_issue_body "${issue_body}" "${metadata_file}" "${redacted_transcript}" "${install_status}" "${probe_status}"
+  report_issue_body "${issue_body}" "${validation_status}" || true
 
   echo "Raw transcript: ${raw_transcript}"
   echo "Redacted transcript: ${redacted_transcript}"
   echo "Run metadata: ${metadata_file}"
   echo "GitHub issue body: ${issue_body}"
   echo "Installer exit status: ${install_status}"
+  if [[ "${INFERENCE_PROBE_REQUESTED}" -eq 1 ]]; then
+    echo "Inference probe exit status: ${probe_status}"
+    echo "Inference decision: ${INFERENCE_DECISION:-not-reported}"
+  fi
 
-  return "${install_status}"
+  return "${validation_status}"
 }
 
 main "$@"

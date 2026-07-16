@@ -65,6 +65,39 @@ mpremote connect /dev/cu.usbmodem31101 exec "import inference_probe; inference_p
 Expected serial output includes elapsed time, iteration count, heap metrics,
 button poll count, fixture response, and the decision reason.
 
+## Captured Bench Run
+
+Use `dev_install.sh --inference-probe` when the current application should be
+uploaded, the probe evidence should be captured, and the redacted result should
+be prepared as a new GitHub issue. The mode remains offline-first: it does not
+configure Wi-Fi, call an endpoint, load a model, use the speaker, back up
+firmware, or flash firmware.
+
+```bash
+./dev_install.sh \
+  --inference-probe \
+  --gh \
+  --device-label bench-a \
+  --inference-check display=pass \
+  --inference-check status-led=pass \
+  --inference-check button=pass \
+  --inference-check offline=pass \
+  -- --port /dev/cu.usbmodem31101
+```
+
+The explicit `--port` is required. Each `--inference-check` accepts one of
+`pass`, `fail`, or `not-observed`; checks not supplied are reported as
+`not-observed`. The wrapper retains raw output locally, redacts the serial
+device path, secrets, Wi-Fi values, tokens, and MAC addresses from the issue
+body, then records the installer/probe statuses, decision, reason, stable
+serial lines, and operator checks. `--gh OWNER/REPO` creates one new issue per
+run, while a bare `--gh` resolves the configured repository or `origin`.
+
+If `gh` is unavailable or unauthenticated, the wrapper leaves the redacted
+`github-issue-body.md` under ignored `tools/.local/dev-install/` and preserves
+the actual installer/probe exit status. A `defer_inference` or
+`offline_unsupported` decision is recorded evidence, not a wrapper failure.
+
 ## Success Criteria
 
 The spike can proceed toward `feat/14-on-device-inference` only if a hardware

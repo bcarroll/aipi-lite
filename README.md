@@ -306,6 +306,31 @@ connected speaker:
 mpremote connect /dev/cu.usbmodem31101 exec "import inference_probe; inference_probe.run_probe()"
 ```
 
+For a repeatable application-first bench run with a redacted, GitHub-ready
+report, use the developer wrapper's inference mode. It requires one explicit
+serial port, uploads the current `src/` application tree without flashing or
+backing up firmware, then runs the offline probe. Record the physical checks
+from the operator's observation; omitted checks remain `not-observed`.
+
+```bash
+./dev_install.sh \
+  --inference-probe \
+  --gh \
+  --device-label bench-a \
+  --inference-check display=pass \
+  --inference-check status-led=pass \
+  --inference-check button=pass \
+  --inference-check offline=pass \
+  -- --port /dev/cu.usbmodem31101
+```
+
+`--gh OWNER/REPO` creates one new issue for the run; bare `--gh` uses the
+configured repository or `origin`. The issue body contains redacted probe
+evidence and never includes the raw transcript or serial-device path. If `gh`
+is unavailable or unauthenticated, the wrapper keeps the redacted body under
+ignored `tools/.local/dev-install/` for later review without changing the
+installer or probe status.
+
 See [INFERENCE_FEASIBILITY.md](INFERENCE_FEASIBILITY.md) for the scope,
 candidate runtime inventory, decision states, and validation report template.
 
