@@ -89,6 +89,53 @@ path while the installer writes detailed trace data under `tools/.local/debug/`.
 See [DEVELOPER.md](DEVELOPER.md) for the concise connected-device test and
 GitHub reporting workflow.
 
+### Windows CMD workflow
+
+Windows 10 or later operators can use native Command Prompt entry points for
+the same application-first upload path. Install Python 3 for Windows with the
+`py` launcher (or make `python` available on `PATH`), connect the already
+MicroPython-flashed AIPI-Lite by USB-C, then identify its `COM` port:
+
+```cmd
+install.cmd --list-ports
+install.cmd --port COM3 --yes
+```
+
+The first normal run creates an ignored local virtual environment under
+`tools\.local\micropython-venv` and installs `mpremote`. `--yes` explicitly
+approves that prerequisite setup; omit it to receive an interactive prompt.
+The upload copies `src\` to the device and resets it. Add `--no-reset` to leave
+the device running after the copy.
+
+For local developer captures, use `dev_install.cmd` with its installer options
+after `--`:
+
+```cmd
+dev_install.cmd --device-label bench-a --hardware-note "display readable" -- --port COM3 --yes
+```
+
+It displays installer output and writes raw and redacted transcripts plus
+non-secret metadata under ignored `tools\.local\dev-install\`. Use
+`--prepare-only` to create those local artifacts without uploading to a device.
+For an offline inference feasibility run that independently publishes its
+redacted report, use the Windows developer wrapper with a locally authenticated
+GitHub CLI:
+
+```cmd
+gh auth login
+dev_install.cmd --inference-probe --gh bcarroll/aipi-lite --device-label bench-a --inference-check display=pass --inference-check status-led=pass --inference-check button=pass --inference-check offline=pass -- --port COM3 --yes
+```
+
+Inference mode forces a no-reset application upload, runs the explicit offline
+probe, and creates one new GitHub issue only when `--gh` is supplied. It does
+not configure Wi-Fi, call an endpoint, load a model, play speaker audio, back
+up firmware, or flash firmware. The published body excludes raw transcripts,
+COM ports, secrets, MAC addresses, and local paths. If `gh` is unavailable or
+cannot create the issue, the redacted `github-issue-body.md` remains under
+ignored `tools\.local\dev-install\` and the installer/probe result is
+preserved. Windows still does not support firmware flashing, backup, restore,
+or trace artifacts; use the Unix scripts for those workflows.
+
 If local prerequisites are missing, the installer prompts before downloading or
 installing components under ignored `tools/.local/`, then continues with the
 upload workflow after approval. The default setup path installs `mpremote`,
@@ -195,6 +242,7 @@ push-to-talk application and opt-in hardware/service probes:
 - ignored `src/local_wifi_config.py` when local Wi-Fi/service settings are
   configured
 - application component modules under `src/lib/*.py`
+- `src/lib/inference_probe.py`
 - `src/lib/st7735/`
 - `src/lib/drivers/`
 
@@ -220,8 +268,10 @@ add the local-only assistant state machine, push-to-talk exchange flow, bounded
 retries, diagnostics, and conservative power observations. `version.py` records
 MVP metadata. `wifi_probe.py` connects only to configured local Wi-Fi and calls
 only a local `/health` endpoint after endpoint policy validation passes.
-External MicroPython display driver source is tracked under `src/lib/drivers/`
-so a normal application upload includes it.
+`inference_probe.py` runs an opt-in offline-first on-device inference
+feasibility probe without Wi-Fi, cloud calls, model downloads, or speaker
+output. External MicroPython display driver source is tracked under
+`src/lib/drivers/` so a normal application upload includes it.
 
 The GPIO status/input probe remains opt-in so normal boot stays recoverable. To
 cycle the GPIO46 WS2812/NeoPixel status LED states and print debounced GPIO42
@@ -275,6 +325,45 @@ The playback helper currently supports bounded 16 kHz, 16-bit, mono PCM and
 WAV input. The probe unmutes the DAC only for playback, enables GPIO9 only
 while I2S samples are being written, then mutes the DAC and disables GPIO9
 before returning.
+
+The on-device inference feasibility probe is opt-in and offline-first. It
+measures heap, flash, timing, button responsiveness, and optional LED/display
+updates under a simulated local inference load. It does not require Wi-Fi, a
+local service, public network access, model downloads, activation calls, or a
+connected speaker:
+
+```bash
+mpremote connect /dev/cu.usbmodem31101 exec "import inference_probe; inference_probe.run_probe()"
+```
+
+For a repeatable application-first bench run with a redacted, GitHub-ready
+report, use the developer wrapper's inference mode. It requires one explicit
+serial port, uploads the current `src/` application tree without flashing or
+backing up firmware, disables generated Wi-Fi configuration, avoids a device
+reset into normal startup, then runs the offline probe. Record the physical
+checks from the operator's observation; omitted checks remain `not-observed`.
+
+```bash
+./dev_install.sh \
+  --inference-probe \
+  --gh \
+  --device-label bench-a \
+  --inference-check display=pass \
+  --inference-check status-led=pass \
+  --inference-check button=pass \
+  --inference-check offline=pass \
+  -- --port /dev/cu.usbmodem31101
+```
+
+`--gh OWNER/REPO` creates one new issue for the run; bare `--gh` uses the
+configured repository or `origin`. The issue body contains redacted probe
+evidence and never includes the raw transcript or serial-device path. If `gh`
+is unavailable or unauthenticated, the wrapper keeps the redacted body under
+ignored `tools/.local/dev-install/` for later review without changing the
+installer or probe status.
+
+See [INFERENCE_FEASIBILITY.md](INFERENCE_FEASIBILITY.md) for the scope,
+candidate runtime inventory, decision states, and validation report template.
 
 The local service client is used by the push-to-talk MVP flow. It validates
 that the configured service URL is local-only before calling

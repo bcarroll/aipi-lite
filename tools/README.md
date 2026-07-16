@@ -56,6 +56,57 @@ after bench triage when one should be attached to a chosen tracker. If GitHub
 tooling is missing or unauthenticated, the local issue body remains available
 for manual review.
 
+### On-Device Inference Feasibility Capture
+
+Use the opt-in inference mode to upload the current application tree, run the
+offline `inference_probe`, and create one redacted GitHub issue with the bench
+evidence. It requires an explicit serial port and rejects flash, restore,
+backup, cleanup, help, and self-update operations so the run stays
+application-first. It disables generated Wi-Fi configuration and appends
+`--no-reset` before running the probe so the normal Wi-Fi application flow is
+not started during the capture.
+
+```bash
+./dev_install.sh \
+  --inference-probe \
+  --gh \
+  --device-label bench-a \
+  --inference-check display=pass \
+  --inference-check status-led=pass \
+  --inference-check button=pass \
+  --inference-check offline=pass \
+  -- --port /dev/cu.usbmodem31101
+```
+
+The check names are `display`, `status-led`, `button`, and `offline`; each
+value is `pass`, `fail`, or `not-observed`. The wrapper does not infer physical
+observations that were not supplied. It captures the stable probe serial lines,
+feasibility decision, and operator checks in the redacted issue body while
+keeping raw output, the local artifact path, and serial-device path local.
+`--prepare-only` skips the GitHub create step. A missing or unauthenticated
+`gh` CLI also leaves the redacted body local without masking the actual
+installer or probe exit status. Set `AIPI_DEV_MPREMOTE` only when an alternate
+local `mpremote` command is required, such as host-side test fixtures.
+
+### Windows Inference Feasibility Capture
+
+The Windows machine attached to the device can independently create the same
+GitHub issue through the native CMD wrapper. Install Python 3 and the GitHub
+CLI on that machine, authenticate `gh`, then run this from the repository root:
+
+```cmd
+gh auth login
+dev_install.cmd --inference-probe --gh bcarroll/aipi-lite --device-label bench-a --inference-check display=pass --inference-check status-led=pass --inference-check button=pass --inference-check offline=pass -- --port COM3 --yes
+```
+
+The command forces a no-reset application upload, runs only the offline probe,
+and writes raw/redacted artifacts plus `github-issue-body.md` under ignored
+`tools\.local\dev-install\`. It creates a new issue only with `--gh`; failed
+repository resolution, missing GitHub tooling, or GitHub authentication/creation
+failure leaves that redacted body local without masking the application or probe
+result. The issue body excludes COM ports, secrets, MAC addresses, and local
+paths.
+
 For deeper hardware feedback, pass installer tracing through the wrapper:
 
 ```bash
