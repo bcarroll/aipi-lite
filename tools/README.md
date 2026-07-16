@@ -107,6 +107,31 @@ failure leaves that redacted body local without masking the application or probe
 result. The issue body excludes COM ports, secrets, MAC addresses, and local
 paths.
 
+### Windows Physical Device Validation
+
+Use the dedicated Windows validation command to run the self-contained physical
+probes and create one redacted GitHub issue for each run:
+
+```cmd
+gh auth login
+validate.cmd --port COM8 --yes --device-label bench-a
+```
+
+The command uploads `src/` without resetting into normal startup, then runs the
+display, GPIO status/button, codec, capture, playback, and offline inference
+probes independently. It continues after an individual probe failure so the
+report contains all available evidence. After the relevant probe, answer the
+prompt with `pass`, `fail`, or `not-observed` for each physical observation.
+Only an all-pass run exits successfully.
+
+Each parsed run writes raw/redacted transcripts, metadata, and a GitHub-ready
+body under ignored `tools\.local\device-validation\`. The target repository is
+`AIPI_GITHUB_REPO` when it is valid; otherwise it is derived from `origin`.
+Missing or unauthenticated `gh` leaves the body local and reports the publishing
+failure without changing the measured validation result. The workflow excludes
+Wi-Fi, local-service, and push-to-talk validation and does not flash firmware,
+erase flash, or drive GPIO10.
+
 For deeper hardware feedback, pass installer tracing through the wrapper:
 
 ```bash

@@ -28,11 +28,14 @@ class WindowsInstallerTests(unittest.TestCase):
         """The native CMD files should locate Python and select the expected command."""
         install_text = (REPO_ROOT / "install.cmd").read_text(encoding="utf-8")
         developer_text = (REPO_ROOT / "dev_install.cmd").read_text(encoding="utf-8")
+        validation_text = (REPO_ROOT / "validate.cmd").read_text(encoding="utf-8")
 
         self.assertIn('py -3 "%HELPER%" install %*', install_text)
         self.assertIn('python "%HELPER%" install %*', install_text)
         self.assertIn('py -3 "%HELPER%" developer %*', developer_text)
         self.assertIn('python "%HELPER%" developer %*', developer_text)
+        self.assertIn('py -3 "%HELPER%" validate %*', validation_text)
+        self.assertIn('python "%HELPER%" validate %*', validation_text)
 
     def test_normalizes_valid_com_port_and_rejects_non_windows_port(self):
         """Only Windows COM port names should enter the upload workflow."""
@@ -394,12 +397,170 @@ class WindowsInstallerTests(unittest.TestCase):
     def test_redaction_removes_common_sensitive_values(self):
         """Shareable artifacts should not retain common secret or hardware identifiers."""
         redacted = installer.redact_text(
-            "password=hunter2 ssid=lab COM8 01:23:45:67:89:ab"
+            "password=hunter2 ssid=lab COM8 01:23:45:67:89:ab C:\\bench\\serial.log"
         )
         self.assertEqual(
             redacted,
-            "password=<redacted> ssid=<redacted> <redacted-serial-port> <redacted-mac>",
+            "password=<redacted> ssid=<redacted> <redacted-serial-port> "
+            "<redacted-mac> <redacted-local-path>",
         )
+
+    def test_device_validation_requires_a_com_port(self):
+        """The physical validation command should not run without one COM port."""
+        with mock.patch("sys.stderr", new=io.StringIO()):
+            with self.assertRaises(SystemExit):
+                installer.create_parser().parse_args(["validate", "--yes"])
+
+    def test_device_validation_uploads_without_reset_and_creates_issue(self):
+        """Validation should upload once, run every probe, and publish redacted evidence."""
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            capture_dir = Path(temporary_directory) / "capture"
+            args = installer.create_parser().parse_args(
+                [
+                    "validate",
+                    "--capture-dir",
+                    str(capture_dir),
+                    "--device-label",
+                    "bench-COM7",
+                    "--port",
+                    "COM7",
+                    "--yes",
+                ]
+            )
+            sink = self.make_sink()
+            received_request = None
+
+            def simulated_install(request, install_sink):
+                """Record the upload request without using a physical device."""
+                nonlocal received_request
+                received_request = request
+                install_sink.write("upload COM7 token=upload-secret C:\\bench\\upload.log")
+                return 0
+
+            def simulated_probe(command, probe_sink):
+                """Write stable serial output for each configured validation probe."""
+                probe = next(
+                    item for item in installer.DEVICE_VALIDATION_PROBES if item.command == command[-1]
+                )
+                probe_sink.write(
+                    f"{probe.serial_prefix} complete COM7 token=probe-secret C:\\bench\\serial.log"
+                )
+                return 0
+
+            responses = iter(["pass"] * len(installer.DEVICE_VALIDATION_OBSERVATIONS))
+            gh_result = subprocess.CompletedProcess(
+                args=["gh"],
+                returncode=0,
+                stdout="https://github.com/owner/repo/issues/202\n",
+            )
+            with (
+                mock.patch.object(installer, "run_install_request", side_effect=simulated_install),
+                mock.patch.object(installer, "ensure_mpremote", return_value=Path("C:/mpremote.exe")),
+                mock.patch.object(installer, "run_streaming", side_effect=simulated_probe) as run_streaming,
+                mock.patch.object(installer, "resolve_device_validation_repository", return_value="owner/repo"),
+                mock.patch.object(installer.shutil, "which", return_value="C:/gh.exe"),
+                mock.patch.object(installer.subprocess, "run", return_value=gh_result) as run,
+            ):
+                self.assertEqual(
+                    installer.run_device_validation(args, sink, input_func=lambda _prompt: next(responses)),
+                    0,
+                )
+
+            self.assertIsNotNone(received_request)
+            self.assertTrue(received_request.no_reset)
+            self.assertEqual(
+                [call.args[0][-1] for call in run_streaming.call_args_list],
+                [probe.command for probe in installer.DEVICE_VALIDATION_PROBES],
+            )
+            issue_body = (capture_dir / "github-issue-body.md").read_text(encoding="utf-8")
+            metadata = (capture_dir / "run-metadata.txt").read_text(encoding="utf-8")
+            self.assertIn("Aggregate validation status: `0`", issue_body)
+            self.assertIn("GPIO42 button press and release were observed: `pass`", issue_body)
+            self.assertIn("inference_probe: complete", issue_body)
+            self.assertNotIn("COM7", issue_body)
+            self.assertNotIn("probe-secret", issue_body)
+            self.assertNotIn("C:\\bench", issue_body)
+            self.assertIn("workflow=windows-device-validation", metadata)
+            self.assertIn("observation_speaker=pass", metadata)
+            self.assertEqual(
+                (capture_dir / "github-created-issue.txt").read_text(encoding="utf-8"),
+                "https://github.com/owner/repo/issues/202\n",
+            )
+            self.assertIn("issue", run.call_args.args[0])
+            self.assertIn("create", run.call_args.args[0])
+            self.assertIn("owner/repo", run.call_args.args[0])
+
+    def test_device_validation_continues_after_a_probe_failure(self):
+        """One probe failure should not prevent later independent probes from running."""
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            args = installer.create_parser().parse_args(
+                [
+                    "validate",
+                    "--capture-dir",
+                    str(Path(temporary_directory) / "capture"),
+                    "--port",
+                    "COM7",
+                    "--yes",
+                ]
+            )
+            sink = self.make_sink()
+            responses = iter(["pass"] * len(installer.DEVICE_VALIDATION_OBSERVATIONS))
+            with (
+                mock.patch.object(installer, "run_install_request", return_value=0),
+                mock.patch.object(installer, "ensure_mpremote", return_value=Path("C:/mpremote.exe")),
+                mock.patch.object(
+                    installer,
+                    "run_streaming",
+                    side_effect=[0, 4, 0, 0, 0, 0],
+                ) as run_streaming,
+                mock.patch.object(installer, "resolve_device_validation_repository", return_value="owner/repo"),
+                mock.patch.object(installer, "create_github_issue") as create_github_issue,
+            ):
+                self.assertEqual(
+                    installer.run_device_validation(args, sink, input_func=lambda _prompt: next(responses)),
+                    1,
+                )
+
+            self.assertEqual(run_streaming.call_count, len(installer.DEVICE_VALIDATION_PROBES))
+            create_github_issue.assert_called_once()
+            self.assertIn("inference probe exit status: 0", sink.transcript)
+
+    def test_device_validation_records_unobserved_checks_and_keeps_report_local(self):
+        """Unavailable operator input should be non-passing while retaining a report locally."""
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            capture_dir = Path(temporary_directory) / "capture"
+            args = installer.create_parser().parse_args(
+                [
+                    "validate",
+                    "--capture-dir",
+                    str(capture_dir),
+                    "--port",
+                    "COM7",
+                    "--yes",
+                ]
+            )
+            sink = self.make_sink()
+            with (
+                mock.patch.object(installer, "run_install_request", return_value=0),
+                mock.patch.object(installer, "ensure_mpremote", return_value=Path("C:/mpremote.exe")),
+                mock.patch.object(installer, "run_streaming", return_value=0),
+                mock.patch.object(installer, "resolve_device_validation_repository", return_value="owner/repo"),
+                mock.patch.object(installer.shutil, "which", return_value=None),
+            ):
+                self.assertEqual(
+                    installer.run_device_validation(
+                        args,
+                        sink,
+                        input_func=lambda _prompt: (_ for _ in ()).throw(EOFError()),
+                    ),
+                    1,
+                )
+
+            issue_body = (capture_dir / "github-issue-body.md").read_text(encoding="utf-8")
+            self.assertIn("Aggregate validation status: `1`", issue_body)
+            self.assertIn("Low-volume speaker playback was audible: `not-observed`", issue_body)
+            self.assertFalse((capture_dir / "github-created-issue.txt").exists())
+            self.assertIn("gh CLI not available", sink.transcript)
 
 
 if __name__ == "__main__":

@@ -1,9 +1,9 @@
 """Windows application-first installer support for the AIPI-Lite.
 
 The module is called by the repository's native CMD entry points. It keeps
-Windows-specific host tooling under ``tools/.local`` and deliberately supports
-only application upload and developer capture; firmware flash and recovery
-actions remain available through the established Unix workflow.
+Windows-specific host tooling under ``tools/.local`` and supports application
+upload, developer capture, and physical device validation; firmware flash and
+recovery actions remain available through the established Unix workflow.
 """
 
 from __future__ import annotations
@@ -17,7 +17,7 @@ import re
 import shutil
 import subprocess
 import sys
-from typing import Sequence, TextIO
+from typing import Callable, Sequence, TextIO
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -25,6 +25,7 @@ SRC_DIR = REPO_ROOT / "src"
 TOOLS_ROOT = REPO_ROOT / "tools" / ".local"
 VENV_DIR = TOOLS_ROOT / "micropython-venv"
 CAPTURE_ROOT = TOOLS_ROOT / "dev-install"
+DEVICE_VALIDATION_ROOT = TOOLS_ROOT / "device-validation"
 COM_PORT_PATTERN = re.compile(r"COM[1-9][0-9]*", re.IGNORECASE)
 SECRET_PATTERN = re.compile(
     r"(?i)\b(password|passwd|token|secret|key|ssid)\s*([=:])\s*[^\s]+"
@@ -40,6 +41,26 @@ INFERENCE_CHECK_STATUSES = {"pass", "fail", "not-observed"}
 INFERENCE_DECISION_LINE_PATTERN = re.compile(
     r"^inference_probe: decision=(candidate_supported|defer_inference|offline_unsupported) reason=(.+)$"
 )
+LOCAL_PATH_PATTERN = re.compile(
+    r"(?i)(?:[a-z]:[\\/][^\s`\"']+|/(?:Users|home|private|tmp|var|opt|workspace|workspaces)(?:/[^\s`\"']+)*)"
+)
+DEVICE_VALIDATION_OBSERVATIONS = (
+    "display",
+    "status-led",
+    "button",
+    "microphone",
+    "speaker",
+    "inference-ui",
+)
+DEVICE_VALIDATION_OBSERVATION_LABELS = {
+    "display": "Display status screens were visible and readable",
+    "status-led": "GPIO46 status LED cycled through its states",
+    "button": "GPIO42 button press and release were observed",
+    "microphone": "Microphone capture metrics were observed",
+    "speaker": "Low-volume speaker playback was audible",
+    "inference-ui": "Display, LED, and button remained responsive during inference",
+}
+DEVICE_VALIDATION_OBSERVATION_STATUSES = {"pass", "fail", "not-observed"}
 
 
 class InstallerError(RuntimeError):
@@ -53,6 +74,55 @@ class InstallRequest:
     port: str
     no_reset: bool
     assume_yes: bool
+
+
+@dataclass(frozen=True)
+class DeviceValidationProbe:
+    """Describe one self-contained AIPI-Lite device validation probe."""
+
+    name: str
+    command: str
+    serial_prefix: str
+    observations: tuple[str, ...] = ()
+
+
+DEVICE_VALIDATION_PROBES = (
+    DeviceValidationProbe(
+        name="display",
+        command="import display_probe; display_probe.run_probe(cycles=2)",
+        serial_prefix="display_probe:",
+        observations=("display",),
+    ),
+    DeviceValidationProbe(
+        name="io",
+        command="import io_probe; io_probe.run_probe(cycles=1)",
+        serial_prefix="io_probe:",
+        observations=("status-led", "button"),
+    ),
+    DeviceValidationProbe(
+        name="codec",
+        command="import audio_probe; audio_probe.run_probe(toggle_speaker=False)",
+        serial_prefix="audio_probe:",
+    ),
+    DeviceValidationProbe(
+        name="capture",
+        command="import capture_probe; capture_probe.run_probe()",
+        serial_prefix="capture_probe:",
+        observations=("microphone",),
+    ),
+    DeviceValidationProbe(
+        name="playback",
+        command="import playback_probe; playback_probe.run_probe()",
+        serial_prefix="playback_probe:",
+        observations=("speaker",),
+    ),
+    DeviceValidationProbe(
+        name="inference",
+        command="import inference_probe; inference_probe.run_probe()",
+        serial_prefix="inference_probe:",
+        observations=("inference-ui",),
+    ),
+)
 
 
 class OutputSink:
@@ -157,6 +227,25 @@ def create_parser() -> argparse.ArgumentParser:
         nargs=argparse.REMAINDER,
         help="Installer options after --, such as -- --port COM3.",
     )
+
+    validate = commands.add_parser(
+        "validate",
+        help="Run self-contained physical AIPI-Lite validation probes and report them.",
+    )
+    validate.add_argument("--port", required=True, help="Windows serial port, for example COM3.")
+    validate.add_argument(
+        "-y",
+        "--yes",
+        dest="assume_yes",
+        action="store_true",
+        help="Approve local mpremote prerequisite setup.",
+    )
+    validate.add_argument(
+        "--capture-dir",
+        type=Path,
+        help="Directory for ignored local validation artifacts.",
+    )
+    validate.add_argument("--device-label", default="", help="Optional non-secret device label.")
     return parser
 
 
@@ -379,10 +468,52 @@ def inference_check_status(checks: Sequence[tuple[str, str]], name: str) -> str:
 
 
 def redact_text(text: str) -> str:
-    """Remove common secrets, MAC addresses, and COM ports from shareable text."""
+    """Remove common secrets, identifiers, and local paths from shareable text."""
     redacted = SECRET_PATTERN.sub(r"\1\2<redacted>", text)
     redacted = MAC_ADDRESS_PATTERN.sub("<redacted-mac>", redacted)
-    return SERIAL_PORT_PATTERN.sub("<redacted-serial-port>", redacted)
+    redacted = SERIAL_PORT_PATTERN.sub("<redacted-serial-port>", redacted)
+    return LOCAL_PATH_PATTERN.sub("<redacted-local-path>", redacted)
+
+
+def prompt_device_validation_observation(
+    observation: str,
+    sink: OutputSink,
+    input_func: Callable[[str], str] = input,
+) -> str:
+    """Collect one explicit physical observation without inferring a pass result."""
+    label = DEVICE_VALIDATION_OBSERVATION_LABELS[observation]
+    prompt = f"{label} [pass/fail/not-observed]: "
+    while True:
+        try:
+            answer = input_func(prompt)
+        except (EOFError, OSError):
+            sink.write(f"{observation}: not-observed (interactive input unavailable)")
+            return "not-observed"
+        status = str(answer).strip().lower()
+        if status in DEVICE_VALIDATION_OBSERVATION_STATUSES:
+            sink.write(f"{observation}: {status}")
+            return status
+        sink.write("Enter pass, fail, or not-observed.", error=True)
+
+
+def run_device_validation_probe(
+    executable: Path,
+    request: InstallRequest,
+    probe: DeviceValidationProbe,
+    sink: OutputSink,
+) -> int:
+    """Run one device probe through mpremote and return its process status."""
+    command = [
+        str(executable),
+        "connect",
+        request.port,
+        "exec",
+        probe.command,
+    ]
+    sink.write(f"Running {probe.name} device validation probe.")
+    status = run_streaming(command, sink)
+    sink.write(f"{probe.name} probe exit status: {status}")
+    return status
 
 
 def run_inference_probe(request: InstallRequest, sink: OutputSink) -> int:
@@ -426,10 +557,10 @@ def github_repository_from_origin() -> str:
     except OSError as error:
         raise InstallerError(f"unable to resolve GitHub origin: {error}") from error
     if result.returncode != 0:
-        raise InstallerError("unable to resolve GitHub origin; pass --gh OWNER/REPO")
+        raise InstallerError("unable to resolve a GitHub origin repository")
     match = GITHUB_ORIGIN_PATTERN.fullmatch(result.stdout.strip())
     if match is None:
-        raise InstallerError("origin is not a supported GitHub repository; pass --gh OWNER/REPO")
+        raise InstallerError("origin is not a supported GitHub repository")
     return match.group(1)
 
 
@@ -443,11 +574,26 @@ def resolve_github_repository(value: str) -> str:
     return candidate
 
 
+def resolve_device_validation_repository() -> str:
+    """Resolve the automatic validation issue target from configuration or origin."""
+    configured = os.environ.get("AIPI_GITHUB_REPO", "").strip()
+    if configured and GITHUB_REPOSITORY_PATTERN.fullmatch(configured):
+        return configured
+    return github_repository_from_origin()
+
+
 def default_inference_issue_title(device_label: str, validation_status: int) -> str:
     """Build a redacted, timestamped GitHub issue title for one bench run."""
     timestamp = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
     label = redact_text(device_label or "unspecified-device")
     return f"AIPI-Lite inference feasibility: {label} status {validation_status} {timestamp}"
+
+
+def default_device_validation_issue_title(device_label: str, validation_status: int) -> str:
+    """Build a redacted, timestamped issue title for one physical validation run."""
+    timestamp = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    label = redact_text(device_label or "unspecified-device")
+    return f"AIPI-Lite device validation: {label} status {validation_status} {timestamp}"
 
 
 def write_inference_issue_body(
@@ -611,6 +757,194 @@ def write_capture_artifacts(
     return issue_body
 
 
+def default_device_validation_capture_directory() -> Path:
+    """Build a unique ignored directory for one Windows device validation run."""
+    timestamp = datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S")
+    return DEVICE_VALIDATION_ROOT / f"validation-{timestamp}-{os.getpid()}"
+
+
+def observation_status(observations: dict[str, str], name: str) -> str:
+    """Return one recorded observation or the safe not-observed default."""
+    return observations.get(name, "not-observed")
+
+
+def device_validation_status(
+    upload_status: int | None,
+    probe_statuses: Sequence[tuple[str, int]],
+    observations: dict[str, str],
+) -> int:
+    """Return success only when every device probe and observation passed."""
+    if upload_status != 0 or len(probe_statuses) != len(DEVICE_VALIDATION_PROBES):
+        return 1
+    if any(status != 0 for _, status in probe_statuses):
+        return 1
+    if any(observation_status(observations, name) != "pass" for name in DEVICE_VALIDATION_OBSERVATIONS):
+        return 1
+    return 0
+
+
+def device_validation_serial_lines(transcript: str) -> list[str]:
+    """Return stable redacted device serial lines safe to include in an issue."""
+    prefixes = tuple(probe.serial_prefix for probe in DEVICE_VALIDATION_PROBES)
+    return [
+        line
+        for line in redact_text(transcript).splitlines()
+        if line.startswith(prefixes)
+    ]
+
+
+def write_device_validation_issue_body(
+    issue_body: Path,
+    *,
+    sink: OutputSink,
+    device_label: str,
+    upload_status: int | None,
+    probe_statuses: Sequence[tuple[str, int]],
+    observations: dict[str, str],
+    validation_status: int,
+) -> None:
+    """Write a redacted physical-device validation report for a new GitHub issue."""
+    status_by_probe = dict(probe_statuses)
+    lines = [
+        "# AIPI-Lite Physical Device Validation",
+        "",
+        f"- Aggregate validation status: `{validation_status}`",
+        f"- Application upload status: `{upload_status if upload_status is not None else 'not-run'}`",
+        f"- Device label: {redact_text(device_label or 'unspecified')}",
+        "",
+        "## Probe Results",
+        "",
+    ]
+    for probe in DEVICE_VALIDATION_PROBES:
+        status = status_by_probe.get(probe.name, "not-run")
+        lines.append(f"- {probe.name}: `{status}`")
+    lines.extend(["", "## Operator Observations", ""])
+    for observation in DEVICE_VALIDATION_OBSERVATIONS:
+        lines.append(
+            f"- {DEVICE_VALIDATION_OBSERVATION_LABELS[observation]}: "
+            f"`{observation_status(observations, observation)}`"
+        )
+    lines.extend(["", "## Redacted Device Serial", "", "```text"])
+    lines.extend(
+        device_validation_serial_lines(sink.transcript)
+        or ["No stable device probe serial lines were captured."]
+    )
+    lines.extend(["```", ""])
+    issue_body.write_text("\n".join(lines), encoding="utf-8")
+
+
+def write_device_validation_artifacts(
+    capture_dir: Path,
+    *,
+    sink: OutputSink,
+    device_label: str,
+    upload_status: int | None,
+    probe_statuses: Sequence[tuple[str, int]],
+    observations: dict[str, str],
+    validation_status: int,
+) -> Path:
+    """Persist raw and redacted validation evidence plus the GitHub issue body."""
+    capture_dir.mkdir(parents=True, exist_ok=True)
+    (capture_dir / "validation-transcript-raw.txt").write_text(
+        sink.transcript,
+        encoding="utf-8",
+    )
+    (capture_dir / "validation-transcript-redacted.txt").write_text(
+        redact_text(sink.transcript),
+        encoding="utf-8",
+    )
+    metadata_lines = [
+        "workflow=windows-device-validation",
+        f"aggregate_validation_status={validation_status}",
+        f"application_upload_status={upload_status if upload_status is not None else 'not-run'}",
+        f"device_label={redact_text(device_label)}",
+    ]
+    metadata_lines.extend(f"probe_{name}_status={status}" for name, status in probe_statuses)
+    metadata_lines.extend(
+        f"observation_{name}={observation_status(observations, name)}"
+        for name in DEVICE_VALIDATION_OBSERVATIONS
+    )
+    (capture_dir / "run-metadata.txt").write_text(
+        "\n".join(metadata_lines) + "\n",
+        encoding="utf-8",
+    )
+    issue_body = capture_dir / "github-issue-body.md"
+    write_device_validation_issue_body(
+        issue_body,
+        sink=sink,
+        device_label=device_label,
+        upload_status=upload_status,
+        probe_statuses=probe_statuses,
+        observations=observations,
+        validation_status=validation_status,
+    )
+    return issue_body
+
+
+def run_device_validation(
+    args: argparse.Namespace,
+    sink: OutputSink,
+    input_func: Callable[[str], str] = input,
+) -> int:
+    """Run the approved self-contained device probes and publish their evidence."""
+    capture_dir = args.capture_dir or default_device_validation_capture_directory()
+    upload_status: int | None = None
+    probe_statuses: list[tuple[str, int]] = []
+    observations: dict[str, str] = {}
+    sink.write(f"Device validation capture directory: {capture_dir}")
+    try:
+        request = InstallRequest(
+            port=normalize_com_port(args.port),
+            no_reset=True,
+            assume_yes=args.assume_yes,
+        )
+        upload_status = run_install_request(request, sink)
+        sink.write(f"Application upload status: {upload_status}")
+        if upload_status == 0:
+            executable = ensure_mpremote(request.assume_yes, sink)
+            for probe in DEVICE_VALIDATION_PROBES:
+                try:
+                    status = run_device_validation_probe(executable, request, probe, sink)
+                except (InstallerError, OSError, subprocess.SubprocessError) as error:
+                    sink.write(f"error: {probe.name} probe failed: {error}", error=True)
+                    status = 1
+                probe_statuses.append((probe.name, status))
+                for observation in probe.observations:
+                    observations[observation] = prompt_device_validation_observation(
+                        observation,
+                        sink,
+                        input_func,
+                    )
+    except (InstallerError, OSError, subprocess.SubprocessError) as error:
+        upload_status = 1
+        sink.write(f"error: {error}", error=True)
+
+    validation_status = device_validation_status(upload_status, probe_statuses, observations)
+    sink.write(f"Device validation status: {validation_status}")
+    issue_body = write_device_validation_artifacts(
+        capture_dir,
+        sink=sink,
+        device_label=args.device_label,
+        upload_status=upload_status,
+        probe_statuses=probe_statuses,
+        observations=observations,
+        validation_status=validation_status,
+    )
+    try:
+        repository = resolve_device_validation_repository()
+    except InstallerError as error:
+        sink.write(f"warning: {error}; GitHub issue body prepared: {issue_body}", error=True)
+    else:
+        create_github_issue(
+            repository,
+            default_device_validation_issue_title(args.device_label, validation_status),
+            issue_body,
+            capture_dir,
+            sink,
+        )
+    return validation_status
+
+
 def run_developer_capture(args: argparse.Namespace, sink: OutputSink) -> int:
     """Run or prepare a developer capture and return the installer outcome."""
     capture_dir = args.capture_dir or default_capture_directory()
@@ -736,6 +1070,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         return run_install_command(args, sink)
     if args.command == "developer":
         return run_developer_capture(args, sink)
+    if args.command == "validate":
+        return run_device_validation(args, sink)
     parser.error(f"unsupported command: {args.command}")
     return 2
 
