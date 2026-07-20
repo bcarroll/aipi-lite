@@ -387,9 +387,10 @@ installer or probe status.
 
 ### Windows Physical Device Validation
 
-Use `validate.cmd` on a Windows bench host to upload the current application
-without a reset, run the self-contained device probes, collect operator
-observations, and create a new redacted GitHub issue for that run:
+Use `validate.cmd` on a Windows bench host to hard-reset the device, wait one
+second, upload the current application, run the self-contained device probes,
+collect operator observations, and create a new redacted GitHub issue for that
+run:
 
 ```cmd
 gh auth login
@@ -405,13 +406,14 @@ LED, button, microphone, speaker, and inference UI behavior. Any failed or
 unobserved check makes the validation result non-passing; the GitHub report
 records that evidence rather than inferring a successful physical result.
 
-The validation command does not reset the device into normal startup, flash or
-erase firmware, configure Wi-Fi, call a local service, run push-to-talk, or
-drive GPIO10. Raw and redacted transcripts, metadata, and the GitHub-ready body
-are retained under ignored `tools\.local\device-validation\`. It resolves the
-issue repository from `AIPI_GITHUB_REPO` when valid, otherwise from `origin`.
-If `gh` cannot create the issue, the local report remains available and the
-console reports the publishing failure separately from the validation result.
+The validation command performs only that pre-upload hard reset; after upload,
+it does not reset the device into normal startup, flash or erase firmware,
+configure Wi-Fi, call a local service, run push-to-talk, or drive GPIO10. Raw
+and redacted transcripts, metadata, and the GitHub-ready body are retained
+under ignored `tools\.local\device-validation\`. It resolves the issue repository
+from `AIPI_GITHUB_REPO` when valid, otherwise from `origin`. If `gh` cannot
+create the issue, the local report remains available and the console reports
+the publishing failure separately from the validation result.
 
 See [INFERENCE_FEASIBILITY.md](INFERENCE_FEASIBILITY.md) for the scope,
 candidate runtime inventory, decision states, and validation report template.

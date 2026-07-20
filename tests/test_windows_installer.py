@@ -104,6 +104,43 @@ class WindowsInstallerTests(unittest.TestCase):
         self.assertEqual(run_streaming.call_count, 1)
         self.assertIn("Application upload failed with status 9.", sink.transcript)
 
+    def test_preflight_reset_upload_failure_stops_before_cleanup(self):
+        """A failed validation preflight upload should not run cleanup or device probes."""
+        executable = Path("C:/local/mpremote.exe")
+        request = installer.InstallRequest(
+            port="COM7",
+            no_reset=True,
+            assume_yes=True,
+            preflight_reset=True,
+        )
+        sink = self.make_sink()
+        with (
+            mock.patch.object(installer, "list_windows_serial_ports", return_value=["COM7"]),
+            mock.patch.object(installer, "ensure_mpremote", return_value=executable),
+            mock.patch.object(installer, "run_streaming", return_value=9) as run_streaming,
+        ):
+            self.assertEqual(installer.run_install_request(request, sink), 9)
+
+        self.assertEqual(run_streaming.call_count, 1)
+        upload_command = run_streaming.call_args.args[0]
+        self.assertEqual(
+            upload_command[:9],
+            [
+                str(executable),
+                "connect",
+                "COM7",
+                "reset",
+                "sleep",
+                installer.VALIDATION_PREFLIGHT_RESET_DELAY_SECONDS,
+                "fs",
+                "cp",
+                "-r",
+            ],
+        )
+        self.assertIn("Hard-resetting COM7", sink.transcript)
+        self.assertIn("Application upload failed with status 9.", sink.transcript)
+        self.assertNotIn("Cleaning legacy and misplaced application files", sink.transcript)
+
     def test_legacy_module_cleanup_failure_does_not_reset_device(self):
         """A failed legacy cleanup should stop before resetting into shadowed modules."""
         executable = Path("C:/local/mpremote.exe")
@@ -640,6 +677,7 @@ class WindowsInstallerTests(unittest.TestCase):
 
             self.assertIsNotNone(received_request)
             self.assertTrue(received_request.no_reset)
+            self.assertTrue(received_request.preflight_reset)
             self.assertEqual(run_streaming.call_count, 1)
             batch_command = run_streaming.call_args.args[0]
             self.assertEqual(batch_command[:4], ["C:/mpremote.exe", "connect", "COM7", "exec"])

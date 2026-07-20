@@ -33,6 +33,7 @@ TOOLS_ROOT = REPO_ROOT / "tools" / ".local"
 VENV_DIR = TOOLS_ROOT / "micropython-venv"
 CAPTURE_ROOT = TOOLS_ROOT / "dev-install"
 DEVICE_VALIDATION_ROOT = TOOLS_ROOT / "device-validation"
+VALIDATION_PREFLIGHT_RESET_DELAY_SECONDS = "1.0"
 COM_PORT_PATTERN = re.compile(r"COM[1-9][0-9]*", re.IGNORECASE)
 SECRET_PATTERN = re.compile(
     r"(?i)\b(password|passwd|token|secret|key|ssid)\s*([=:])\s*[^\s]+"
@@ -79,11 +80,12 @@ class InstallerError(RuntimeError):
 
 @dataclass(frozen=True)
 class InstallRequest:
-    """Describe a normal application-first upload request."""
+    """Describe an application-first upload request and its reset policy."""
 
     port: str
     no_reset: bool
     assume_yes: bool
+    preflight_reset: bool = False
 
 
 @dataclass(frozen=True)
@@ -378,18 +380,27 @@ def application_upload_command(
     executable: Path,
     port: str,
     sources: Sequence[Path],
+    *,
+    preflight_reset: bool = False,
 ) -> list[str]:
-    """Return one recursive copy command that places source children at device root."""
-    return [
+    """Return one recursive copy command with an optional preflight hard reset."""
+    command = [
         str(executable),
         "connect",
         port,
-        "fs",
-        "cp",
-        "-r",
-        *(str(source) for source in sources),
-        ":",
     ]
+    if preflight_reset:
+        command.extend(["reset", "sleep", VALIDATION_PREFLIGHT_RESET_DELAY_SECONDS])
+    command.extend(
+        [
+            "fs",
+            "cp",
+            "-r",
+            *(str(source) for source in sources),
+            ":",
+        ]
+    )
+    return command
 
 
 def application_cleanup_command(
@@ -416,12 +427,22 @@ def run_install_request(request: InstallRequest, sink: OutputSink) -> int:
     """Upload the application source and reset the target unless reset is disabled."""
     validate_upload_request(request)
     executable = ensure_mpremote(request.assume_yes, sink)
+    if request.preflight_reset:
+        sink.write(
+            f"Hard-resetting {request.port} and waiting "
+            f"{VALIDATION_PREFLIGHT_RESET_DELAY_SECONDS} seconds before validation upload..."
+        )
     sink.write(f"Uploading application source to {request.port}...")
     with tempfile.TemporaryDirectory(prefix="aipi-lite-upload-") as temporary_directory:
         staging_root = Path(temporary_directory) / "application"
         upload_sources, application_manifest = stage_application_source(staging_root)
         upload_status = run_streaming(
-            application_upload_command(executable, request.port, upload_sources),
+            application_upload_command(
+                executable,
+                request.port,
+                upload_sources,
+                preflight_reset=request.preflight_reset,
+            ),
             sink,
         )
     if upload_status != 0:
@@ -1056,6 +1077,7 @@ def run_device_validation(
             port=normalize_com_port(args.port),
             no_reset=True,
             assume_yes=args.assume_yes,
+            preflight_reset=True,
         )
         upload_status = run_install_request(request, sink)
         sink.write(f"Application upload status: {upload_status}")

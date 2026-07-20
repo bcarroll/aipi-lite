@@ -128,13 +128,14 @@ gh auth login
 validate.cmd --port COM8 --yes --device-label bench-a
 ```
 
-The command uploads `src/` without resetting into normal startup, then runs the
-display, GPIO status/button, codec, capture, playback, and offline inference
+The command hard-resets the device, waits one second, uploads `src/`, then runs
+the display, GPIO status/button, codec, capture, playback, and offline inference
 probes through one raw-REPL session. It emits a per-probe result, continues
 after a device-side probe failure so the report contains all available evidence,
-and avoids reconnecting between probes. After the sequence, answer the prompts
-with `pass`, `fail`, or `not-observed` for each physical observation. Only an
-all-pass run exits successfully.
+and avoids reconnecting between probes. It does not reset into normal startup
+after the upload. After the sequence, answer the prompts with `pass`, `fail`,
+or `not-observed` for each physical observation. Only an all-pass run exits
+successfully.
 
 Each parsed run writes raw/redacted transcripts, metadata, and a GitHub-ready
 body under ignored `tools\.local\device-validation\`. The target repository is
