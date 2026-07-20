@@ -61,34 +61,32 @@ class WindowsInstallerTests(unittest.TestCase):
         executable = Path("C:/local/mpremote.exe")
         request = installer.InstallRequest(port="COM7", no_reset=False, assume_yes=True)
         sink = self.make_sink()
+
+        def successful_command(command, output_sink):
+            """Complete each command and emit the cleanup confirmation marker."""
+            if "exec" in command:
+                output_sink.write(installer.CLEANUP_COMPLETE_MARKER)
+            return 0
+
         with (
             mock.patch.object(installer, "list_windows_serial_ports", return_value=["COM7"]),
             mock.patch.object(installer, "ensure_mpremote", return_value=executable),
-            mock.patch.object(installer, "run_streaming", side_effect=[0, 0, 0]) as run_streaming,
+            mock.patch.object(installer, "run_streaming", side_effect=successful_command) as run_streaming,
         ):
             self.assertEqual(installer.run_install_request(request, sink), 0)
 
-        self.assertEqual(
-            run_streaming.call_args_list,
-            [
-                mock.call(
-                    [
-                        str(executable),
-                        "connect",
-                        "COM7",
-                        "fs",
-                        "cp",
-                        "-r",
-                        f"{installer.SRC_DIR}{installer.os.sep}",
-                        ":",
-                    ],
-                    sink,
-                ),
-                mock.call(installer.legacy_root_cleanup_command(executable, "COM7"), sink),
-                mock.call([str(executable), "connect", "COM7", "reset"], sink),
-            ],
-        )
-        self.assertIn("Removing legacy root-level application modules", sink.transcript)
+        self.assertEqual(run_streaming.call_count, 2)
+        upload_command = run_streaming.call_args_list[0].args[0]
+        self.assertEqual(upload_command[:6], [str(executable), "connect", "COM7", "fs", "cp", "-r"])
+        self.assertEqual(upload_command[-1], ":")
+        uploaded_names = {Path(path).name for path in upload_command[6:-1]}
+        self.assertTrue({"boot.py", "main.py", "lib"}.issubset(uploaded_names))
+        self.assertNotIn("src", uploaded_names)
+
+        cleanup_command = run_streaming.call_args_list[1].args[0]
+        self.assertEqual(cleanup_command[:4], [str(executable), "connect", "COM7", "exec"])
+        self.assertEqual(cleanup_command[-1], "reset")
+        self.assertIn("Cleaning legacy and misplaced application files", sink.transcript)
         self.assertIn("Application upload complete.", sink.transcript)
 
     def test_upload_failure_does_not_reset_device(self):
@@ -118,11 +116,17 @@ class WindowsInstallerTests(unittest.TestCase):
             self.assertEqual(installer.run_install_request(request, sink), 7)
 
         self.assertEqual(run_streaming.call_count, 2)
-        self.assertIn("legacy module cleanup failed with status 7", sink.transcript)
+        self.assertIn("cleanup failed with status 7", sink.transcript)
 
     def test_legacy_cleanup_targets_only_modules_moved_under_lib(self):
         """The cleanup command should preserve boot, main, and local Wi-Fi config."""
-        command = installer.legacy_root_cleanup_command(Path("mpremote.exe"), "COM7")
+        manifest = ("boot.py", "main.py", "lib/pins.py")
+        command = installer.application_cleanup_command(
+            Path("mpremote.exe"),
+            "COM7",
+            manifest,
+            reset=False,
+        )
         cleanup_code = command[-1]
 
         compile(cleanup_code, "<legacy-root-cleanup>", "exec")
@@ -131,6 +135,81 @@ class WindowsInstallerTests(unittest.TestCase):
         self.assertNotIn("boot.py", installer.LEGACY_ROOT_MODULES)
         self.assertNotIn("main.py", installer.LEGACY_ROOT_MODULES)
         self.assertNotIn("local_wifi_config.py", installer.LEGACY_ROOT_MODULES)
+
+    def test_staging_filters_host_caches_and_exposes_root_children(self):
+        """Windows staging should exclude caches and upload source children, not `src`."""
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            temporary_root = Path(temporary_directory)
+            source_root = temporary_root / "src"
+            destination = temporary_root / "staged" / "application"
+            (source_root / "lib" / "__pycache__").mkdir(parents=True)
+            (source_root / "boot.py").write_text("print('boot')\n", encoding="utf-8")
+            (source_root / "main.py").write_text("print('main')\n", encoding="utf-8")
+            (source_root / "local_wifi_config.py").write_text(
+                "WIFI_SSID = 'local'\n",
+                encoding="utf-8",
+            )
+            (source_root / "lib" / "pins.py").write_text("PIN = 1\n", encoding="utf-8")
+            (source_root / "lib" / "__pycache__" / "pins.pyc").write_bytes(b"cache")
+
+            with mock.patch.object(installer, "SRC_DIR", source_root):
+                sources, manifest = installer.stage_application_source(destination)
+
+            self.assertEqual(
+                {path.name for path in sources},
+                {"boot.py", "main.py", "lib", "local_wifi_config.py"},
+            )
+            self.assertEqual(
+                manifest,
+                ("boot.py", "lib/pins.py", "local_wifi_config.py", "main.py"),
+            )
+            self.assertFalse((destination / "lib" / "__pycache__").exists())
+
+    def test_reset_failure_after_cleanup_warns_and_returns_success(self):
+        """A reset-only failure should require a power cycle without failing install."""
+        executable = Path("C:/local/mpremote.exe")
+        request = installer.InstallRequest(port="COM7", no_reset=False, assume_yes=True)
+        sink = self.make_sink()
+
+        def reset_failure(command, output_sink):
+            """Succeed at upload, then confirm cleanup before reset failure."""
+            if "exec" in command:
+                output_sink.write(installer.CLEANUP_COMPLETE_MARKER)
+                return 7
+            return 0
+
+        with (
+            mock.patch.object(installer, "list_windows_serial_ports", return_value=["COM7"]),
+            mock.patch.object(installer, "ensure_mpremote", return_value=executable),
+            mock.patch.object(installer, "run_streaming", side_effect=reset_failure),
+        ):
+            self.assertEqual(installer.run_install_request(request, sink), 0)
+
+        self.assertIn("automatic reset could not be confirmed", sink.transcript)
+        self.assertIn("unplugging and reconnecting USB-C", sink.transcript)
+
+    def test_no_reset_runs_cleanup_without_reset_command(self):
+        """A no-reset upload should still clean misplaced and legacy files."""
+        executable = Path("C:/local/mpremote.exe")
+        request = installer.InstallRequest(port="COM7", no_reset=True, assume_yes=True)
+        sink = self.make_sink()
+
+        def successful_command(command, output_sink):
+            """Complete upload and cleanup while emitting the cleanup marker."""
+            if "exec" in command:
+                output_sink.write(installer.CLEANUP_COMPLETE_MARKER)
+            return 0
+
+        with (
+            mock.patch.object(installer, "list_windows_serial_ports", return_value=["COM7"]),
+            mock.patch.object(installer, "ensure_mpremote", return_value=executable),
+            mock.patch.object(installer, "run_streaming", side_effect=successful_command) as run_streaming,
+        ):
+            self.assertEqual(installer.run_install_request(request, sink), 0)
+
+        cleanup_command = run_streaming.call_args_list[1].args[0]
+        self.assertNotEqual(cleanup_command[-1], "reset")
+        self.assertIn("reset skipped by --no-reset", sink.transcript)
 
     def test_unknown_requested_port_stops_before_tool_setup(self):
         """An unavailable COM port should not create tools or touch the device."""

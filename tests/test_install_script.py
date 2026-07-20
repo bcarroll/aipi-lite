@@ -9,6 +9,7 @@ import unittest
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 INSTALL_SCRIPT = REPO_ROOT / "install.sh"
+DEVICE_APPLICATION_HELPER = REPO_ROOT / "tools" / "device_application.py"
 GITIGNORE = REPO_ROOT / ".gitignore"
 
 
@@ -24,6 +25,7 @@ class InstallScriptTests(unittest.TestCase):
         """Create a temporary installer tree with fake upload prerequisites."""
         tmp_install = repo_root / "install.sh"
         setup_script = repo_root / "tools" / "setup_micropython_tools.sh"
+        device_application_helper = repo_root / "tools" / "device_application.py"
         app_dir = repo_root / "src"
         mpremote = repo_root / "tools" / ".local" / "micropython-venv" / "bin" / "mpremote"
         app_lib_dir = app_dir / "lib" / "drivers"
@@ -33,12 +35,18 @@ class InstallScriptTests(unittest.TestCase):
         setup_script.parent.mkdir(parents=True)
         setup_script.write_text("#!/usr/bin/env bash\nexit 0\n", encoding="utf-8")
         setup_script.chmod(0o755)
+        shutil.copy2(DEVICE_APPLICATION_HELPER, device_application_helper)
         app_lib_dir.mkdir(parents=True)
+        (app_dir / "boot.py").write_text("print('boot')\n", encoding="utf-8")
         (app_dir / "main.py").write_text("print('hello')\n", encoding="utf-8")
+        (app_dir / "lib" / "pins.py").write_text("BOARD_POWER_CONTROL = 10\n", encoding="utf-8")
         mpremote.parent.mkdir(parents=True)
         mpremote.write_text(
             "#!/usr/bin/env bash\n"
             "printf '%s\\n' \"$*\" >> \"${AIPI_FAKE_MPREMOTE_LOG:-mpremote.log}\"\n"
+            "if [[ \"$*\" == *\"aipi-lite installer cleanup complete\"* ]]; then\n"
+            "  printf 'aipi-lite installer cleanup complete\\n'\n"
+            "fi\n"
             "exit 0\n",
             encoding="utf-8",
         )
@@ -334,7 +342,7 @@ class InstallScriptTests(unittest.TestCase):
     def test_installer_can_prepare_ignored_local_wifi_config(self):
         """The installer should offer to create local_wifi_config.py before upload."""
         upload_application_text = self.script_text[
-            self.script_text.index("upload_application()") : self.script_text.index("\n\nreset_device()", self.script_text.index("upload_application()"))
+            self.script_text.index("upload_application()") : self.script_text.index("\n\ncleanup_and_reset_device()", self.script_text.index("upload_application()"))
         ]
 
         self.assertIn('LOCAL_WIFI_CONFIG_FILENAME="local_wifi_config.py"', self.script_text)
@@ -409,6 +417,9 @@ class InstallScriptTests(unittest.TestCase):
                 "  printf 'AIPI_PROBE=ok\\nplatform=esp32\\nversion=1.28.0\\n'\n"
                 "  exit 0\n"
                 "fi\n"
+                "if [[ \"$*\" == *\"aipi-lite installer cleanup complete\"* ]]; then\n"
+                "  printf 'aipi-lite installer cleanup complete\\n'\n"
+                "fi\n"
                 "exit 0\n",
                 encoding="utf-8",
             )
@@ -440,6 +451,86 @@ class InstallScriptTests(unittest.TestCase):
             mpremote_log = (repo_root / "mpremote.log").read_text(encoding="utf-8")
             self.assertIn("connect /dev/ttyS8 resume exec", mpremote_log)
             self.assertIn("connect /dev/ttyS8 fs cp", mpremote_log)
+
+    def test_reset_failure_after_cleanup_requires_manual_power_cycle(self):
+        """Unix reset failure after confirmed cleanup should return success with guidance."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            repo_root = Path(tmpdir)
+            tmp_install, _app_dir = self._make_upload_fixture(repo_root)
+            mpremote = repo_root / "tools" / ".local" / "micropython-venv" / "bin" / "mpremote"
+            mpremote.write_text(
+                "#!/usr/bin/env bash\n"
+                "printf '%s\\n' \"$*\" >> \"${AIPI_FAKE_MPREMOTE_LOG:-mpremote.log}\"\n"
+                "if [[ \"$*\" == *\"aipi-lite installer cleanup complete\"* ]]; then\n"
+                "  printf 'aipi-lite installer cleanup complete\\n'\n"
+                "  exit 7\n"
+                "fi\n"
+                "exit 0\n",
+                encoding="utf-8",
+            )
+            mpremote.chmod(0o755)
+            (repo_root / ".conf").write_text(
+                "AIPI_SERIAL_PORT=auto\n"
+                "AIPI_CONFIRM_UPLOAD=yes\n"
+                "AIPI_CREATE_LOCAL_WIFI_CONFIG=no\n",
+                encoding="utf-8",
+            )
+
+            result = subprocess.run(
+                [str(tmp_install)],
+                cwd=repo_root,
+                stdin=subprocess.DEVNULL,
+                text=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                check=False,
+            )
+
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertIn("automatic reset could not be confirmed", result.stderr)
+            self.assertIn("unplugging and reconnecting USB-C", result.stderr)
+            cleanup_lines = [
+                line
+                for line in (repo_root / "mpremote.log").read_text(encoding="utf-8").splitlines()
+                if "aipi-lite installer cleanup complete" in line
+            ]
+            self.assertTrue(cleanup_lines)
+            self.assertTrue(cleanup_lines[-1].endswith(" reset"))
+
+    def test_cleanup_failure_remains_fatal(self):
+        """Unix cleanup failure without its marker should stop installation."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            repo_root = Path(tmpdir)
+            tmp_install, _app_dir = self._make_upload_fixture(repo_root)
+            mpremote = repo_root / "tools" / ".local" / "micropython-venv" / "bin" / "mpremote"
+            mpremote.write_text(
+                "#!/usr/bin/env bash\n"
+                "if [[ \"$*\" == *\"aipi-lite installer cleanup complete\"* ]]; then\n"
+                "  exit 8\n"
+                "fi\n"
+                "exit 0\n",
+                encoding="utf-8",
+            )
+            mpremote.chmod(0o755)
+            (repo_root / ".conf").write_text(
+                "AIPI_SERIAL_PORT=auto\n"
+                "AIPI_CONFIRM_UPLOAD=yes\n"
+                "AIPI_CREATE_LOCAL_WIFI_CONFIG=no\n",
+                encoding="utf-8",
+            )
+
+            result = subprocess.run(
+                [str(tmp_install), "--no-reset"],
+                cwd=repo_root,
+                stdin=subprocess.DEVNULL,
+                text=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                check=False,
+            )
+
+            self.assertEqual(result.returncode, 8)
+            self.assertIn("cleanup failed with status 8", result.stderr)
 
     def test_existing_local_wifi_config_is_preserved_by_default(self):
         """Existing Wi-Fi config should not be overwritten without confirmation."""
@@ -699,19 +790,22 @@ class InstallScriptTests(unittest.TestCase):
         self.assertIn("upload_tree", self.script_text)
         self.assertNotIn('${SCRIPT_DIR}/main.py', self.script_text)
         self.assertNotIn('${SCRIPT_DIR}/aipi_lite_config.py', self.script_text)
-        self.assertIn('app_root="${SCRIPT_DIR}/src"', self.script_text)
+        self.assertIn("resolve_application_root", self.script_text)
+        self.assertIn('printf \'%s\\n\' "${SCRIPT_DIR}/src"', self.script_text)
 
     def test_resets_device_after_upload(self):
-        """The installer should reset the device after copying source by default."""
+        """The installer should clean and reset in one connection after upload."""
         upload_runtime_text = self.script_text[
             self.script_text.index("upload_runtime_assets()") : self.script_text.index("\n\nmain()", self.script_text.index("upload_runtime_assets()"))
         ]
         upload_index = upload_runtime_text.index('upload_application "${mpremote_bin}"')
-        reset_index = upload_runtime_text.index('reset_device "${mpremote_bin}"')
+        cleanup_index = upload_runtime_text.index('cleanup_and_reset_device "${mpremote_bin}"')
 
         self.assertIn("AIPI_RESET_AFTER_UPLOAD", self.script_text)
-        self.assertIn('"${mpremote_bin}" connect "${connect_target}" reset', self.script_text)
-        self.assertLess(upload_index, reset_index)
+        self.assertIn('command=("${mpremote_bin}" connect "${connect_target}" exec "${cleanup_code}")', self.script_text)
+        self.assertIn("command+=(reset)", self.script_text)
+        self.assertIn("automatic reset could not be confirmed", self.script_text)
+        self.assertLess(upload_index, cleanup_index)
 
 
 if __name__ == "__main__":

@@ -17,7 +17,14 @@ import re
 import shutil
 import subprocess
 import sys
+import tempfile
 from typing import Callable, Sequence, TextIO
+
+from device_application import CLEANUP_COMPLETE_MARKER
+from device_application import LEGACY_ROOT_MODULES
+from device_application import application_cleanup_code
+from device_application import application_manifest
+from device_application import ignored_upload_artifacts
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -61,32 +68,6 @@ DEVICE_VALIDATION_OBSERVATION_LABELS = {
     "inference-ui": "Display, LED, and button remained responsive during inference",
 }
 DEVICE_VALIDATION_OBSERVATION_STATUSES = {"pass", "fail", "not-observed"}
-LEGACY_ROOT_MODULES = (
-    "aipi_lite_config.py",
-    "assistant_state.py",
-    "audio_capture.py",
-    "audio_playback.py",
-    "audio_probe.py",
-    "button.py",
-    "capture_probe.py",
-    "display.py",
-    "display_probe.py",
-    "es8311.py",
-    "io_probe.py",
-    "local_endpoint.py",
-    "pins.py",
-    "playback_probe.py",
-    "push_to_talk.py",
-    "reliability.py",
-    "service_client.py",
-    "service_contract.py",
-    "status_led.py",
-    "version.py",
-    "wifi_config.py",
-    "wifi_probe.py",
-)
-
-
 class InstallerError(RuntimeError):
     """Represent an expected installer failure that should be shown to an operator."""
 
@@ -378,62 +359,110 @@ def validate_upload_request(request: InstallRequest) -> None:
         )
 
 
-def legacy_root_cleanup_command(executable: Path, port: str) -> list[str]:
-    """Return a targeted command that removes modules moved from `/` to `/lib`."""
-    cleanup_code = (
-        "import os\n"
-        f"for path in {LEGACY_ROOT_MODULES!r}:\n"
-        "    try:\n"
-        "        os.remove(path)\n"
-        "        print('removed legacy root module: {}'.format(path))\n"
-        "    except OSError:\n"
-        "        pass"
-    )
-    return [str(executable), "connect", port, "exec", cleanup_code]
+def stage_application_source(destination: Path) -> tuple[list[Path], tuple[str, ...]]:
+    """Create a clean source tree and return its root children and file manifest."""
+    shutil.copytree(SRC_DIR, destination, ignore=ignored_upload_artifacts)
+    sources = sorted(destination.iterdir(), key=lambda path: path.name)
+    manifest = application_manifest(destination)
+    if not sources or not manifest:
+        raise InstallerError(f"application source directory is empty: {SRC_DIR}")
+    return sources, manifest
+
+
+def application_upload_command(
+    executable: Path,
+    port: str,
+    sources: Sequence[Path],
+) -> list[str]:
+    """Return one recursive copy command that places source children at device root."""
+    return [
+        str(executable),
+        "connect",
+        port,
+        "fs",
+        "cp",
+        "-r",
+        *(str(source) for source in sources),
+        ":",
+    ]
+
+
+def application_cleanup_command(
+    executable: Path,
+    port: str,
+    application_manifest: Sequence[str],
+    *,
+    reset: bool,
+) -> list[str]:
+    """Return cleanup and optional reset commands sharing one mpremote connection."""
+    command = [
+        str(executable),
+        "connect",
+        port,
+        "exec",
+        application_cleanup_code(application_manifest),
+    ]
+    if reset:
+        command.append("reset")
+    return command
 
 
 def run_install_request(request: InstallRequest, sink: OutputSink) -> int:
     """Upload the application source and reset the target unless reset is disabled."""
     validate_upload_request(request)
     executable = ensure_mpremote(request.assume_yes, sink)
-    source_path = f"{SRC_DIR}{os.sep}"
-    upload_command = [
-        str(executable),
-        "connect",
-        request.port,
-        "fs",
-        "cp",
-        "-r",
-        source_path,
-        ":",
-    ]
     sink.write(f"Uploading application source to {request.port}...")
-    upload_status = run_streaming(upload_command, sink)
+    with tempfile.TemporaryDirectory(prefix="aipi-lite-upload-") as temporary_directory:
+        staging_root = Path(temporary_directory) / "application"
+        upload_sources, application_manifest = stage_application_source(staging_root)
+        upload_status = run_streaming(
+            application_upload_command(executable, request.port, upload_sources),
+            sink,
+        )
     if upload_status != 0:
         sink.write(f"Application upload failed with status {upload_status}.", error=True)
         return upload_status
 
-    sink.write("Removing legacy root-level application modules...")
+    sink.write("Cleaning legacy and misplaced application files...")
+    if not request.no_reset:
+        sink.write(f"Resetting {request.port} after cleanup...")
+    cleanup_output_start = len(sink.transcript)
     cleanup_status = run_streaming(
-        legacy_root_cleanup_command(executable, request.port),
+        application_cleanup_command(
+            executable,
+            request.port,
+            application_manifest,
+            reset=not request.no_reset,
+        ),
         sink,
     )
+    cleanup_output = sink.transcript[cleanup_output_start:]
+    cleanup_completed = CLEANUP_COMPLETE_MARKER in cleanup_output
     if cleanup_status != 0:
+        if cleanup_completed and not request.no_reset:
+            sink.write(
+                "WARNING: Application upload and cleanup succeeded, but automatic reset "
+                f"could not be confirmed (status {cleanup_status}). Power-cycle the "
+                "AIPI-Lite by unplugging and reconnecting USB-C before use.",
+                error=True,
+            )
+            return 0
         sink.write(
-            f"Application upload succeeded but legacy module cleanup failed with status {cleanup_status}.",
+            f"Application upload succeeded but cleanup failed with status {cleanup_status}.",
             error=True,
         )
         return cleanup_status
+    if not cleanup_completed:
+        sink.write(
+            "Application upload succeeded but cleanup completion was not confirmed.",
+            error=True,
+        )
+        return 1
 
     if request.no_reset:
         sink.write("Application upload complete; reset skipped by --no-reset.")
         return 0
 
-    sink.write(f"Resetting {request.port}...")
-    reset_status = run_streaming([str(executable), "connect", request.port, "reset"], sink)
-    if reset_status != 0:
-        sink.write(f"Application upload succeeded but reset failed with status {reset_status}.", error=True)
-        return reset_status
     sink.write("Application upload complete.")
     return 0
 

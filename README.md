@@ -104,11 +104,19 @@ install.cmd --port COM3 --yes
 The first normal run creates an ignored local virtual environment under
 `tools\.local\micropython-venv` and installs `mpremote`. `--yes` explicitly
 approves that prerequisite setup; omit it to receive an interactive prompt.
-The upload copies `src\` to the device, removes the known legacy root-level
-application modules that were moved under `/lib`, and resets it. This cleanup
-prevents old root modules from shadowing current `/lib` firmware. It preserves
-`boot.py`, `main.py`, and ignored `local_wifi_config.py`. Add `--no-reset` to
-leave the device running after the copy and cleanup.
+The upload stages a cache-free copy of `src\` and copies its children to device
+root, producing `/boot.py`, `/main.py`, and `/lib` rather than `/src`. It removes
+the known legacy root-level application modules that were moved under `/lib`.
+When an earlier Windows install created `/src`, the installer removes it only
+when its files match the AIPI-Lite application manifest; unknown `/src` content
+is preserved with a warning. This cleanup prevents old root modules from
+shadowing current `/lib` firmware and preserves root `boot.py`, `main.py`, and
+ignored `local_wifi_config.py`.
+
+Cleanup and reset share one `mpremote` connection. If cleanup succeeds but
+`mpremote` cannot confirm reset, installation still succeeds and prints a
+warning to unplug and reconnect USB-C before use. Add `--no-reset` to leave the
+device without a startup reset after the copy and cleanup.
 
 For local developer captures, use `dev_install.cmd` with its installer options
 after `--`:
@@ -226,9 +234,12 @@ Bootloader access currently requires removing the four back screws, pressing the
 button under the display while plugging the device into USB-C, and confirming
 that the screen remains black.
 
-After copying `src/`, the installer attempts to reset the device.
-Set `AIPI_RESET_AFTER_UPLOAD=no` in `.conf` or pass `--no-reset` to skip that
-step.
+The Unix installer maps each file under `src/` directly to device root, filters
+host cache artifacts, and uses the same guarded `/src` and legacy-module
+cleanup as the Windows installer. Cleanup and reset share one `mpremote`
+connection. If cleanup succeeds but reset cannot be confirmed, installation
+succeeds with a manual power-cycle warning. Set `AIPI_RESET_AFTER_UPLOAD=no` in
+`.conf` or pass `--no-reset` to skip reset while retaining cleanup.
 
 Backup, restore, expected output, and safety details are documented in
 [RECOVERY.md](RECOVERY.md).

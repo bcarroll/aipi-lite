@@ -5,10 +5,13 @@ USB-C. Downloaded tools, virtual environments, and firmware binaries are stored
 under `tools/.local/`, which is ignored by Git. External MicroPython library
 source that must be uploaded to the device is tracked under `src/lib/`.
 
-The Windows `install.cmd` flow removes only the known legacy application modules
-that previously lived at the device root before those modules moved to `/lib`.
-This prevents stale root files from taking import precedence while preserving
-`boot.py`, `main.py`, and the ignored operator `local_wifi_config.py`.
+The Windows `install.cmd` flow stages a cache-free source tree and copies its
+children to device root so startup files land at `/boot.py` and `/main.py` and
+application modules land under `/lib`. Windows and Unix installs share guarded
+cleanup that removes known legacy root modules and removes a misplaced `/src`
+tree only when it matches the AIPI-Lite application manifest. Unknown `/src`
+content is preserved with a warning. Cleanup preserves root `boot.py`,
+`main.py`, and the ignored operator `local_wifi_config.py`.
 
 ## Bootstrap Flashing Tools
 
@@ -20,9 +23,12 @@ The preferred full install path is the repository root installer:
 
 It assumes ESP32_GENERIC_S3 MicroPython is already flashed on the connected
 device, prompts before downloading missing local prerequisites, stores answers
-in the ignored root `.conf` file, copies application source with `mpremote`, and
-resets the device when possible. Normal installs do not run `git pull`, back up
-stock firmware, erase flash, or write a MicroPython firmware image. Use
+in the ignored root `.conf` file, maps application files directly to device
+root with `mpremote`, performs the shared guarded cleanup, and resets the device
+in that cleanup connection. A reset failure after confirmed cleanup returns
+success with a manual power-cycle warning. Normal installs do not run an
+automatic `git pull`, back up stock firmware, erase flash, or write a
+MicroPython firmware image. Use
 `--self-update` only when an intentional `git pull --ff-only` and restart is
 wanted.
 Before explicit flash-sensitive operations, it verifies the ESP32-S3 ROM

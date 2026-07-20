@@ -4,6 +4,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 TOOLS_DIR="${SCRIPT_DIR}/tools"
 SETUP_SCRIPT="${TOOLS_DIR}/setup_micropython_tools.sh"
+DEVICE_APPLICATION_HELPER="${TOOLS_DIR}/device_application.py"
 TOOLS_ROOT="${TOOLS_DIR}/.local"
 VENV_DIR="${TOOLS_ROOT}/micropython-venv"
 DOWNLOAD_DIR="${TOOLS_ROOT}/downloads/firmware"
@@ -11,6 +12,7 @@ BACKUP_DIR="${TOOLS_ROOT}/backups"
 MICROPYTHON_BOARD_URL="https://micropython.org/download/ESP32_GENERIC_S3/"
 MICROPYTHON_BASE_URL="https://micropython.org"
 LOCAL_WIFI_CONFIG_FILENAME="local_wifi_config.py"
+CLEANUP_COMPLETE_MARKER="aipi-lite installer cleanup complete"
 
 PORT="${AIPI_SERIAL_PORT:-}"
 APP_DIR="${AIPI_APP_DIR:-}"
@@ -2264,28 +2266,18 @@ upload_tree() {
     -type f ! -name '*.pyc' ! -name '.DS_Store' -print)
 }
 
-upload_application() {
-  local mpremote_bin="$1"
-  local connect_target="$2"
-  local app_root
-
+resolve_application_root() {
   if [[ -n "${APP_DIR}" ]]; then
-    app_root="${APP_DIR}"
-    if [[ ! -d "${app_root}" ]]; then
-      echo "error: application source directory not found: ${app_root}" >&2
+    if [[ ! -d "${APP_DIR}" ]]; then
+      echo "error: application source directory not found: ${APP_DIR}" >&2
       exit 1
     fi
-    prepare_local_wifi_config "${app_root}"
-    trace_source_inventory "application" "${app_root}"
-    upload_tree "${mpremote_bin}" "${connect_target}" "${app_root}" ""
+    printf '%s\n' "${APP_DIR}"
     return
   fi
 
   if [[ -d "${SCRIPT_DIR}/src" ]]; then
-    app_root="${SCRIPT_DIR}/src"
-    prepare_local_wifi_config "${app_root}"
-    trace_source_inventory "application" "${app_root}"
-    upload_tree "${mpremote_bin}" "${connect_target}" "${app_root}" ""
+    printf '%s\n' "${SCRIPT_DIR}/src"
     return
   fi
 
@@ -2293,18 +2285,77 @@ upload_application() {
   exit 1
 }
 
-reset_device() {
+upload_application() {
   local mpremote_bin="$1"
   local connect_target="$2"
+  local app_root
+
+  app_root="$(resolve_application_root)"
+  prepare_local_wifi_config "${app_root}"
+  trace_source_inventory "application" "${app_root}"
+  upload_tree "${mpremote_bin}" "${connect_target}" "${app_root}" ""
+}
+
+cleanup_and_reset_device() {
+  local mpremote_bin="$1"
+  local connect_target="$2"
+  local app_root
+  local cleanup_code
+  local output
+  local status
+  local reset_requested=1
+  local command_line
+  local command
+
+  app_root="$(resolve_application_root)"
+  if [[ ! -f "${DEVICE_APPLICATION_HELPER}" ]]; then
+    echo "error: device application helper not found: ${DEVICE_APPLICATION_HELPER}" >&2
+    return 1
+  fi
+  cleanup_code="$(python3 "${DEVICE_APPLICATION_HELPER}" --source "${app_root}")"
 
   if is_no "${RESET_AFTER_UPLOAD}"; then
-    echo "Device reset skipped by AIPI_RESET_AFTER_UPLOAD=${RESET_AFTER_UPLOAD}."
-    return
+    reset_requested=0
   fi
 
-  echo "Resetting device..."
-  if ! run_with_trace "reset_device" "${mpremote_bin}" connect "${connect_target}" reset; then
-    echo "warning: automatic reset failed; reset or power-cycle the device manually." >&2
+  command=("${mpremote_bin}" connect "${connect_target}" exec "${cleanup_code}")
+  echo "Cleaning legacy and misplaced application files..."
+  if [[ "${reset_requested}" -eq 1 ]]; then
+    command+=(reset)
+    echo "Resetting device after cleanup..."
+  fi
+
+  command_line="$(quote_args "${command[@]}" | redact_stream)"
+  trace_event "command_start" "phase=cleanup_and_reset_device"
+  trace_line "command=${command_line}"
+  set +e
+  output="$("${command[@]}" 2>&1)"
+  status=$?
+  set -e
+  if [[ -n "${output}" ]]; then
+    printf '%s\n' "${output}"
+    trace_line "${output}"
+  fi
+  trace_event "command_end" "phase=cleanup_and_reset_device" "status=${status}"
+
+  if [[ "${status}" -ne 0 ]]; then
+    if [[ "${reset_requested}" -eq 1 && "${output}" == *"${CLEANUP_COMPLETE_MARKER}"* ]]; then
+      echo "warning: application upload and cleanup succeeded, but automatic reset could not be confirmed (status ${status})." >&2
+      echo "warning: power-cycle the AIPI-Lite by unplugging and reconnecting USB-C before use." >&2
+      return 0
+    fi
+    echo "error: application upload succeeded but cleanup failed with status ${status}." >&2
+    return "${status}"
+  fi
+
+  if [[ "${output}" != *"${CLEANUP_COMPLETE_MARKER}"* ]]; then
+    echo "error: application upload succeeded but cleanup completion was not confirmed." >&2
+    return 1
+  fi
+
+  if [[ "${reset_requested}" -eq 0 ]]; then
+    echo "Device reset skipped by AIPI_RESET_AFTER_UPLOAD=${RESET_AFTER_UPLOAD}."
+    return 0
   fi
 }
 
@@ -2317,7 +2368,7 @@ upload_runtime_assets() {
   trace_event "phase" "name=upload_application" "status=start"
   upload_application "${mpremote_bin}" "${connect_target}"
   trace_event "phase" "name=upload_application" "status=complete"
-  reset_device "${mpremote_bin}" "${connect_target}"
+  cleanup_and_reset_device "${mpremote_bin}" "${connect_target}"
 }
 
 main() {
