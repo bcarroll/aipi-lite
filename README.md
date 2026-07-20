@@ -104,8 +104,11 @@ install.cmd --port COM3 --yes
 The first normal run creates an ignored local virtual environment under
 `tools\.local\micropython-venv` and installs `mpremote`. `--yes` explicitly
 approves that prerequisite setup; omit it to receive an interactive prompt.
-The upload copies `src\` to the device and resets it. Add `--no-reset` to leave
-the device running after the copy.
+The upload copies `src\` to the device, removes the known legacy root-level
+application modules that were moved under `/lib`, and resets it. This cleanup
+prevents old root modules from shadowing current `/lib` firmware. It preserves
+`boot.py`, `main.py`, and ignored `local_wifi_config.py`. Add `--no-reset` to
+leave the device running after the copy and cleanup.
 
 For local developer captures, use `dev_install.cmd` with its installer options
 after `--`:

@@ -57,14 +57,14 @@ class WindowsInstallerTests(unittest.TestCase):
             self.assertEqual(installer.list_windows_serial_ports(), ["COM12", "COM7"])
 
     def test_upload_runs_copy_then_reset(self):
-        """A successful application-first install should copy src and reset once."""
+        """A successful install should copy, remove legacy root modules, and reset."""
         executable = Path("C:/local/mpremote.exe")
         request = installer.InstallRequest(port="COM7", no_reset=False, assume_yes=True)
         sink = self.make_sink()
         with (
             mock.patch.object(installer, "list_windows_serial_ports", return_value=["COM7"]),
             mock.patch.object(installer, "ensure_mpremote", return_value=executable),
-            mock.patch.object(installer, "run_streaming", side_effect=[0, 0]) as run_streaming,
+            mock.patch.object(installer, "run_streaming", side_effect=[0, 0, 0]) as run_streaming,
         ):
             self.assertEqual(installer.run_install_request(request, sink), 0)
 
@@ -84,9 +84,11 @@ class WindowsInstallerTests(unittest.TestCase):
                     ],
                     sink,
                 ),
+                mock.call(installer.legacy_root_cleanup_command(executable, "COM7"), sink),
                 mock.call([str(executable), "connect", "COM7", "reset"], sink),
             ],
         )
+        self.assertIn("Removing legacy root-level application modules", sink.transcript)
         self.assertIn("Application upload complete.", sink.transcript)
 
     def test_upload_failure_does_not_reset_device(self):
@@ -102,6 +104,33 @@ class WindowsInstallerTests(unittest.TestCase):
 
         self.assertEqual(run_streaming.call_count, 1)
         self.assertIn("Application upload failed with status 9.", sink.transcript)
+
+    def test_legacy_module_cleanup_failure_does_not_reset_device(self):
+        """A failed legacy cleanup should stop before resetting into shadowed modules."""
+        executable = Path("C:/local/mpremote.exe")
+        request = installer.InstallRequest(port="COM7", no_reset=False, assume_yes=True)
+        sink = self.make_sink()
+        with (
+            mock.patch.object(installer, "list_windows_serial_ports", return_value=["COM7"]),
+            mock.patch.object(installer, "ensure_mpremote", return_value=executable),
+            mock.patch.object(installer, "run_streaming", side_effect=[0, 7]) as run_streaming,
+        ):
+            self.assertEqual(installer.run_install_request(request, sink), 7)
+
+        self.assertEqual(run_streaming.call_count, 2)
+        self.assertIn("legacy module cleanup failed with status 7", sink.transcript)
+
+    def test_legacy_cleanup_targets_only_modules_moved_under_lib(self):
+        """The cleanup command should preserve boot, main, and local Wi-Fi config."""
+        command = installer.legacy_root_cleanup_command(Path("mpremote.exe"), "COM7")
+        cleanup_code = command[-1]
+
+        compile(cleanup_code, "<legacy-root-cleanup>", "exec")
+        self.assertIn("push_to_talk.py", cleanup_code)
+        self.assertIn("wifi_probe.py", cleanup_code)
+        self.assertNotIn("boot.py", installer.LEGACY_ROOT_MODULES)
+        self.assertNotIn("main.py", installer.LEGACY_ROOT_MODULES)
+        self.assertNotIn("local_wifi_config.py", installer.LEGACY_ROOT_MODULES)
 
     def test_unknown_requested_port_stops_before_tool_setup(self):
         """An unavailable COM port should not create tools or touch the device."""

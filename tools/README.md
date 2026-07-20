@@ -5,6 +5,11 @@ USB-C. Downloaded tools, virtual environments, and firmware binaries are stored
 under `tools/.local/`, which is ignored by Git. External MicroPython library
 source that must be uploaded to the device is tracked under `src/lib/`.
 
+The Windows `install.cmd` flow removes only the known legacy application modules
+that previously lived at the device root before those modules moved to `/lib`.
+This prevents stale root files from taking import precedence while preserving
+`boot.py`, `main.py`, and the ignored operator `local_wifi_config.py`.
+
 ## Bootstrap Flashing Tools
 
 The preferred full install path is the repository root installer:

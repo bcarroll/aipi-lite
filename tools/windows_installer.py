@@ -61,6 +61,30 @@ DEVICE_VALIDATION_OBSERVATION_LABELS = {
     "inference-ui": "Display, LED, and button remained responsive during inference",
 }
 DEVICE_VALIDATION_OBSERVATION_STATUSES = {"pass", "fail", "not-observed"}
+LEGACY_ROOT_MODULES = (
+    "aipi_lite_config.py",
+    "assistant_state.py",
+    "audio_capture.py",
+    "audio_playback.py",
+    "audio_probe.py",
+    "button.py",
+    "capture_probe.py",
+    "display.py",
+    "display_probe.py",
+    "es8311.py",
+    "io_probe.py",
+    "local_endpoint.py",
+    "pins.py",
+    "playback_probe.py",
+    "push_to_talk.py",
+    "reliability.py",
+    "service_client.py",
+    "service_contract.py",
+    "status_led.py",
+    "version.py",
+    "wifi_config.py",
+    "wifi_probe.py",
+)
 
 
 class InstallerError(RuntimeError):
@@ -354,6 +378,20 @@ def validate_upload_request(request: InstallRequest) -> None:
         )
 
 
+def legacy_root_cleanup_command(executable: Path, port: str) -> list[str]:
+    """Return a targeted command that removes modules moved from `/` to `/lib`."""
+    cleanup_code = (
+        "import os\n"
+        f"for path in {LEGACY_ROOT_MODULES!r}:\n"
+        "    try:\n"
+        "        os.remove(path)\n"
+        "        print('removed legacy root module: {}'.format(path))\n"
+        "    except OSError:\n"
+        "        pass"
+    )
+    return [str(executable), "connect", port, "exec", cleanup_code]
+
+
 def run_install_request(request: InstallRequest, sink: OutputSink) -> int:
     """Upload the application source and reset the target unless reset is disabled."""
     validate_upload_request(request)
@@ -374,6 +412,18 @@ def run_install_request(request: InstallRequest, sink: OutputSink) -> int:
     if upload_status != 0:
         sink.write(f"Application upload failed with status {upload_status}.", error=True)
         return upload_status
+
+    sink.write("Removing legacy root-level application modules...")
+    cleanup_status = run_streaming(
+        legacy_root_cleanup_command(executable, request.port),
+        sink,
+    )
+    if cleanup_status != 0:
+        sink.write(
+            f"Application upload succeeded but legacy module cleanup failed with status {cleanup_status}.",
+            error=True,
+        )
+        return cleanup_status
 
     if request.no_reset:
         sink.write("Application upload complete; reset skipped by --no-reset.")
