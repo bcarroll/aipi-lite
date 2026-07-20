@@ -44,9 +44,12 @@ must remain usable without Wi-Fi when their scoped behavior does not need it.
 The initial Wi-Fi-backed MVP should behave as a push-to-talk local assistant
 terminal:
 
-1. Device boots and shows local firmware status on the LCD.
-2. Device connects to configured local Wi-Fi.
-3. Device verifies that the configured local service is reachable.
+1. Device boots and shows local firmware status on the LCD, even without Wi-Fi
+   connectivity.
+2. Device retries configured local Wi-Fi and service connectivity only when the
+   user presses GPIO42 while offline.
+3. Device verifies that the configured local service is reachable before a
+   push-to-talk exchange.
 4. Status LED shows offline, connecting, ready, recording, processing, speaking,
    and error states.
 5. User presses the side function button to record.
@@ -149,8 +152,9 @@ Build the replacement firmware in small hardware validation steps:
 4. Display
    - Initialize the ST7735-compatible LCD over SPI.
    - Turn on GPIO3 backlight.
-   - Render boot, Wi-Fi, ready, recording, processing, speaking, and error
-     states.
+   - Render boot, Wi-Fi, offline, online, recording, processing, speaking, and
+     error states, using explicit text plus red/green LCD status dots for
+     offline/online connectivity.
 
 5. Wi-Fi and local service
    - Join configured Wi-Fi.
@@ -295,7 +299,7 @@ baseline:
 | Wi-Fi and local-only service policy | Implemented, hardware validation pending | `src/lib/wifi_config.py`, `src/lib/local_endpoint.py`, and `src/lib/wifi_probe.py` load ignored local Wi-Fi config, reject public service endpoints by default, call only local `/health`, and report health state through serial plus available LED/display modules. |
 | ES8311 audio control and I2S audio | Codec control, microphone capture, and speaker playback implemented; hardware validation pending | `src/lib/es8311.py` and `src/lib/audio_probe.py` configure the ES8311 over I2C at expected address `0x18`, derive the fixed 16 kHz codec clock from GPIO14 BCLK, keep the DAC muted, and default GPIO9 speaker enable off. `src/lib/audio_capture.py` and `src/lib/capture_probe.py` add bounded 16 kHz 16-bit mono capture, WAV packaging, and serial level metrics. `src/lib/audio_playback.py` and `src/lib/playback_probe.py` add bounded 16 kHz 16-bit mono PCM/WAV speaker playback, generated tone output, GPIO9 gate timing, and write/underrun metrics. |
 | Local service contract | Implemented | `src/lib/service_contract.py`, `src/lib/service_client.py`, `service/mock_service.py`, `service/README.md`, and `tests/test_local_service_contract.py` define `/health`, `/session`, `/audio`, `/response/{session_id}`, and `/audio/{response_id}.wav` with a local-only firmware client and deterministic mock service. |
-| Push-to-talk assistant flow | Implemented, hardware validation pending | `src/main.py`, `src/lib/assistant_state.py`, `src/lib/push_to_talk.py`, `src/lib/reliability.py`, `tests/test_main_startup.py`, and `tests/test_push_to_talk_flow.py` add normal-boot startup for the local-only state machine, GPIO42 press/release handling, bounded capture handoff, local service exchange, response text/audio handling, playback, bounded retries, diagnostics, and recoverable error states. |
+| Push-to-talk assistant flow | Implemented, hardware validation pending | `src/main.py`, `src/lib/assistant_state.py`, `src/lib/push_to_talk.py`, `src/lib/display.py`, `src/lib/reliability.py`, `tests/test_main_startup.py`, and `tests/test_push_to_talk_flow.py` add normal-boot startup that remains available offline, GPIO42 reconnect-on-press with a required second press to record, explicit LCD offline/online text with red/green dots, bounded capture handoff, local service exchange, response text/audio handling, playback, bounded retries, diagnostics, and recoverable exchange error states. |
 | MVP release packaging | Implemented, hardware validation pending | `src/lib/version.py`, `MVP.md`, `README.md`, `src/README.md`, and `tests/test_mvp_release.py` add local-only version metadata, install/configuration guidance, validation checklist, no-cloud network verification, and a validation report template. |
 | On-device inference feasibility | Implemented, hardware validation pending | `src/lib/inference_probe.py`, `INFERENCE_FEASIBILITY.md`, `dev_install.sh`, `dev_install.cmd`, `tools/windows_installer.py`, and host tests add an offline-first simulated inference probe, deterministic local prompt fixture, model metadata validation, no-network policy checks, and redacted GitHub-ready bench capture on Unix or Windows. No supported model runtime or inference routing has been imported. |
 

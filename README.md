@@ -250,9 +250,15 @@ push-to-talk application and opt-in hardware/service probes:
 pins or touching GPIO10 board-power control. `main.py` prints the bring-up
 sequence, drives GPIO9 speaker enable low, renders the boot screen, initializes
 available LED/display outputs, connects Wi-Fi and the local service through the
-push-to-talk controller, and then polls GPIO42 for press/release events. If
-startup fails, `main.py` prints the failure type and renders a visible error
-state when display or LED output is available. The remaining application
+push-to-talk controller, and then polls GPIO42 for press/release events. When a
+local Wi-Fi configuration is present but its network or service is unavailable,
+it completes
+startup in an explicit offline state and still polls GPIO42. The LCD shows an
+`OFFLINE` label with a red status dot; pressing the button retries the local
+connection without recording, and a second press can start recording after a
+successful reconnect. `ONLINE` uses the same explicit text plus a green status
+dot. Other startup failures still print the failure type and render a visible
+error state when display or LED output is available. The remaining application
 modules now live under `src/lib/`, which is uploaded to device `/lib` so
 MicroPython can import them by bare module name. `pins.py` centralizes the
 documented pin map for later hardware probe branches. `aipi_lite_config.py`
@@ -287,7 +293,8 @@ The probe does not start Wi-Fi, initialize audio, initialize the display, or
 touch GPIO10 board-power control.
 
 The display probe is also opt-in. To cycle the 128 x 128 LCD through boot,
-Wi-Fi, ready, recording, processing, speaking, and error screens, run:
+Wi-Fi, offline, online, recording, processing, speaking, and error screens,
+run:
 
 ```bash
 mpremote connect /dev/cu.usbmodem31101 exec "import display_probe; display_probe.run_probe(cycles=2)"
@@ -409,8 +416,10 @@ for request and response payloads.
 The push-to-talk controller is available for MVP validation after local Wi-Fi,
 audio capture, playback, LED, button, and display probes are ready. It keeps the
 same local-only endpoint policy, drives UI state from one assistant state
-machine, retries bounded local service calls, and returns to a visible error
-state on capture, network, service, or playback failures. The full MVP install,
+machine, retries bounded local service calls, and remains available in offline
+status when initial or button-triggered reconnection fails. Active capture,
+network, service, or playback failures still return to a visible error state.
+The full MVP install,
 configuration, validation checklist, and report template are in
 [MVP.md](MVP.md).
 

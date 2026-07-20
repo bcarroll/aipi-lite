@@ -3,6 +3,7 @@
 from assistant_state import AssistantStateMachine
 from assistant_state import STATE_CONNECTING
 from assistant_state import STATE_ERROR
+from assistant_state import STATE_OFFLINE
 from assistant_state import STATE_PROCESSING
 from assistant_state import STATE_READY
 from assistant_state import STATE_RECORDING
@@ -71,7 +72,7 @@ class PushToTalkController:
         self.last_result = None
 
     def connect(self):
-        """Validate local service reachability and move to ready on success."""
+        """Validate local service reachability and return ready or offline."""
         try:
             self.state_machine.transition(STATE_CONNECTING, detail="local service")
             self._ensure_network()
@@ -79,11 +80,12 @@ class PushToTalkController:
             self.state_machine.transition(STATE_READY)
             return STATE_READY
         except Exception as exc:
-            self._fail("connect", exc)
-            raise
+            return self._go_offline("connect", exc)
 
     def handle_button_event(self, event):
         """Handle one debounced button event and return the current state."""
+        if event == BUTTON_PRESSED and self.state_machine.is_offline():
+            return self.connect()
         if event == BUTTON_PRESSED and self.state_machine.is_ready():
             return self.state_machine.transition(STATE_RECORDING)
         if event == BUTTON_RELEASED and self.state_machine.is_recording():
@@ -166,6 +168,12 @@ class PushToTalkController:
         if self.diagnostics is not None:
             self.diagnostics.record_failure(category, error)
         self.state_machine.transition(STATE_ERROR, detail=type(error).__name__)
+
+    def _go_offline(self, category, error):
+        """Record a connection failure and await an explicit reconnect press."""
+        if self.diagnostics is not None:
+            self.diagnostics.record_failure(category, error)
+        return self.state_machine.transition(STATE_OFFLINE)
 
 
 def create_controller(

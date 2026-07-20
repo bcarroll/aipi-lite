@@ -112,6 +112,19 @@ class FakeReconnectManager:
         return "wlan"
 
 
+class FailingReconnectManager:
+    """Raise a deterministic Wi-Fi connection failure for startup tests."""
+
+    def __init__(self):
+        """Create a reconnect manager that always fails."""
+        self.calls = 0
+
+    def ensure_connected(self):
+        """Raise a simulated Wi-Fi connection failure."""
+        self.calls += 1
+        raise RuntimeError("Wi-Fi unavailable")
+
+
 def clear_imported_modules():
     """Remove imported firmware modules after each test."""
     for module_name in MODULES_TO_CLEAR:
@@ -217,22 +230,72 @@ class PushToTalkFlowTests(unittest.TestCase):
         self.assertEqual(display.screens[-1], ("ready", None))
         self.assertIn("assistant: state speaking: Mock response", messages)
 
-    def test_service_failure_enters_visible_error_and_can_recover(self):
-        """Service failures should be retried, reported, and recoverable."""
+    def test_initial_service_failure_enters_offline_state(self):
+        """Initial service failures should be retried and leave startup offline."""
         sleeps = []
-        controller, _, display, _ = self.make_controller(
+        controller, _, display, messages = self.make_controller(
             service_client=FakeServiceClient(fail_health=True),
             sleeps=sleeps,
         )
 
-        with self.assertRaises(self.reliability.RetryError):
-            controller.connect()
+        state = controller.connect()
 
-        self.assertEqual(controller.state_machine.state, "error")
+        self.assertEqual(state, "offline")
+        self.assertEqual(controller.state_machine.state, "offline")
         self.assertEqual(sleeps, [5])
-        self.assertEqual(display.screens[-1], ("error", "RetryError"))
-        controller.recover()
-        self.assertEqual(controller.state_machine.state, "ready")
+        self.assertEqual(display.screens[-1], ("offline", None))
+        self.assertIn("diag t=123 connect failure type=RetryError", messages)
+
+    def test_initial_wifi_failure_enters_offline_without_health_request(self):
+        """A Wi-Fi connection failure should not prevent local boot completion."""
+        service = FakeServiceClient()
+        reconnect = FailingReconnectManager()
+        controller, _, display, messages = self.make_controller(
+            service_client=service,
+            reconnect_manager=reconnect,
+        )
+
+        self.assertEqual(controller.connect(), "offline")
+
+        self.assertEqual(reconnect.calls, 1)
+        self.assertEqual(service.calls, [])
+        self.assertEqual(display.screens[-1], ("offline", None))
+        self.assertIn("diag t=123 connect failure type=RuntimeError", messages)
+
+    def test_offline_press_retries_connection_without_capturing_audio(self):
+        """An offline press should reconnect and require another press to record."""
+        capture_calls = []
+        service = FakeServiceClient(fail_health=True)
+        controller, _, display, _ = self.make_controller(
+            service_client=service,
+            capture_func=lambda: capture_calls.append("capture") or b"captured-wav",
+        )
+
+        self.assertEqual(controller.connect(), "offline")
+        service.fail_health = False
+
+        self.assertEqual(controller.handle_button_event(self.button.BUTTON_PRESSED), "ready")
+        self.assertEqual(controller.handle_button_event(self.button.BUTTON_RELEASED), "ready")
+        self.assertEqual(capture_calls, [])
+        self.assertEqual(display.screens[-1], ("ready", None))
+
+        self.assertEqual(controller.handle_button_event(self.button.BUTTON_PRESSED), "recording")
+        self.assertEqual(controller.handle_button_event(self.button.BUTTON_RELEASED), "ready")
+        self.assertEqual(capture_calls, ["capture"])
+
+    def test_failed_offline_reconnect_press_remains_offline_without_capture(self):
+        """A failed offline reconnect should not enter the audio exchange path."""
+        capture_calls = []
+        controller, _, display, _ = self.make_controller(
+            service_client=FakeServiceClient(fail_health=True),
+            capture_func=lambda: capture_calls.append("capture") or b"captured-wav",
+        )
+
+        self.assertEqual(controller.connect(), "offline")
+        self.assertEqual(controller.handle_button_event(self.button.BUTTON_PRESSED), "offline")
+        self.assertEqual(controller.handle_button_event(self.button.BUTTON_RELEASED), "offline")
+        self.assertEqual(capture_calls, [])
+        self.assertEqual(display.screens[-1], ("offline", None))
 
     def test_retry_invokes_reconnect_before_rechecking_service(self):
         """Service retry should give Wi-Fi reconnect handling a chance to recover."""

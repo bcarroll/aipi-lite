@@ -2,6 +2,7 @@
 
 STATE_BOOTING = "booting"
 STATE_CONNECTING = "connecting"
+STATE_OFFLINE = "offline"
 STATE_READY = "ready"
 STATE_RECORDING = "recording"
 STATE_UPLOADING = "uploading"
@@ -12,6 +13,7 @@ STATE_ERROR = "error"
 ASSISTANT_STATES = (
     STATE_BOOTING,
     STATE_CONNECTING,
+    STATE_OFFLINE,
     STATE_READY,
     STATE_RECORDING,
     STATE_UPLOADING,
@@ -23,6 +25,7 @@ ASSISTANT_STATES = (
 STATE_UI = {
     STATE_BOOTING: ("offline", "boot"),
     STATE_CONNECTING: ("connecting", "wifi"),
+    STATE_OFFLINE: ("offline", "offline"),
     STATE_READY: ("ready", "ready"),
     STATE_RECORDING: ("recording", "recording"),
     STATE_UPLOADING: ("processing", "processing"),
@@ -101,6 +104,10 @@ class AssistantStateMachine:
     def is_ready(self):
         """Return True when the assistant can accept a push-to-talk press."""
         return self.state == STATE_READY
+
+    def is_offline(self):
+        """Return True when a button press should retry the local connection."""
+        return self.state == STATE_OFFLINE
 
     def is_recording(self):
         """Return True when a push-to-talk recording is active."""

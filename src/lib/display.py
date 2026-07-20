@@ -31,10 +31,13 @@ FONT_HEIGHT = 8
 TITLE_SCALE = 2
 BODY_SCALE = 1
 MAX_BODY_LINES = 5
+STATUS_DOT_POSITION = (118, 8)
+STATUS_DOT_RADIUS = 4
 
 STATUS_ORDER = (
     "boot",
     "wifi",
+    "offline",
     "ready",
     "recording",
     "processing",
@@ -55,11 +58,19 @@ STATUS_SCREENS = {
         "foreground": CYAN,
         "background": BLACK,
     },
+    "offline": {
+        "title": "OFFLINE",
+        "lines": ("Press button", "to reconnect"),
+        "foreground": WHITE,
+        "background": BLACK,
+        "status_dot": RED,
+    },
     "ready": {
-        "title": "READY",
+        "title": "ONLINE",
         "lines": ("Press button", "to record"),
         "foreground": GREEN,
         "background": BLACK,
+        "status_dot": GREEN,
     },
     "recording": {
         "title": "REC",
@@ -288,6 +299,9 @@ class StatusDisplay:
         self.backlight_on()
         self.clear(background)
         self.tft.text((LEFT_MARGIN, TITLE_Y), title, foreground, self.font, TITLE_SCALE, nowrap=True)
+        status_dot = definition.get("status_dot")
+        if status_dot is not None:
+            self.tft.fillcircle(STATUS_DOT_POSITION, STATUS_DOT_RADIUS, status_dot)
         for index, line in enumerate(lines):
             y = BODY_Y + index * BODY_LINE_HEIGHT
             self.tft.text((LEFT_MARGIN, y), line, foreground, self.font, BODY_SCALE, nowrap=True)

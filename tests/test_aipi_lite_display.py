@@ -127,6 +127,10 @@ class FakeTFT:
         """Record display text rendering calls."""
         self.calls.append(("text", position, text, color, font, size, nowrap))
 
+    def fillcircle(self, position, radius, color):
+        """Record circular status-indicator drawing calls."""
+        self.calls.append(("fillcircle", position, radius, color))
+
 
 class FakeTime(types.ModuleType):
     """Minimal replacement for MicroPython's time module."""
@@ -246,7 +250,7 @@ class AipiLiteDisplayConfigTests(unittest.TestCase):
 
         self.assertEqual(
             display.available_statuses(),
-            ("boot", "wifi", "ready", "recording", "processing", "speaking", "error"),
+            ("boot", "wifi", "offline", "ready", "recording", "processing", "speaking", "error"),
         )
         for status in display.available_statuses():
             definition = display.screen_definition(status)
@@ -298,7 +302,7 @@ class AipiLiteDisplayConfigTests(unittest.TestCase):
 
         title, lines = renderer.render_status("ready", detail="LAN service reachable")
 
-        self.assertEqual(title, "READY")
+        self.assertEqual(title, "ONLINE")
         self.assertIn("Press button", lines)
         self.assertIn("LAN service", lines)
         self.assertEqual(FakePWM.created[-1].duty_u16_values, [65535])
@@ -308,10 +312,22 @@ class AipiLiteDisplayConfigTests(unittest.TestCase):
         self.assertEqual(tft.calls[3], ("fill", 0))
         self.assertEqual(
             tft.calls[4],
-            ("text", (6, 12), "READY", display.GREEN, FAKE_FONT, 2, True),
+            ("text", (6, 12), "ONLINE", display.GREEN, FAKE_FONT, 2, True),
+        )
+        self.assertIn(
+            ("fillcircle", display.STATUS_DOT_POSITION, display.STATUS_DOT_RADIUS, display.GREEN),
+            tft.calls,
         )
         body_calls = [call for call in tft.calls if call[0] == "text" and call[1][1] >= 44]
         self.assertTrue(all(call[1][0] == 6 for call in body_calls))
+
+        offline_title, offline_lines = renderer.render_status("offline")
+        self.assertEqual(offline_title, "OFFLINE")
+        self.assertIn("to reconnect", offline_lines)
+        self.assertIn(
+            ("fillcircle", display.STATUS_DOT_POSITION, display.STATUS_DOT_RADIUS, display.RED),
+            tft.calls,
+        )
 
         renderer.backlight_off()
         self.assertEqual(FakePWM.created[-1].duty_u16_values[-1], 0)

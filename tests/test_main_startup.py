@@ -44,9 +44,10 @@ class FakeButton:
 class FakeController:
     """Record push-to-talk controller startup calls."""
 
-    def __init__(self, fail_connect=False):
+    def __init__(self, fail_connect=False, connect_result="ready"):
         """Create a controller that can optionally fail during connect."""
         self.fail_connect = fail_connect
+        self.connect_result = connect_result
         self.connect_calls = 0
 
     def connect(self):
@@ -54,7 +55,7 @@ class FakeController:
         self.connect_calls += 1
         if self.fail_connect:
             raise RuntimeError("local service unavailable")
-        return "ready"
+        return self.connect_result
 
 
 def clear_imported_modules():
@@ -142,6 +143,32 @@ class MainStartupTests(unittest.TestCase):
         self.assertEqual(display.screens[-1], ("error", "RuntimeError"))
         self.assertEqual(led.states[-1], "error")
         self.assertIn("main: push-to-talk startup failed: RuntimeError", messages)
+
+    def test_main_enters_button_poll_loop_when_connection_is_offline(self):
+        """Offline startup should remain usable for a later reconnect press."""
+        display = FakeStatusDisplay()
+        led = FakeStatusLed()
+        button = FakeButton()
+        controller = FakeController(connect_result="offline")
+        poll_calls = []
+        messages = []
+
+        result = self.main.main(
+            print_func=messages.append,
+            idle_polls=1,
+            status_display_factory=lambda: display,
+            status_led_factory=lambda: led,
+            button_factory=lambda: button,
+            controller_factory=lambda **kwargs: controller,
+            poll_button_loop_func=lambda *args, **kwargs: poll_calls.append(args) or "offline",
+            disable_speaker_func=lambda: None,
+        )
+
+        self.assertEqual(result, "offline")
+        self.assertEqual(controller.connect_calls, 1)
+        self.assertEqual(poll_calls, [(controller, button)])
+        self.assertIn("main: push-to-talk offline; press button to reconnect", messages)
+        self.assertIn("main: polling right function button", messages)
 
 
 if __name__ == "__main__":
