@@ -68,6 +68,11 @@ DEVICE_VALIDATION_OBSERVATION_LABELS = {
     "inference-ui": "Display, LED, and button remained responsive during inference",
 }
 DEVICE_VALIDATION_OBSERVATION_STATUSES = {"pass", "fail", "not-observed"}
+DEVICE_VALIDATION_RESULT_PATTERN = re.compile(
+    r"^device_validation_result: name=([a-z][a-z0-9-]*) status=([0-9]+)$"
+)
+
+
 class InstallerError(RuntimeError):
     """Represent an expected installer failure that should be shown to an operator."""
 
@@ -575,24 +580,88 @@ def prompt_device_validation_observation(
         sink.write("Enter pass, fail, or not-observed.", error=True)
 
 
-def run_device_validation_probe(
+def device_validation_batch_code(probes: Sequence[DeviceValidationProbe]) -> str:
+    """Build one MicroPython program that reports each validation probe result."""
+    lines = [
+        "def _aipi_validation_result(name, status):",
+        "    print('device_validation_result: name={} status={}'.format(name, status))",
+    ]
+    for probe in probes:
+        lines.extend(
+            [
+                "",
+                f"print('device_validation_probe: starting {probe.name}')",
+                "try:",
+                f"    exec({probe.command!r})",
+                "except Exception:",
+                f"    _aipi_validation_result({probe.name!r}, 1)",
+                "else:",
+                f"    _aipi_validation_result({probe.name!r}, 0)",
+            ]
+        )
+    return "\n".join(lines)
+
+
+def device_validation_batch_command(
     executable: Path,
     request: InstallRequest,
-    probe: DeviceValidationProbe,
-    sink: OutputSink,
-) -> int:
-    """Run one device probe through mpremote and return its process status."""
-    command = [
+    probes: Sequence[DeviceValidationProbe],
+) -> list[str]:
+    """Return one raw-REPL command for the complete validation probe sequence."""
+    return [
         str(executable),
         "connect",
         request.port,
         "exec",
-        probe.command,
+        device_validation_batch_code(probes),
     ]
-    sink.write(f"Running {probe.name} device validation probe.")
-    status = run_streaming(command, sink)
-    sink.write(f"{probe.name} probe exit status: {status}")
-    return status
+
+
+def parse_device_validation_probe_statuses(
+    transcript: str,
+    probes: Sequence[DeviceValidationProbe],
+) -> list[tuple[str, int]]:
+    """Parse one result marker per configured probe, failing missing or malformed values."""
+    expected_names = {probe.name for probe in probes}
+    parsed_statuses: dict[str, int] = {}
+    malformed_names: set[str] = set()
+    for line in transcript.splitlines():
+        match = DEVICE_VALIDATION_RESULT_PATTERN.fullmatch(line.strip())
+        if match is None:
+            continue
+        name, status_text = match.groups()
+        if name not in expected_names:
+            continue
+        if name in parsed_statuses or status_text not in {"0", "1"}:
+            malformed_names.add(name)
+            continue
+        parsed_statuses[name] = int(status_text)
+    return [
+        (probe.name, 1 if probe.name in malformed_names else parsed_statuses.get(probe.name, 1))
+        for probe in probes
+    ]
+
+
+def run_device_validation_batch(
+    executable: Path,
+    request: InstallRequest,
+    sink: OutputSink,
+) -> tuple[int, list[tuple[str, int]]]:
+    """Run every validation probe in one raw-REPL session and return recorded statuses."""
+    sink.write("Running device validation probes in one raw-REPL session.")
+    transcript_start = len(sink.transcript)
+    batch_status = run_streaming(
+        device_validation_batch_command(executable, request, DEVICE_VALIDATION_PROBES),
+        sink,
+    )
+    probe_statuses = parse_device_validation_probe_statuses(
+        sink.transcript[transcript_start:],
+        DEVICE_VALIDATION_PROBES,
+    )
+    for name, status in probe_statuses:
+        sink.write(f"{name} probe exit status: {status}")
+    sink.write(f"Device validation batch exit status: {batch_status}")
+    return batch_status, probe_statuses
 
 
 def run_inference_probe(request: InstallRequest, sink: OutputSink) -> int:
@@ -849,11 +918,16 @@ def observation_status(observations: dict[str, str], name: str) -> str:
 
 def device_validation_status(
     upload_status: int | None,
+    batch_status: int | None,
     probe_statuses: Sequence[tuple[str, int]],
     observations: dict[str, str],
 ) -> int:
     """Return success only when every device probe and observation passed."""
-    if upload_status != 0 or len(probe_statuses) != len(DEVICE_VALIDATION_PROBES):
+    if (
+        upload_status != 0
+        or batch_status != 0
+        or len(probe_statuses) != len(DEVICE_VALIDATION_PROBES)
+    ):
         return 1
     if any(status != 0 for _, status in probe_statuses):
         return 1
@@ -878,6 +952,7 @@ def write_device_validation_issue_body(
     sink: OutputSink,
     device_label: str,
     upload_status: int | None,
+    batch_status: int | None,
     probe_statuses: Sequence[tuple[str, int]],
     observations: dict[str, str],
     validation_status: int,
@@ -889,6 +964,7 @@ def write_device_validation_issue_body(
         "",
         f"- Aggregate validation status: `{validation_status}`",
         f"- Application upload status: `{upload_status if upload_status is not None else 'not-run'}`",
+        f"- Device validation batch status: `{batch_status if batch_status is not None else 'not-run'}`",
         f"- Device label: {redact_text(device_label or 'unspecified')}",
         "",
         "## Probe Results",
@@ -918,6 +994,7 @@ def write_device_validation_artifacts(
     sink: OutputSink,
     device_label: str,
     upload_status: int | None,
+    batch_status: int | None,
     probe_statuses: Sequence[tuple[str, int]],
     observations: dict[str, str],
     validation_status: int,
@@ -936,6 +1013,7 @@ def write_device_validation_artifacts(
         "workflow=windows-device-validation",
         f"aggregate_validation_status={validation_status}",
         f"application_upload_status={upload_status if upload_status is not None else 'not-run'}",
+        f"validation_batch_status={batch_status if batch_status is not None else 'not-run'}",
         f"device_label={redact_text(device_label)}",
     ]
     metadata_lines.extend(f"probe_{name}_status={status}" for name, status in probe_statuses)
@@ -953,6 +1031,7 @@ def write_device_validation_artifacts(
         sink=sink,
         device_label=device_label,
         upload_status=upload_status,
+        batch_status=batch_status,
         probe_statuses=probe_statuses,
         observations=observations,
         validation_status=validation_status,
@@ -968,6 +1047,7 @@ def run_device_validation(
     """Run the approved self-contained device probes and publish their evidence."""
     capture_dir = args.capture_dir or default_device_validation_capture_directory()
     upload_status: int | None = None
+    batch_status: int | None = None
     probe_statuses: list[tuple[str, int]] = []
     observations: dict[str, str] = {}
     sink.write(f"Device validation capture directory: {capture_dir}")
@@ -981,30 +1061,35 @@ def run_device_validation(
         sink.write(f"Application upload status: {upload_status}")
         if upload_status == 0:
             executable = ensure_mpremote(request.assume_yes, sink)
-            for probe in DEVICE_VALIDATION_PROBES:
-                try:
-                    status = run_device_validation_probe(executable, request, probe, sink)
-                except (InstallerError, OSError, subprocess.SubprocessError) as error:
-                    sink.write(f"error: {probe.name} probe failed: {error}", error=True)
-                    status = 1
-                probe_statuses.append((probe.name, status))
-                for observation in probe.observations:
-                    observations[observation] = prompt_device_validation_observation(
-                        observation,
-                        sink,
-                        input_func,
-                    )
+            try:
+                batch_status, probe_statuses = run_device_validation_batch(executable, request, sink)
+            except (InstallerError, OSError, subprocess.SubprocessError) as error:
+                batch_status = 1
+                probe_statuses = [(probe.name, 1) for probe in DEVICE_VALIDATION_PROBES]
+                sink.write(f"error: device validation batch failed: {error}", error=True)
+            for observation in DEVICE_VALIDATION_OBSERVATIONS:
+                observations[observation] = prompt_device_validation_observation(
+                    observation,
+                    sink,
+                    input_func,
+                )
     except (InstallerError, OSError, subprocess.SubprocessError) as error:
         upload_status = 1
         sink.write(f"error: {error}", error=True)
 
-    validation_status = device_validation_status(upload_status, probe_statuses, observations)
+    validation_status = device_validation_status(
+        upload_status,
+        batch_status,
+        probe_statuses,
+        observations,
+    )
     sink.write(f"Device validation status: {validation_status}")
     issue_body = write_device_validation_artifacts(
         capture_dir,
         sink=sink,
         device_label=args.device_label,
         upload_status=upload_status,
+        batch_status=batch_status,
         probe_statuses=probe_statuses,
         observations=observations,
         validation_status=validation_status,

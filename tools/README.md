@@ -130,10 +130,11 @@ validate.cmd --port COM8 --yes --device-label bench-a
 
 The command uploads `src/` without resetting into normal startup, then runs the
 display, GPIO status/button, codec, capture, playback, and offline inference
-probes independently. It continues after an individual probe failure so the
-report contains all available evidence. After the relevant probe, answer the
-prompt with `pass`, `fail`, or `not-observed` for each physical observation.
-Only an all-pass run exits successfully.
+probes through one raw-REPL session. It emits a per-probe result, continues
+after a device-side probe failure so the report contains all available evidence,
+and avoids reconnecting between probes. After the sequence, answer the prompts
+with `pass`, `fail`, or `not-observed` for each physical observation. Only an
+all-pass run exits successfully.
 
 Each parsed run writes raw/redacted transcripts, metadata, and a GitHub-ready
 body under ignored `tools\.local\device-validation\`. The target repository is

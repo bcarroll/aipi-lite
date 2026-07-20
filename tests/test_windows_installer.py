@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import contextlib
 import io
 from pathlib import Path
 import subprocess
@@ -519,6 +520,66 @@ class WindowsInstallerTests(unittest.TestCase):
             with self.assertRaises(SystemExit):
                 installer.create_parser().parse_args(["validate", "--yes"])
 
+    def test_device_validation_batch_uses_one_raw_repl_connection(self):
+        """The complete probe sequence should be generated for one mpremote session."""
+        request = installer.InstallRequest(port="COM7", no_reset=True, assume_yes=True)
+        command = installer.device_validation_batch_command(
+            Path("C:/mpremote.exe"),
+            request,
+            installer.DEVICE_VALIDATION_PROBES,
+        )
+
+        self.assertEqual(command[:4], ["C:/mpremote.exe", "connect", "COM7", "exec"])
+        batch_code = command[-1]
+        compile(batch_code, "<device-validation-batch>", "exec")
+        self.assertIn("except Exception:", batch_code)
+        positions = [batch_code.index(f"exec({probe.command!r})") for probe in installer.DEVICE_VALIDATION_PROBES]
+        self.assertEqual(positions, sorted(positions))
+        self.assertNotIn("reset", command)
+
+    def test_device_validation_batch_continues_after_a_device_exception(self):
+        """A caught probe exception should report failure and still execute later probes."""
+        probes = (
+            installer.DeviceValidationProbe("first", "print('first ran')", "first:"),
+            installer.DeviceValidationProbe("broken", "raise ValueError('expected')", "broken:"),
+            installer.DeviceValidationProbe("last", "print('last ran')", "last:"),
+        )
+        output = io.StringIO()
+
+        with contextlib.redirect_stdout(output):
+            exec(installer.device_validation_batch_code(probes), {})
+
+        statuses = dict(installer.parse_device_validation_probe_statuses(output.getvalue(), probes))
+        self.assertEqual(statuses, {"first": 0, "broken": 1, "last": 0})
+        self.assertIn("last ran", output.getvalue())
+
+    def test_device_validation_probe_status_parser_rejects_missing_and_malformed_markers(self):
+        """Only one valid status marker should allow an individual probe to pass."""
+        transcript = "\n".join(
+            [
+                "device_validation_result: name=display status=0",
+                "device_validation_result: name=io status=1",
+                "device_validation_result: name=codec status=2",
+                "device_validation_result: name=capture status=0",
+                "device_validation_result: name=capture status=0",
+                "device_validation_result: name=inference status=0",
+            ]
+        )
+
+        statuses = dict(
+            installer.parse_device_validation_probe_statuses(
+                transcript,
+                installer.DEVICE_VALIDATION_PROBES,
+            )
+        )
+
+        self.assertEqual(statuses["display"], 0)
+        self.assertEqual(statuses["io"], 1)
+        self.assertEqual(statuses["codec"], 1)
+        self.assertEqual(statuses["capture"], 1)
+        self.assertEqual(statuses["playback"], 1)
+        self.assertEqual(statuses["inference"], 0)
+
     def test_device_validation_uploads_without_reset_and_creates_issue(self):
         """Validation should upload once, run every probe, and publish redacted evidence."""
         with tempfile.TemporaryDirectory() as temporary_directory:
@@ -545,14 +606,17 @@ class WindowsInstallerTests(unittest.TestCase):
                 install_sink.write("upload COM7 token=upload-secret C:\\bench\\upload.log")
                 return 0
 
-            def simulated_probe(command, probe_sink):
-                """Write stable serial output for each configured validation probe."""
-                probe = next(
-                    item for item in installer.DEVICE_VALIDATION_PROBES if item.command == command[-1]
-                )
-                probe_sink.write(
-                    f"{probe.serial_prefix} complete COM7 token=probe-secret C:\\bench\\serial.log"
-                )
+            def simulated_batch(command, probe_sink):
+                """Write complete successful output from the one validation session."""
+                batch_code = command[-1]
+                for probe in installer.DEVICE_VALIDATION_PROBES:
+                    self.assertIn(f"exec({probe.command!r})", batch_code)
+                    probe_sink.write(
+                        f"{probe.serial_prefix} complete COM7 token=probe-secret C:\\bench\\serial.log"
+                    )
+                    probe_sink.write(
+                        f"device_validation_result: name={probe.name} status=0"
+                    )
                 return 0
 
             responses = iter(["pass"] * len(installer.DEVICE_VALIDATION_OBSERVATIONS))
@@ -564,7 +628,7 @@ class WindowsInstallerTests(unittest.TestCase):
             with (
                 mock.patch.object(installer, "run_install_request", side_effect=simulated_install),
                 mock.patch.object(installer, "ensure_mpremote", return_value=Path("C:/mpremote.exe")),
-                mock.patch.object(installer, "run_streaming", side_effect=simulated_probe) as run_streaming,
+                mock.patch.object(installer, "run_streaming", side_effect=simulated_batch) as run_streaming,
                 mock.patch.object(installer, "resolve_device_validation_repository", return_value="owner/repo"),
                 mock.patch.object(installer.shutil, "which", return_value="C:/gh.exe"),
                 mock.patch.object(installer.subprocess, "run", return_value=gh_result) as run,
@@ -576,19 +640,20 @@ class WindowsInstallerTests(unittest.TestCase):
 
             self.assertIsNotNone(received_request)
             self.assertTrue(received_request.no_reset)
-            self.assertEqual(
-                [call.args[0][-1] for call in run_streaming.call_args_list],
-                [probe.command for probe in installer.DEVICE_VALIDATION_PROBES],
-            )
+            self.assertEqual(run_streaming.call_count, 1)
+            batch_command = run_streaming.call_args.args[0]
+            self.assertEqual(batch_command[:4], ["C:/mpremote.exe", "connect", "COM7", "exec"])
             issue_body = (capture_dir / "github-issue-body.md").read_text(encoding="utf-8")
             metadata = (capture_dir / "run-metadata.txt").read_text(encoding="utf-8")
             self.assertIn("Aggregate validation status: `0`", issue_body)
+            self.assertIn("Device validation batch status: `0`", issue_body)
             self.assertIn("GPIO42 button press and release were observed: `pass`", issue_body)
             self.assertIn("inference_probe: complete", issue_body)
             self.assertNotIn("COM7", issue_body)
             self.assertNotIn("probe-secret", issue_body)
             self.assertNotIn("C:\\bench", issue_body)
             self.assertIn("workflow=windows-device-validation", metadata)
+            self.assertIn("validation_batch_status=0", metadata)
             self.assertIn("observation_speaker=pass", metadata)
             self.assertEqual(
                 (capture_dir / "github-created-issue.txt").read_text(encoding="utf-8"),
@@ -599,7 +664,7 @@ class WindowsInstallerTests(unittest.TestCase):
             self.assertIn("owner/repo", run.call_args.args[0])
 
     def test_device_validation_continues_after_a_probe_failure(self):
-        """One probe failure should not prevent later independent probes from running."""
+        """One reported probe failure should retain later probe results from the batch."""
         with tempfile.TemporaryDirectory() as temporary_directory:
             args = installer.create_parser().parse_args(
                 [
@@ -613,14 +678,20 @@ class WindowsInstallerTests(unittest.TestCase):
             )
             sink = self.make_sink()
             responses = iter(["pass"] * len(installer.DEVICE_VALIDATION_OBSERVATIONS))
+
+            def failed_io_batch(command, probe_sink):
+                """Report an IO failure while preserving all later probe markers."""
+                for probe in installer.DEVICE_VALIDATION_PROBES:
+                    status = 1 if probe.name == "io" else 0
+                    probe_sink.write(
+                        f"device_validation_result: name={probe.name} status={status}"
+                    )
+                return 0
+
             with (
                 mock.patch.object(installer, "run_install_request", return_value=0),
                 mock.patch.object(installer, "ensure_mpremote", return_value=Path("C:/mpremote.exe")),
-                mock.patch.object(
-                    installer,
-                    "run_streaming",
-                    side_effect=[0, 4, 0, 0, 0, 0],
-                ) as run_streaming,
+                mock.patch.object(installer, "run_streaming", side_effect=failed_io_batch) as run_streaming,
                 mock.patch.object(installer, "resolve_device_validation_repository", return_value="owner/repo"),
                 mock.patch.object(installer, "create_github_issue") as create_github_issue,
             ):
@@ -629,9 +700,49 @@ class WindowsInstallerTests(unittest.TestCase):
                     1,
                 )
 
-            self.assertEqual(run_streaming.call_count, len(installer.DEVICE_VALIDATION_PROBES))
+            self.assertEqual(run_streaming.call_count, 1)
             create_github_issue.assert_called_once()
             self.assertIn("inference probe exit status: 0", sink.transcript)
+
+    def test_device_validation_fails_when_batch_transport_fails(self):
+        """A nonzero mpremote exit must fail the run even when markers were emitted."""
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            capture_dir = Path(temporary_directory) / "capture"
+            args = installer.create_parser().parse_args(
+                [
+                    "validate",
+                    "--capture-dir",
+                    str(capture_dir),
+                    "--port",
+                    "COM7",
+                    "--yes",
+                ]
+            )
+            sink = self.make_sink()
+            responses = iter(["pass"] * len(installer.DEVICE_VALIDATION_OBSERVATIONS))
+
+            def transport_failure(command, probe_sink):
+                """Emit successful device markers before the host transport disconnects."""
+                for probe in installer.DEVICE_VALIDATION_PROBES:
+                    probe_sink.write(f"device_validation_result: name={probe.name} status=0")
+                return 7
+
+            with (
+                mock.patch.object(installer, "run_install_request", return_value=0),
+                mock.patch.object(installer, "ensure_mpremote", return_value=Path("C:/mpremote.exe")),
+                mock.patch.object(installer, "run_streaming", side_effect=transport_failure),
+                mock.patch.object(installer, "resolve_device_validation_repository", return_value="owner/repo"),
+                mock.patch.object(installer, "create_github_issue"),
+            ):
+                self.assertEqual(
+                    installer.run_device_validation(args, sink, input_func=lambda _prompt: next(responses)),
+                    1,
+                )
+
+            issue_body = (capture_dir / "github-issue-body.md").read_text(encoding="utf-8")
+            metadata = (capture_dir / "run-metadata.txt").read_text(encoding="utf-8")
+            self.assertIn("Device validation batch status: `7`", issue_body)
+            self.assertIn("validation_batch_status=7", metadata)
 
     def test_device_validation_records_unobserved_checks_and_keeps_report_local(self):
         """Unavailable operator input should be non-passing while retaining a report locally."""

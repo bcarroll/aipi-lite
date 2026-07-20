@@ -397,11 +397,13 @@ validate.cmd --port COM8 --yes --device-label bench-a
 ```
 
 The command runs display, GPIO status/button, ES8311 codec, microphone capture,
-low-volume speaker playback, and offline inference probes. It prompts for
-`pass`, `fail`, or `not-observed` for display, status LED, button, microphone,
-speaker, and inference UI behavior. Any failed or unobserved check makes the
-validation result non-passing; the GitHub report records that evidence rather
-than inferring a successful physical result.
+low-volume speaker playback, and offline inference probes in one raw-REPL
+session. It reports each probe result, continues to later probes after a
+device-side probe failure, and avoids reconnecting between probes. After the
+sequence, it prompts for `pass`, `fail`, or `not-observed` for display, status
+LED, button, microphone, speaker, and inference UI behavior. Any failed or
+unobserved check makes the validation result non-passing; the GitHub report
+records that evidence rather than inferring a successful physical result.
 
 The validation command does not reset the device into normal startup, flash or
 erase firmware, configure Wi-Fi, call a local service, run push-to-talk, or
