@@ -12,6 +12,12 @@ reports `./src/main.py` and `./src/lib/...`, proving that the Windows installer
 copies the source directory itself to device `/src`. The intended MicroPython
 layout is `/boot.py`, `/main.py`, and reusable modules under `/lib`.
 
+The Unix `install.sh` uploader already maps every source-relative file to an
+explicit device-root destination and filters host cache artifacts. Its reset
+failure is already nonfatal. However, it does not remove legacy root modules,
+so those files can shadow `/lib` after an application update. It must also be
+able to repair a recognized `/src` tree left by an earlier Windows install.
+
 Bare imports such as `from pins import BOARD_POWER_CONTROL` remain intentional.
 MicroPython includes `/lib` in its module search path, so application modules
 under `/lib` are imported by module name rather than as `lib.*` packages.
@@ -28,13 +34,15 @@ under `/lib` are imported by module name rather than as `lib.*` packages.
 - Treat an unconfirmed reset after successful cleanup as a successful install
   that requires a manual power cycle.
 - Preserve `--no-reset` behavior.
+- Apply the same guarded cleanup and cleanup/reset lifecycle through both the
+  Windows and Unix installers.
 
 ## Non-Goals
 
 - Do not change firmware import statements to `lib.*` imports.
 - Do not erase unrecognized device files or directories.
-- Do not change the Unix installer, firmware image, Wi-Fi configuration, or
-  application runtime behavior.
+- Do not change the Unix upload layout, firmware image, Wi-Fi configuration,
+  or application runtime behavior.
 - Do not add production dependencies.
 
 ## Design
@@ -54,9 +62,12 @@ part of the application upload without exposing its contents.
 
 ### Guarded mistaken-tree cleanup
 
-The installer will derive the expected relative file manifest from the clean
-staging tree. Device-side cleanup will inspect `/src` before deletion. A tree is
-recognized as the defective installer output only when:
+A shared host helper will derive the expected relative file manifest from an
+application source tree and generate device-side cleanup code. The Windows
+installer will use the clean staging manifest; the Unix installer will use the
+same filtered source manifest that its uploader uses. Device-side cleanup will
+inspect `/src` before deletion. A tree is recognized as the defective installer
+output only when:
 
 - its non-cache files are all present in the staged application manifest;
 - it contains the AIPI-Lite startup signatures `main.py`, `boot.py`, and
@@ -69,15 +80,15 @@ misplaced application tree was removed. When any unknown file is found, it
 preserves the complete `/src` tree and prints a warning. This check happens
 before deletion so a partial cleanup cannot destroy an unrecognized tree.
 
-The existing targeted cleanup of root-level modules moved to `/lib` remains in
-place and continues to preserve `/boot.py`, `/main.py`, and
+The targeted cleanup of root-level modules moved to `/lib` runs through both
+installers and continues to preserve `/boot.py`, `/main.py`, and
 `/local_wifi_config.py`.
 
 ### Cleanup and reset lifecycle
 
-For a normal install, legacy cleanup, guarded `/src` cleanup, and reset will be
-commands in one `mpremote` process. Cleanup prints a unique completion marker
-before the reset command begins.
+For a normal Windows or Unix install, legacy cleanup, guarded `/src` cleanup,
+and reset will be commands in one `mpremote` process. Cleanup prints a unique
+completion marker before the reset command begins.
 
 - A nonzero command result without the marker is a fatal cleanup failure.
 - A zero result with the marker is a successful upload, cleanup, and reset.
@@ -90,9 +101,10 @@ Keeping reset in the cleanup connection eliminates the raw-REPL reconnect that
 failed in issue #26. The warning fallback handles USB timing or disconnect
 conditions where `mpremote` still cannot confirm reset.
 
-With `--no-reset`, the installer runs upload and cleanup without appending the
-reset command. Cleanup failure remains fatal, and successful cleanup reports
-that reset was intentionally skipped.
+With Windows `--no-reset` or Unix `AIPI_RESET_AFTER_UPLOAD=no`, the installer
+runs upload and cleanup without appending the reset command. Cleanup failure
+remains fatal, and successful cleanup reports that reset was intentionally
+skipped.
 
 ## Error Handling
 
@@ -117,6 +129,10 @@ Host-side tests will verify:
 - `--no-reset` runs cleanup without reset; and
 - all generated device-side Python snippets compile.
 
+Unix installer tests will additionally verify that its existing explicit
+device-root mapping and cache filters remain intact, that it invokes the shared
+cleanup generator, and that cleanup/reset marker handling matches Windows.
+
 Repository validation will run the focused Windows installer tests, the full
 Python test suite, required shell syntax checks, and `git diff --check` before
 the implementation commit.
@@ -124,5 +140,5 @@ the implementation commit.
 ## Documentation
 
 `README.md`, `tools/README.md`, and `FIRMWARE_IMPL.md` will describe the device
-root layout, guarded `/src` cleanup, cache filtering, combined reset lifecycle,
-and manual power-cycle fallback.
+root layout, shared guarded `/src` and legacy-module cleanup, cache filtering,
+combined reset lifecycle, and manual power-cycle fallback on Windows and Unix.
