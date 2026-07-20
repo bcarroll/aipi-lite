@@ -464,7 +464,9 @@ on the device matches the local `src/local_wifi_config.py` that was uploaded.
 The probe validates the configured endpoint before connecting to Wi-Fi. It
 accepts RFC1918 IPv4 addresses, loopback/link-local IPv4 for bench testing,
 `.local` names, and explicitly approved local hostnames. Public internet
-endpoints are rejected by default and are not contacted.
+endpoints are rejected by default and are not contacted. A Wi-Fi connection
+timeout remains a failed probe result, but it renders the normal `OFFLINE`
+screen instead of presenting `WiFiProbeError` as a fatal device error.
 
 See [src/README.md](src/README.md) for firmware image selection, upload, serial
 log, and safety notes for the MicroPython application tree.

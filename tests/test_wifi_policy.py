@@ -304,6 +304,40 @@ class WifiPolicyTests(unittest.TestCase):
         self.assertEqual(display.screens[-1], ("ready", "health 200"))
         self.assertIn("wifi_probe: health ok 200", messages)
 
+    def test_wifi_probe_timeout_renders_offline_instead_of_error(self):
+        """A Wi-Fi timeout should preserve the device's nonfatal offline UI."""
+        wifi_config = self.import_module("wifi_config")
+        wifi_probe = self.import_module("wifi_probe")
+        config = wifi_config.WiFiConfig(
+            "LabNet",
+            "secret-password",
+            "http://192.168.1.10:8080",
+        )
+        wlan = FakeWLAN(connected_after=100)
+        led = FakeStatusLed()
+        display = FakeStatusDisplay()
+        messages = []
+        sleeps = []
+        ticks = iter((0, 50, 100))
+
+        status = wifi_probe.run_probe(
+            config=config,
+            wlan=wlan,
+            request_get=lambda url: self.fail("health request should not run offline"),
+            status_led=led,
+            status_display=display,
+            print_func=messages.append,
+            sleep_ms_func=sleeps.append,
+            ticks_ms_func=lambda: next(ticks),
+            timeout_ms=100,
+        )
+
+        self.assertEqual(status, wifi_probe.STATUS_ERROR)
+        self.assertEqual(led.states, ["connecting", "offline"])
+        self.assertEqual(display.screens, [("wifi", "connecting"), ("offline", None)])
+        self.assertEqual(sleeps, [250])
+        self.assertIn("wifi_probe: offline: WiFiProbeError", messages)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -194,6 +194,11 @@ def run_probe(
         if hasattr(wlan, "ifconfig"):
             print_func("wifi_probe: network {}".format(wlan.ifconfig()))
         result = health_check(health_url, request_get=request_get)
+    except WiFiProbeError as exc:
+        _set_led_state(status_led, "offline")
+        _render_display(status_display, "offline")
+        print_func("wifi_probe: offline: {}".format(type(exc).__name__))
+        return STATUS_ERROR
     except Exception as exc:
         _set_led_state(status_led, "error")
         _render_display(status_display, "error", type(exc).__name__)

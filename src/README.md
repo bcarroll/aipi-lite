@@ -309,6 +309,9 @@ strings, fragments, and unsupported schemes by default.
 When policy validation passes, the probe connects with MicroPython
 `network.WLAN`, calls only the derived local `/health` URL, prints serial
 status, and updates the status LED and display when those modules initialize.
+A Wi-Fi timeout returns a failed probe result for validation purposes while
+rendering the normal `OFFLINE` screen rather than a fatal `WiFiProbeError`
+screen.
 
 ## Safety Notes
 
