@@ -551,6 +551,95 @@ class WindowsInstallerTests(unittest.TestCase):
             "<redacted-mac> <redacted-local-path>",
         )
 
+    def test_upload_failure_diagnostics_are_redacted_and_bounded(self):
+        """Upload issue diagnostics should keep only bounded, redacted signal lines."""
+        transcript_lines = [
+            "Hard-resetting COM8 and waiting 1.0 seconds before validation upload...",
+            "Uploading application source to COM8...",
+            "cp C:\\Users\\Brett\\AppData\\Local\\Temp\\application\\README.md :",
+            "Traceback (most recent call last):",
+            "mpremote: cp: destination does not exist",
+            "mpremote.transport.TransportError: token=upload-secret COM8 C:\\bench\\serial.log",
+            "error: password=hunter2",
+            "mpremote: cp: destination does not exist",
+        ]
+        transcript_lines.extend(f"mpremote: failure-{index}" for index in range(20))
+
+        diagnostics = installer.device_validation_upload_failure_lines(
+            "\n".join(transcript_lines)
+        )
+
+        self.assertEqual(len(diagnostics), installer.MAX_UPLOAD_FAILURE_DIAGNOSTIC_LINES)
+        self.assertEqual(
+            diagnostics[:5],
+            [
+                "Hard-resetting <redacted-serial-port> and waiting 1.0 seconds before validation upload...",
+                "Uploading application source to <redacted-serial-port>...",
+                "mpremote: cp: destination does not exist",
+                "mpremote.transport.TransportError: token=<redacted> "
+                "<redacted-serial-port> <redacted-local-path>",
+                "error: password=<redacted>",
+            ],
+        )
+        self.assertNotIn("cp C:\\Users", "\n".join(diagnostics))
+        self.assertNotIn("Traceback", "\n".join(diagnostics))
+        self.assertEqual(diagnostics.count("mpremote: cp: destination does not exist"), 1)
+
+    def test_upload_failure_issue_includes_diagnostics_but_success_does_not(self):
+        """Only nonzero upload reports should contain redacted failure diagnostics."""
+        failure_sink = self.make_sink()
+        failure_sink.write("Hard-resetting COM8 and waiting 1.0 seconds before validation upload...")
+        failure_sink.write("mpremote: cp: destination does not exist")
+        failure_sink.write("Application upload failed with status 1.")
+        success_sink = self.make_sink()
+        success_sink.write("display_probe: complete")
+        empty_failure_sink = self.make_sink()
+        empty_failure_sink.write("unrelated host output")
+
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            failure_issue = Path(temporary_directory) / "failure.md"
+            success_issue = Path(temporary_directory) / "success.md"
+            empty_failure_issue = Path(temporary_directory) / "empty-failure.md"
+            kwargs = {
+                "device_label": "bench-COM8",
+                "batch_status": None,
+                "probe_statuses": (),
+                "observations": {},
+                "validation_status": 1,
+            }
+            installer.write_device_validation_issue_body(
+                failure_issue,
+                sink=failure_sink,
+                upload_status=1,
+                **kwargs,
+            )
+            installer.write_device_validation_issue_body(
+                success_issue,
+                sink=success_sink,
+                upload_status=0,
+                **kwargs,
+            )
+            installer.write_device_validation_issue_body(
+                empty_failure_issue,
+                sink=empty_failure_sink,
+                upload_status=1,
+                **kwargs,
+            )
+
+            failure_body = failure_issue.read_text(encoding="utf-8")
+            success_body = success_issue.read_text(encoding="utf-8")
+            empty_failure_body = empty_failure_issue.read_text(encoding="utf-8")
+
+        self.assertIn("## Redacted Upload Failure Diagnostics", failure_body)
+        self.assertIn("mpremote: cp: destination does not exist", failure_body)
+        self.assertNotIn("COM8", failure_body)
+        self.assertLess(
+            failure_body.index("## Redacted Upload Failure Diagnostics"),
+            failure_body.index("## Redacted Device Serial"),
+        )
+        self.assertNotIn("## Redacted Upload Failure Diagnostics", success_body)
+        self.assertIn("No high-signal upload diagnostics were captured.", empty_failure_body)
+
     def test_device_validation_requires_a_com_port(self):
         """The physical validation command should not run without one COM port."""
         with mock.patch("sys.stderr", new=io.StringIO()):
@@ -687,6 +776,7 @@ class WindowsInstallerTests(unittest.TestCase):
             self.assertIn("Device validation batch status: `0`", issue_body)
             self.assertIn("GPIO42 button press and release were observed: `pass`", issue_body)
             self.assertIn("inference_probe: complete", issue_body)
+            self.assertNotIn("## Redacted Upload Failure Diagnostics", issue_body)
             self.assertNotIn("COM7", issue_body)
             self.assertNotIn("probe-secret", issue_body)
             self.assertNotIn("C:\\bench", issue_body)

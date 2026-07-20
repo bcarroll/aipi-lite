@@ -140,10 +140,12 @@ successfully.
 Each parsed run writes raw/redacted transcripts, metadata, and a GitHub-ready
 body under ignored `tools\.local\device-validation\`. The target repository is
 `AIPI_GITHUB_REPO` when it is valid; otherwise it is derived from `origin`.
-Missing or unauthenticated `gh` leaves the body local and reports the publishing
-failure without changing the measured validation result. The workflow excludes
-Wi-Fi, local-service, and push-to-talk validation and does not flash firmware,
-erase flash, or drive GPIO10.
+For an application upload failure, that body contains at most 12 redacted
+high-signal diagnostics; the complete transcript remains local. Missing or
+unauthenticated `gh` leaves the body local and reports the publishing failure
+without changing the measured validation result. The workflow excludes Wi-Fi,
+local-service, and push-to-talk validation and does not flash firmware, erase
+flash, or drive GPIO10.
 
 For deeper hardware feedback, pass installer tracing through the wrapper:
 

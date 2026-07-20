@@ -410,10 +410,12 @@ The validation command performs only that pre-upload hard reset; after upload,
 it does not reset the device into normal startup, flash or erase firmware,
 configure Wi-Fi, call a local service, run push-to-talk, or drive GPIO10. Raw
 and redacted transcripts, metadata, and the GitHub-ready body are retained
-under ignored `tools\.local\device-validation\`. It resolves the issue repository
-from `AIPI_GITHUB_REPO` when valid, otherwise from `origin`. If `gh` cannot
-create the issue, the local report remains available and the console reports
-the publishing failure separately from the validation result.
+under ignored `tools\.local\device-validation\`. When upload fails, the GitHub
+body includes up to 12 redacted high-signal upload diagnostics; complete
+evidence remains local. It resolves the issue repository from `AIPI_GITHUB_REPO`
+when valid, otherwise from `origin`. If `gh` cannot create the issue, the local
+report remains available and the console reports the publishing failure
+separately from the validation result.
 
 See [INFERENCE_FEASIBILITY.md](INFERENCE_FEASIBILITY.md) for the scope,
 candidate runtime inventory, decision states, and validation report template.

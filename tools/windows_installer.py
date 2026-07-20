@@ -34,6 +34,15 @@ VENV_DIR = TOOLS_ROOT / "micropython-venv"
 CAPTURE_ROOT = TOOLS_ROOT / "dev-install"
 DEVICE_VALIDATION_ROOT = TOOLS_ROOT / "device-validation"
 VALIDATION_PREFLIGHT_RESET_DELAY_SECONDS = "1.0"
+MAX_UPLOAD_FAILURE_DIAGNOSTIC_LINES = 12
+UPLOAD_FAILURE_DIAGNOSTIC_PREFIXES = (
+    "Hard-resetting ",
+    "Uploading application source ",
+    "Application upload failed with status ",
+    "mpremote:",
+    "mpremote.",
+    "error: ",
+)
 COM_PORT_PATTERN = re.compile(r"COM[1-9][0-9]*", re.IGNORECASE)
 SECRET_PATTERN = re.compile(
     r"(?i)\b(password|passwd|token|secret|key|ssid)\s*([=:])\s*[^\s]+"
@@ -967,6 +976,20 @@ def device_validation_serial_lines(transcript: str) -> list[str]:
     ]
 
 
+def device_validation_upload_failure_lines(transcript: str) -> list[str]:
+    """Return bounded redacted upload diagnostics safe to include in an issue."""
+    diagnostics: list[str] = []
+    for line in redact_text(transcript).splitlines():
+        if not line.startswith(UPLOAD_FAILURE_DIAGNOSTIC_PREFIXES):
+            continue
+        if line in diagnostics:
+            continue
+        diagnostics.append(line)
+        if len(diagnostics) == MAX_UPLOAD_FAILURE_DIAGNOSTIC_LINES:
+            break
+    return diagnostics
+
+
 def write_device_validation_issue_body(
     issue_body: Path,
     *,
@@ -1000,6 +1023,13 @@ def write_device_validation_issue_body(
             f"- {DEVICE_VALIDATION_OBSERVATION_LABELS[observation]}: "
             f"`{observation_status(observations, observation)}`"
         )
+    if upload_status not in (None, 0):
+        lines.extend(["", "## Redacted Upload Failure Diagnostics", "", "```text"])
+        lines.extend(
+            device_validation_upload_failure_lines(sink.transcript)
+            or ["No high-signal upload diagnostics were captured."]
+        )
+        lines.extend(["```"])
     lines.extend(["", "## Redacted Device Serial", "", "```text"])
     lines.extend(
         device_validation_serial_lines(sink.transcript)
