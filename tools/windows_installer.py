@@ -406,7 +406,7 @@ def application_upload_command(
             "cp",
             "-r",
             *(str(source) for source in sources),
-            ":",
+            ":/",
         ]
     )
     return command

@@ -79,7 +79,7 @@ class WindowsInstallerTests(unittest.TestCase):
         self.assertEqual(run_streaming.call_count, 2)
         upload_command = run_streaming.call_args_list[0].args[0]
         self.assertEqual(upload_command[:6], [str(executable), "connect", "COM7", "fs", "cp", "-r"])
-        self.assertEqual(upload_command[-1], ":")
+        self.assertEqual(upload_command[-1], ":/")
         uploaded_names = {Path(path).name for path in upload_command[6:-1]}
         self.assertTrue({"boot.py", "main.py", "lib"}.issubset(uploaded_names))
         self.assertNotIn("src", uploaded_names)
@@ -140,6 +140,7 @@ class WindowsInstallerTests(unittest.TestCase):
         self.assertIn("Hard-resetting COM7", sink.transcript)
         self.assertIn("Application upload failed with status 9.", sink.transcript)
         self.assertNotIn("Cleaning legacy and misplaced application files", sink.transcript)
+        self.assertEqual(upload_command[-1], ":/")
 
     def test_legacy_module_cleanup_failure_does_not_reset_device(self):
         """A failed legacy cleanup should stop before resetting into shadowed modules."""

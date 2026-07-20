@@ -104,9 +104,10 @@ install.cmd --port COM3 --yes
 The first normal run creates an ignored local virtual environment under
 `tools\.local\micropython-venv` and installs `mpremote`. `--yes` explicitly
 approves that prerequisite setup; omit it to receive an interactive prompt.
-The upload stages a cache-free copy of `src\` and copies its children to device
-root, producing `/boot.py`, `/main.py`, and `/lib` rather than `/src`. It removes
-the known legacy root-level application modules that were moved under `/lib`.
+The upload stages a cache-free copy of `src\` and copies its children to the
+explicit `mpremote` device-root destination `:/`, producing `/boot.py`,
+`/main.py`, and `/lib` rather than `/src`. It removes the known legacy root-level
+application modules that were moved under `/lib`.
 When an earlier Windows install created `/src`, the installer removes it only
 when its files match the AIPI-Lite application manifest; unknown `/src` content
 is preserved with a warning. This cleanup prevents old root modules from

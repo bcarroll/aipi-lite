@@ -6,12 +6,13 @@ under `tools/.local/`, which is ignored by Git. External MicroPython library
 source that must be uploaded to the device is tracked under `src/lib/`.
 
 The Windows `install.cmd` flow stages a cache-free source tree and copies its
-children to device root so startup files land at `/boot.py` and `/main.py` and
-application modules land under `/lib`. Windows and Unix installs share guarded
-cleanup that removes known legacy root modules and removes a misplaced `/src`
-tree only when it matches the AIPI-Lite application manifest. Unknown `/src`
-content is preserved with a warning. Cleanup preserves root `boot.py`,
-`main.py`, and the ignored operator `local_wifi_config.py`.
+children to the explicit `mpremote` device-root destination `:/`, so startup
+files land at `/boot.py` and `/main.py` and application modules land under
+`/lib`. Windows and Unix installs share guarded cleanup that removes known
+legacy root modules and removes a misplaced `/src` tree only when it matches
+the AIPI-Lite application manifest. Unknown `/src` content is preserved with a
+warning. Cleanup preserves root `boot.py`, `main.py`, and the ignored operator
+`local_wifi_config.py`.
 
 ## Bootstrap Flashing Tools
 
