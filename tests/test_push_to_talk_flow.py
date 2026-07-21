@@ -162,6 +162,7 @@ class PushToTalkFlowTests(unittest.TestCase):
         playback_func=None,
         sleeps=None,
         reconnect_manager=None,
+        wifi_ssid=None,
     ):
         """Create a controller with fake UI and diagnostics."""
         led = FakeStatusLed()
@@ -179,6 +180,7 @@ class PushToTalkFlowTests(unittest.TestCase):
             reconnect_manager=reconnect_manager,
             sleep_ms_func=(sleeps.append if sleeps is not None else (lambda milliseconds: None)),
             diagnostics=diagnostics,
+            wifi_ssid=wifi_ssid,
         )
         return controller, led, display, messages
 
@@ -243,8 +245,38 @@ class PushToTalkFlowTests(unittest.TestCase):
         self.assertEqual(state, "offline")
         self.assertEqual(controller.state_machine.state, "offline")
         self.assertEqual(sleeps, [5])
-        self.assertEqual(display.screens[-1], ("offline", None))
+        self.assertEqual(display.screens[-1], ("offline", "Wi-Fi not configured"))
         self.assertIn("diag t=123 connect failure type=RetryError", messages)
+
+    def test_initial_service_failure_displays_configured_wifi_network(self):
+        """Offline startup should name the configured network without logging it."""
+        controller, _, display, messages = self.make_controller(
+            service_client=FakeServiceClient(fail_health=True),
+            wifi_ssid="LabNet",
+        )
+
+        self.assertEqual(controller.connect(), "offline")
+
+        self.assertEqual(display.screens[-1], ("offline", "Wi-Fi: LabNet"))
+        self.assertNotIn("Wi-Fi: LabNet", messages)
+
+    def test_create_controller_reports_missing_wifi_configuration_on_offline_screen(self):
+        """Missing local configuration should keep the app offline with a clear LCD note."""
+        wifi_config = importlib.import_module("wifi_config")
+        display = FakeStatusDisplay()
+
+        def missing_config_loader():
+            """Raise the normal configuration error without importing device files."""
+            raise wifi_config.WiFiConfigError("missing local Wi-Fi config")
+
+        controller = self.push_to_talk.create_controller(
+            config_loader=missing_config_loader,
+            status_display=display,
+            print_func=lambda message: None,
+        )
+
+        self.assertEqual(controller.connect(), "offline")
+        self.assertEqual(display.screens[-1], ("offline", "Wi-Fi not configured"))
 
     def test_initial_wifi_failure_enters_offline_without_health_request(self):
         """A Wi-Fi connection failure should not prevent local boot completion."""
@@ -259,7 +291,7 @@ class PushToTalkFlowTests(unittest.TestCase):
 
         self.assertEqual(reconnect.calls, 1)
         self.assertEqual(service.calls, [])
-        self.assertEqual(display.screens[-1], ("offline", None))
+        self.assertEqual(display.screens[-1], ("offline", "Wi-Fi not configured"))
         self.assertIn("diag t=123 connect failure type=RuntimeError", messages)
 
     def test_offline_press_retries_connection_without_capturing_audio(self):
@@ -295,7 +327,7 @@ class PushToTalkFlowTests(unittest.TestCase):
         self.assertEqual(controller.handle_button_event(self.button.BUTTON_PRESSED), "offline")
         self.assertEqual(controller.handle_button_event(self.button.BUTTON_RELEASED), "offline")
         self.assertEqual(capture_calls, [])
-        self.assertEqual(display.screens[-1], ("offline", None))
+        self.assertEqual(display.screens[-1], ("offline", "Wi-Fi not configured"))
 
     def test_retry_invokes_reconnect_before_rechecking_service(self):
         """Service retry should give Wi-Fi reconnect handling a chance to recover."""

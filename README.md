@@ -269,10 +269,13 @@ push-to-talk controller, and then polls GPIO42 for press/release events. When a
 local Wi-Fi configuration is present but its network or service is unavailable,
 it completes
 startup in an explicit offline state and still polls GPIO42. The LCD shows an
-`OFFLINE` label with a red status dot; pressing the button retries the local
-connection without recording, and a second press can start recording after a
-successful reconnect. `ONLINE` uses the same explicit text plus a green status
-dot. Other startup failures still print the failure type and render a visible
+`OFFLINE` label with a red status dot and a `Wi-Fi: <configured SSID>` note.
+The note identifies only the configured network; it never includes the Wi-Fi
+password or local service URL. When no SSID is available, it says `Wi-Fi not
+configured`. Pressing the button retries the local connection without
+recording, and a second press can start recording after a successful reconnect.
+`ONLINE` uses the same explicit text plus a green status dot. Other startup
+failures still print the failure type and render a visible
 error state when display or LED output is available. The remaining application
 modules now live under `src/lib/`, which is uploaded to device `/lib` so
 MicroPython can import them by bare module name. `pins.py` centralizes the

@@ -197,6 +197,14 @@ class WifiPolicyTests(unittest.TestCase):
         with self.assertRaises(wifi_config.WiFiConfigError):
             wifi_config.load_config(importer=lambda name: (_ for _ in ()).throw(ImportError(name)))
 
+    def test_offline_network_detail_names_ssid_or_reports_missing_configuration(self):
+        """The offline LCD note should expose only the configured network name."""
+        wifi_config = self.import_module("wifi_config")
+
+        self.assertEqual(wifi_config.offline_network_detail("LabNet"), "Wi-Fi: LabNet")
+        self.assertEqual(wifi_config.offline_network_detail("  "), "Wi-Fi not configured")
+        self.assertEqual(wifi_config.offline_network_detail(), "Wi-Fi not configured")
+
     def test_wifi_config_reports_available_module_names_when_ssid_is_missing(self):
         """Wi-Fi config errors should show imported config names without values."""
         wifi_config = self.import_module("wifi_config")
@@ -334,7 +342,7 @@ class WifiPolicyTests(unittest.TestCase):
 
         self.assertEqual(status, wifi_probe.STATUS_ERROR)
         self.assertEqual(led.states, ["connecting", "offline"])
-        self.assertEqual(display.screens, [("wifi", "connecting"), ("offline", None)])
+        self.assertEqual(display.screens, [("wifi", "connecting"), ("offline", "Wi-Fi: LabNet")])
         self.assertEqual(sleeps, [250])
         self.assertIn("wifi_probe: offline: WiFiProbeError", messages)
 

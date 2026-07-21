@@ -61,15 +61,17 @@ class StatusOutputs:
         self.print_func = print_func
         self.events = []
 
-    def update(self, state, detail=None):
-        """Render a state update to available outputs."""
+    def update(self, state, detail=None, display_detail=None):
+        """Render a state update, with an optional display-only detail override."""
         led_state, display_status = ui_state_for(state)
         self.events.append((state, detail))
 
         if self.status_led is not None:
             self.status_led.set_state(led_state)
         if self.status_display is not None:
-            self.status_display.render_status(display_status, detail=detail)
+            if display_detail is None:
+                display_detail = detail
+            self.status_display.render_status(display_status, detail=display_detail)
 
         message = "assistant: state {}".format(state)
         if detail:
@@ -88,8 +90,8 @@ class AssistantStateMachine:
         self.history = []
         self.transition(self.state)
 
-    def transition(self, state, detail=None):
-        """Move to a supported state and update observers."""
+    def transition(self, state, detail=None, display_detail=None):
+        """Move to a supported state and update observers with optional LCD detail."""
         state = validate_state(state)
         previous = self.state
         self.state = state
@@ -98,7 +100,7 @@ class AssistantStateMachine:
         if self.diagnostics is not None:
             self.diagnostics.record_state_transition(previous, state, detail=detail)
         if self.outputs is not None:
-            self.outputs.update(state, detail=detail)
+            self.outputs.update(state, detail=detail, display_detail=display_detail)
         return state
 
     def is_ready(self):

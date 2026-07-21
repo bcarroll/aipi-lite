@@ -36,6 +36,16 @@ def _required_text(value, field_name):
     return text
 
 
+def offline_network_detail(ssid=None):
+    """Return a non-secret LCD note identifying the configured Wi-Fi network."""
+    if ssid is None:
+        return "Wi-Fi not configured"
+    network_name = str(ssid).strip()
+    if not network_name:
+        return "Wi-Fi not configured"
+    return "Wi-Fi: {}".format(network_name)
+
+
 def _module_value(module, names, default=None):
     """Return the first matching attribute from a config module."""
     for name in names:

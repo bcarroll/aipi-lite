@@ -21,7 +21,9 @@ from reliability import ReconnectManager
 from reliability import call_with_retries
 from reliability import sleep_ms
 from service_client import LocalServiceClient
+from wifi_config import WiFiConfigError
 from wifi_config import load_config
+from wifi_config import offline_network_detail
 
 
 class PushToTalkError(Exception):
@@ -59,6 +61,8 @@ class PushToTalkController:
         reconnect_manager=None,
         sleep_ms_func=sleep_ms,
         diagnostics=None,
+        wifi_ssid=None,
+        configuration_error=None,
     ):
         """Create a push-to-talk controller from injectable dependencies."""
         self.service_client = service_client
@@ -69,6 +73,8 @@ class PushToTalkController:
         self.retry_policy = retry_policy or RetryPolicy()
         self.reconnect_manager = reconnect_manager
         self.sleep_ms_func = sleep_ms_func
+        self.offline_display_detail = offline_network_detail(wifi_ssid)
+        self.configuration_error = configuration_error
         self.last_result = None
 
     def connect(self):
@@ -160,6 +166,8 @@ class PushToTalkController:
 
     def _ensure_network(self):
         """Reconnect Wi-Fi when a reconnect manager is available."""
+        if self.configuration_error is not None:
+            raise self.configuration_error
         if self.reconnect_manager is not None:
             self.reconnect_manager.ensure_connected()
 
@@ -173,7 +181,10 @@ class PushToTalkController:
         """Record a connection failure and await an explicit reconnect press."""
         if self.diagnostics is not None:
             self.diagnostics.record_failure(category, error)
-        return self.state_machine.transition(STATE_OFFLINE)
+        return self.state_machine.transition(
+            STATE_OFFLINE,
+            display_detail=self.offline_display_detail,
+        )
 
 
 def create_controller(
@@ -189,20 +200,26 @@ def create_controller(
     wlan=None,
 ):
     """Create a controller from local Wi-Fi config and optional UI devices."""
+    configuration_error = None
     if config is None:
-        config = config_loader()
-    if service_client is None:
+        try:
+            config = config_loader()
+        except WiFiConfigError as exc:
+            configuration_error = exc
+    if service_client is None and configuration_error is None:
         service_client = LocalServiceClient(config.local_service_url, approved_hosts=config.approved_hosts)
 
     outputs = StatusOutputs(status_led=status_led, status_display=status_display, print_func=print_func)
     state_machine = AssistantStateMachine(outputs=outputs, diagnostics=diagnostics)
-    if reconnect_manager is None and connect_wifi_func is not None:
+    if reconnect_manager is None and connect_wifi_func is not None and configuration_error is None:
         reconnect_manager = ReconnectManager(config, connect_wifi_func, wlan=wlan, diagnostics=diagnostics)
     return PushToTalkController(
         service_client,
         state_machine=state_machine,
         reconnect_manager=reconnect_manager,
         diagnostics=diagnostics,
+        wifi_ssid=config.ssid if config is not None else None,
+        configuration_error=configuration_error,
     )
 
 

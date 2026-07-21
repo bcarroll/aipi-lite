@@ -287,6 +287,20 @@ class AipiLiteDisplayConfigTests(unittest.TestCase):
         self.assertTrue(all(len(line) <= max_chars for line in lines))
         self.assertIn("Check serial", lines)
 
+    def test_offline_network_note_stays_within_lcd_bounds(self):
+        """A long configured SSID should not displace the offline reconnect guidance."""
+        display = self.import_display()
+
+        lines = display.layout_status_lines(
+            "offline",
+            detail="Wi-Fi: {}".format("very-long-local-network-name-" * 4),
+        )
+
+        max_chars = display.max_chars_for_width(display.BODY_SCALE)
+        self.assertEqual(lines[:2], ("Press button", "to reconnect"))
+        self.assertLessEqual(len(lines), display.MAX_BODY_LINES)
+        self.assertTrue(all(len(line) <= max_chars for line in lines))
+
     def test_status_display_renders_ready_screen_and_controls_backlight(self):
         """StatusDisplay should clear, draw text, and turn on the backlight."""
         clear_imported_modules()
@@ -321,9 +335,10 @@ class AipiLiteDisplayConfigTests(unittest.TestCase):
         body_calls = [call for call in tft.calls if call[0] == "text" and call[1][1] >= 44]
         self.assertTrue(all(call[1][0] == 6 for call in body_calls))
 
-        offline_title, offline_lines = renderer.render_status("offline")
+        offline_title, offline_lines = renderer.render_status("offline", detail="Wi-Fi: LabNet")
         self.assertEqual(offline_title, "OFFLINE")
         self.assertIn("to reconnect", offline_lines)
+        self.assertIn("Wi-Fi: LabNet", offline_lines)
         self.assertIn(
             ("fillcircle", display.STATUS_DOT_POSITION, display.STATUS_DOT_RADIUS, display.RED),
             tft.calls,

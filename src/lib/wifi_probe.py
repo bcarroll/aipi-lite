@@ -5,6 +5,7 @@ import time
 from local_endpoint import EndpointPolicyError
 from local_endpoint import health_url_for_endpoint
 from wifi_config import load_config
+from wifi_config import offline_network_detail
 
 STATUS_OK = "ok"
 STATUS_ERROR = "error"
@@ -196,7 +197,7 @@ def run_probe(
         result = health_check(health_url, request_get=request_get)
     except WiFiProbeError as exc:
         _set_led_state(status_led, "offline")
-        _render_display(status_display, "offline")
+        _render_display(status_display, "offline", offline_network_detail(config.ssid))
         print_func("wifi_probe: offline: {}".format(type(exc).__name__))
         return STATUS_ERROR
     except Exception as exc:
