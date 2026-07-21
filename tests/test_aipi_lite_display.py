@@ -131,6 +131,14 @@ class FakeTFT:
         """Record circular status-indicator drawing calls."""
         self.calls.append(("fillcircle", position, radius, color))
 
+    def line(self, start, end, color):
+        """Record line drawing calls used by component and status graphics."""
+        self.calls.append(("line", start, end, color))
+
+    def rect(self, start, size, color):
+        """Record rectangle drawing calls used by the service graphic."""
+        self.calls.append(("rect", start, size, color))
+
 
 class FakeTime(types.ModuleType):
     """Minimal replacement for MicroPython's time module."""
@@ -155,6 +163,23 @@ class FakeStatusDisplay:
     def render_status(self, status, detail=None):
         """Record one rendered status screen."""
         self.statuses.append((status, detail))
+
+
+class FakeConnectivityStatus:
+    """Provide component status values to the connectivity renderer."""
+
+    def __init__(self, wifi_online, service_online):
+        """Create a deterministic Wi-Fi/service status pair."""
+        self.wifi_online = wifi_online
+        self.service_online = service_online
+
+    def first_offline_component(self):
+        """Return the first dependency that is not online."""
+        if not self.wifi_online:
+            return "wifi"
+        if not self.service_online:
+            return "service"
+        return None
 
 
 def install_micropython_stubs():
@@ -250,7 +275,17 @@ class AipiLiteDisplayConfigTests(unittest.TestCase):
 
         self.assertEqual(
             display.available_statuses(),
-            ("boot", "wifi", "offline", "ready", "recording", "processing", "speaking", "error"),
+            (
+                "boot",
+                "wifi",
+                "offline",
+                "limited",
+                "ready",
+                "recording",
+                "processing",
+                "speaking",
+                "error",
+            ),
         )
         for status in display.available_statuses():
             definition = display.screen_definition(status)
@@ -287,20 +322,6 @@ class AipiLiteDisplayConfigTests(unittest.TestCase):
         self.assertTrue(all(len(line) <= max_chars for line in lines))
         self.assertIn("Check serial", lines)
 
-    def test_offline_network_note_stays_within_lcd_bounds(self):
-        """A long configured SSID should not displace the offline reconnect guidance."""
-        display = self.import_display()
-
-        lines = display.layout_status_lines(
-            "offline",
-            detail="Wi-Fi: {}".format("very-long-local-network-name-" * 4),
-        )
-
-        max_chars = display.max_chars_for_width(display.BODY_SCALE)
-        self.assertEqual(lines[:2], ("Press button", "to reconnect"))
-        self.assertLessEqual(len(lines), display.MAX_BODY_LINES)
-        self.assertTrue(all(len(line) <= max_chars for line in lines))
-
     def test_status_display_renders_ready_screen_and_controls_backlight(self):
         """StatusDisplay should clear, draw text, and turn on the backlight."""
         clear_imported_modules()
@@ -335,17 +356,78 @@ class AipiLiteDisplayConfigTests(unittest.TestCase):
         body_calls = [call for call in tft.calls if call[0] == "text" and call[1][1] >= 44]
         self.assertTrue(all(call[1][0] == 6 for call in body_calls))
 
-        offline_title, offline_lines = renderer.render_status("offline", detail="Wi-Fi: LabNet")
-        self.assertEqual(offline_title, "OFFLINE")
-        self.assertIn("to reconnect", offline_lines)
-        self.assertIn("Wi-Fi: LabNet", offline_lines)
-        self.assertIn(
-            ("fillcircle", display.STATUS_DOT_POSITION, display.STATUS_DOT_RADIUS, display.RED),
-            tft.calls,
-        )
-
         renderer.backlight_off()
         self.assertEqual(FakePWM.created[-1].duty_u16_values[-1], 0)
+
+    def test_connectivity_screen_uses_fixed_rows_icons_text_and_actions(self):
+        """OFFLINE should pair fixed component graphics with explicit text status."""
+        clear_imported_modules()
+        install_micropython_stubs()
+        display = self.import_display()
+        hardware = display.create_display_hardware(
+            pin_factory=FakePin,
+            pwm_factory=FakePWM,
+            spi_factory=FakeSPI,
+            tft_factory=FakeTFT,
+        )
+        renderer = display.StatusDisplay(hardware, font=FAKE_FONT)
+
+        title, rows, actions = renderer.render_connectivity(
+            FakeConnectivityStatus(wifi_online=True, service_online=False),
+        )
+
+        self.assertEqual(title, "OFFLINE")
+        self.assertEqual(rows, (("WI-FI", "ONLINE"), ("SERVICE", "OFFLINE")))
+        self.assertEqual(actions, ("Tap: Retry service", "Hold 2s: Bypass"))
+
+        tft = FakeTFT.created[-1]
+        text_calls = [call for call in tft.calls if call[0] == "text"]
+        rendered_text = [call[2] for call in text_calls]
+        for expected in (
+            "OFFLINE",
+            "WI-FI",
+            "ONLINE",
+            "SERVICE",
+            "OFFLINE",
+            "Tap: Retry service",
+            "Hold 2s: Bypass",
+        ):
+            self.assertIn(expected, rendered_text)
+        self.assertTrue(any(call[0] == "rect" for call in tft.calls))
+        self.assertTrue(any(call[0] == "line" for call in tft.calls))
+        self.assertGreaterEqual(sum(call[0] == "fillcircle" for call in tft.calls), 3)
+
+        for call in text_calls:
+            _, (x, y), text, _, _, scale, _ = call
+            self.assertGreaterEqual(x, 0)
+            self.assertGreaterEqual(y, 0)
+            self.assertLessEqual(x + len(text) * (display.FONT_WIDTH * scale + 1), 128)
+            self.assertLessEqual(y + display.FONT_HEIGHT * scale, 128)
+
+    def test_limited_connectivity_screen_disables_ptt_and_retains_retry(self):
+        """LIMITED should preserve status rows while making PTT unavailability explicit."""
+        clear_imported_modules()
+        install_micropython_stubs()
+        display = self.import_display()
+        hardware = display.create_display_hardware(
+            pin_factory=FakePin,
+            pwm_factory=FakePWM,
+            spi_factory=FakeSPI,
+            tft_factory=FakeTFT,
+        )
+        renderer = display.StatusDisplay(hardware, font=FAKE_FONT)
+
+        title, rows, actions = renderer.render_connectivity(
+            FakeConnectivityStatus(wifi_online=False, service_online=False),
+            limited=True,
+        )
+
+        self.assertEqual(title, "LIMITED")
+        self.assertEqual(rows, (("WI-FI", "OFFLINE"), ("SERVICE", "OFFLINE")))
+        self.assertEqual(actions, ("PTT unavailable", "Tap: Retry Wi-Fi"))
+        rendered_text = [call[2] for call in FakeTFT.created[-1].calls if call[0] == "text"]
+        self.assertIn("PTT unavailable", rendered_text)
+        self.assertNotIn("Hold 2s: Bypass", rendered_text)
 
     def test_display_probe_cycles_status_screens_and_logs_transitions(self):
         """The display probe should cycle all status screens in order."""

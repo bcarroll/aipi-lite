@@ -200,6 +200,53 @@ class GpioStatusInputTests(unittest.TestCase):
         self.assertEqual(debounced.update(now_ms=120), button.BUTTON_RELEASED)
         self.assertFalse(debounced.is_pressed())
 
+    def test_debounced_button_emits_one_long_press_event_per_hold(self):
+        """A stable two-second hold should emit one long-press event before release."""
+        clear_imported_modules()
+        ensure_src_path()
+        button = importlib.import_module("button")
+        input_pin = FakeInputPin(value=1)
+        debounced = button.DebouncedButton(
+            debounce_ms=50,
+            long_press_ms=2000,
+            pin_factory=FakePinFactory(input_pin),
+            ticks_ms_func=lambda: 0,
+        )
+
+        input_pin.set_value(0)
+        self.assertIsNone(debounced.update(now_ms=10))
+        self.assertEqual(debounced.update(now_ms=60), button.BUTTON_PRESSED)
+        self.assertIsNone(debounced.update(now_ms=2059))
+        self.assertEqual(debounced.update(now_ms=2060), button.BUTTON_LONG_PRESSED)
+        self.assertIsNone(debounced.update(now_ms=2100))
+
+        input_pin.set_value(1)
+        self.assertIsNone(debounced.update(now_ms=2110))
+        self.assertEqual(debounced.update(now_ms=2160), button.BUTTON_RELEASED)
+
+    def test_long_press_duration_uses_wraparound_safe_tick_difference(self):
+        """Long-press timing should remain correct when the MicroPython tick counter wraps."""
+        clear_imported_modules()
+        ensure_src_path()
+        button = importlib.import_module("button")
+        input_pin = FakeInputPin(value=1)
+        original_ticks_diff = button.ticks_diff
+        button.ticks_diff = lambda newer, older: (newer - older + 128) % 256 - 128
+        try:
+            debounced = button.DebouncedButton(
+                debounce_ms=1,
+                long_press_ms=10,
+                pin_factory=FakePinFactory(input_pin),
+                ticks_ms_func=lambda: 250,
+            )
+            input_pin.set_value(0)
+            self.assertIsNone(debounced.update(now_ms=251))
+            self.assertEqual(debounced.update(now_ms=252), button.BUTTON_PRESSED)
+            self.assertIsNone(debounced.update(now_ms=5))
+            self.assertEqual(debounced.update(now_ms=6), button.BUTTON_LONG_PRESSED)
+        finally:
+            button.ticks_diff = original_ticks_diff
+
     def test_io_probe_cycles_led_states_and_prints_button_events(self):
         """The IO probe should cycle states, print events, and switch off."""
         clear_imported_modules()

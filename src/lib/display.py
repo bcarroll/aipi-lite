@@ -33,11 +33,19 @@ BODY_SCALE = 1
 MAX_BODY_LINES = 5
 STATUS_DOT_POSITION = (118, 8)
 STATUS_DOT_RADIUS = 4
+CONNECTIVITY_TITLE_Y = 6
+CONNECTIVITY_ROW_Y = (36, 62)
+CONNECTIVITY_COMPONENT_ICON_X = 12
+CONNECTIVITY_LABEL_X = 25
+CONNECTIVITY_BADGE_X = 78
+CONNECTIVITY_STATUS_X = 85
+CONNECTIVITY_ACTION_Y = (91, 108)
 
 STATUS_ORDER = (
     "boot",
     "wifi",
     "offline",
+    "limited",
     "ready",
     "recording",
     "processing",
@@ -61,6 +69,13 @@ STATUS_SCREENS = {
     "offline": {
         "title": "OFFLINE",
         "lines": ("Press button", "to reconnect"),
+        "foreground": WHITE,
+        "background": BLACK,
+        "status_dot": RED,
+    },
+    "limited": {
+        "title": "LIMITED",
+        "lines": ("PTT unavailable", "Tap to retry"),
         "foreground": WHITE,
         "background": BLACK,
         "status_dot": RED,
@@ -287,6 +302,102 @@ class StatusDisplay:
     def clear(self, color=BLACK):
         """Clear the display to a single RGB565 color."""
         self.tft.fill(color)
+
+    def _draw_wifi_icon(self, y, color):
+        """Draw a compact Wi-Fi signal graphic using bounded line primitives."""
+        x = CONNECTIVITY_COMPONENT_ICON_X
+        self.tft.line((x - 6, y), (x, y - 5), color)
+        self.tft.line((x, y - 5), (x + 6, y), color)
+        self.tft.line((x - 3, y + 3), (x, y), color)
+        self.tft.line((x, y), (x + 3, y + 3), color)
+        self.tft.fillcircle((x, y + 6), 1, color)
+
+    def _draw_service_icon(self, y, color):
+        """Draw a compact two-tier local-service graphic."""
+        x = CONNECTIVITY_COMPONENT_ICON_X - 6
+        self.tft.rect((x, y - 5), (12, 5), color)
+        self.tft.rect((x, y + 2), (12, 5), color)
+        self.tft.fillcircle((x + 2, y - 3), 1, color)
+        self.tft.fillcircle((x + 2, y + 4), 1, color)
+
+    def _draw_status_badge(self, y, online):
+        """Draw a green check or red cross status badge."""
+        color = GREEN if online else RED
+        center = (CONNECTIVITY_BADGE_X, y)
+        self.tft.fillcircle(center, 5, color)
+        if online:
+            self.tft.line((center[0] - 3, center[1]), (center[0] - 1, center[1] + 2), WHITE)
+            self.tft.line((center[0] - 1, center[1] + 2), (center[0] + 3, center[1] - 2), WHITE)
+            return
+        self.tft.line((center[0] - 2, center[1] - 2), (center[0] + 2, center[1] + 2), WHITE)
+        self.tft.line((center[0] + 2, center[1] - 2), (center[0] - 2, center[1] + 2), WHITE)
+
+    def _draw_connectivity_row(self, component, online, y):
+        """Draw one fixed connectivity row and return its explicit text status."""
+        if component == "WI-FI":
+            self._draw_wifi_icon(y, CYAN)
+        else:
+            self._draw_service_icon(y, CYAN)
+        status = "ONLINE" if online else "OFFLINE"
+        status_color = GREEN if online else RED
+        self.tft.text(
+            (CONNECTIVITY_LABEL_X, y - 4),
+            component,
+            WHITE,
+            self.font,
+            BODY_SCALE,
+            nowrap=True,
+        )
+        self._draw_status_badge(y, online)
+        self.tft.text(
+            (CONNECTIVITY_STATUS_X, y - 4),
+            status,
+            status_color,
+            self.font,
+            BODY_SCALE,
+            nowrap=True,
+        )
+        self.tft.line((LEFT_MARGIN, y + 12), (SCREEN_SIZE[0] - LEFT_MARGIN, y + 12), WHITE)
+        return component, status
+
+    def render_connectivity(self, connectivity, limited=False):
+        """Render fixed Wi-Fi/service rows with accessible retry and bypass guidance."""
+        title = "LIMITED" if limited else "OFFLINE"
+        retry_component = connectivity.first_offline_component()
+        retry_label = "Wi-Fi" if retry_component == "wifi" else "service"
+        if limited:
+            actions = ("PTT unavailable", "Tap: Retry {}".format(retry_label))
+        else:
+            actions = ("Tap: Retry {}".format(retry_label), "Hold 2s: Bypass")
+
+        self.backlight_on()
+        self.clear(BLACK)
+        self.tft.text(
+            (LEFT_MARGIN, CONNECTIVITY_TITLE_Y),
+            title,
+            WHITE,
+            self.font,
+            TITLE_SCALE,
+            nowrap=True,
+        )
+        rows = (
+            self._draw_connectivity_row("WI-FI", connectivity.wifi_online, CONNECTIVITY_ROW_Y[0]),
+            self._draw_connectivity_row(
+                "SERVICE",
+                connectivity.service_online,
+                CONNECTIVITY_ROW_Y[1],
+            ),
+        )
+        for y, action in zip(CONNECTIVITY_ACTION_Y, actions):
+            self.tft.text(
+                (LEFT_MARGIN, y),
+                action,
+                YELLOW if action.startswith("Tap:") or action.startswith("Hold") else WHITE,
+                self.font,
+                BODY_SCALE,
+                nowrap=True,
+            )
+        return title, rows, actions
 
     def render_status(self, status, detail=None):
         """Render a named status screen with optional detail text."""

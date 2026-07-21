@@ -6,6 +6,8 @@ from pins import RIGHT_FUNCTION_BUTTON
 
 BUTTON_PRESSED = "pressed"
 BUTTON_RELEASED = "released"
+BUTTON_LONG_PRESSED = "long_pressed"
+DEFAULT_LONG_PRESS_MS = 2000
 
 
 def ticks_ms():
@@ -25,7 +27,14 @@ def ticks_diff(newer, older):
 class DebouncedButton:
     """Read and debounce the active-low right function button."""
 
-    def __init__(self, pin_number=RIGHT_FUNCTION_BUTTON, debounce_ms=50, pin_factory=None, ticks_ms_func=None):
+    def __init__(
+        self,
+        pin_number=RIGHT_FUNCTION_BUTTON,
+        debounce_ms=50,
+        long_press_ms=DEFAULT_LONG_PRESS_MS,
+        pin_factory=None,
+        ticks_ms_func=None,
+    ):
         """Create a debounced button reader for the supplied GPIO pin."""
         if pin_factory is None:
             from machine import Pin
@@ -34,6 +43,9 @@ class DebouncedButton:
 
         self.pin_number = pin_number
         self.debounce_ms = debounce_ms
+        self.long_press_ms = int(long_press_ms)
+        if self.long_press_ms <= 0:
+            raise ValueError("long_press_ms must be greater than zero")
         self.ticks_ms_func = ticks_ms_func or ticks_ms
 
         try:
@@ -46,6 +58,8 @@ class DebouncedButton:
         self._last_raw_pressed = raw_pressed
         self._last_raw_change_ms = now
         self._stable_pressed = raw_pressed
+        self._press_started_ms = now if raw_pressed else None
+        self._long_press_emitted = False
 
     def _now(self):
         """Return the current debounce clock value in milliseconds."""
@@ -81,7 +95,20 @@ class DebouncedButton:
         ):
             self._stable_pressed = raw_pressed
             if raw_pressed:
+                self._press_started_ms = now
+                self._long_press_emitted = False
                 return BUTTON_PRESSED
+            self._press_started_ms = None
+            self._long_press_emitted = False
             return BUTTON_RELEASED
+
+        if (
+            self._stable_pressed
+            and not self._long_press_emitted
+            and self._press_started_ms is not None
+            and ticks_diff(now, self._press_started_ms) >= self.long_press_ms
+        ):
+            self._long_press_emitted = True
+            return BUTTON_LONG_PRESSED
 
         return None

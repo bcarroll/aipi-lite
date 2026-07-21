@@ -46,21 +46,24 @@ terminal:
 
 1. Device boots and shows local firmware status on the LCD, even without Wi-Fi
    connectivity.
-2. Device retries configured local Wi-Fi and service connectivity only when the
-   user presses GPIO42 while offline.
-3. Device verifies that the configured local service is reachable before a
-   push-to-talk exchange.
-4. Status LED shows offline, connecting, ready, recording, processing, speaking,
+2. Device shows separate fixed Wi-Fi and local-service rows with icons and
+   explicit online/offline text when either dependency is unavailable.
+3. A short GPIO42 press retries exactly the first offline dependency, while a
+   two-second hold bypasses the offline screen into a limited state without
+   reconnecting.
+4. Push-to-talk remains unavailable in limited mode and becomes available only
+   after both Wi-Fi and the configured local service are reachable.
+5. Status LED shows offline, connecting, ready, recording, processing, speaking,
    and error states.
-5. User presses the side function button to record.
-6. Device streams or uploads captured PCM audio to a local LAN service, unless a
+6. User presses the side function button to record.
+7. Device streams or uploads captured PCM audio to a local LAN service, unless a
    later on-device mode can handle the full exchange locally.
-7. Local service performs speech-to-text, assistant logic, and text-to-speech
+8. Local service performs speech-to-text, assistant logic, and text-to-speech
    for the MVP.
-8. A future on-device inference mode may perform some or all assistant logic
+9. A future on-device inference mode may perform some or all assistant logic
    locally if it remains responsive and does not require cloud services.
-9. Device receives or produces response text and audio.
-10. Device displays short status/response text and plays response audio.
+10. Device receives or produces response text and audio.
+11. Device displays short status/response text and plays response audio.
 
 ## On-Device Inference Position
 
@@ -152,10 +155,10 @@ Build the replacement firmware in small hardware validation steps:
 4. Display
    - Initialize the ST7735-compatible LCD over SPI.
    - Turn on GPIO3 backlight.
-   - Render boot, Wi-Fi, offline, online, recording, processing, speaking, and
-     error states, using explicit text plus red/green LCD status dots for
-     offline/online connectivity and the configured Wi-Fi SSID on the offline
-     screen.
+   - Render boot, Wi-Fi, offline, limited, online, recording, processing,
+     speaking, and error states.
+   - Use fixed Wi-Fi and local-service rows with check/cross icons plus explicit
+     online/offline text; do not expose configured network or endpoint details.
 
 5. Wi-Fi and local service
    - Join configured Wi-Fi.
@@ -293,14 +296,14 @@ baseline:
 | Plan component | Imported status | Evidence |
 | --- | --- | --- |
 | Flashing support | Implemented for backup/recovery milestone | `install.sh`, `RECOVERY.md`, `tools/setup_micropython_tools.sh`, `tools/README.md`, and `README.md` document and automate upload-only application installs by default, explicit installer self-update, sanitized debug artifacts, exact-size adaptive stock backup, structured `stock_backup_blocked` trace diagnostics, prerequisite cleanup, opt-in MicroPython flashing, source upload including tracked `src/lib` libraries, and stock restore using ignored local artifacts. |
-| MicroPython application entrypoint | Implemented | `src/main.py` renders a boot status screen, keeps GPIO10 board-power untouched, disables the speaker gate by default, initializes available status outputs, connects the local Wi-Fi/service path through the push-to-talk controller, and polls GPIO42 for press/release events. |
+| MicroPython application entrypoint | Implemented | `src/main.py` renders a boot status screen, keeps GPIO10 board-power untouched, disables the speaker gate by default, initializes available status outputs, connects the local Wi-Fi/service path through the push-to-talk controller, and polls GPIO42 for press/release/long-press events. |
 | Pin mapping | Partially implemented | `src/lib/display.py` uses GPIO3 backlight, GPIO15 CS, GPIO7 D/C, GPIO18 reset, GPIO16 SCLK, and GPIO17 MOSI, matching the LCD pins in `SPEC.md`. |
-| Display bring-up | Implemented, hardware validation pending | `src/lib/display.py` wraps ST7735 setup, PWM backlight control, text layout, and named status screens; `src/lib/display_probe.py` cycles boot, Wi-Fi, ready, recording, processing, speaking, and error screens. |
-| GPIO status LED and side button | Implemented, hardware validation pending | `src/lib/status_led.py`, `src/lib/button.py`, `src/lib/io_probe.py`, and `tests/test_gpio_status_input.py` add GPIO46 status states, GPIO42 active-low debounce events, and an opt-in GPIO-only serial probe. |
+| Display bring-up | Implemented, hardware validation pending | `src/lib/display.py` wraps ST7735 setup, PWM backlight control, text layout, named status screens, and component-aware offline/limited rows; `src/lib/display_probe.py` cycles boot, Wi-Fi, offline, limited, ready, recording, processing, speaking, and error screens. |
+| GPIO status LED and side button | Implemented, hardware validation pending | `src/lib/status_led.py`, `src/lib/button.py`, `src/lib/io_probe.py`, and `tests/test_gpio_status_input.py` add GPIO46 status states, GPIO42 active-low debounce plus press/release/once-per-hold long-press events, and an opt-in GPIO-only serial probe. |
 | Wi-Fi and local-only service policy | Implemented, hardware validation pending | `src/lib/wifi_config.py`, `src/lib/local_endpoint.py`, and `src/lib/wifi_probe.py` load ignored local Wi-Fi config, reject public service endpoints by default, call only local `/health`, and report health state through serial plus available LED/display modules. |
 | ES8311 audio control and I2S audio | Codec control, microphone capture, and speaker playback implemented; hardware validation pending | `src/lib/es8311.py` and `src/lib/audio_probe.py` configure the ES8311 over I2C at expected address `0x18`, derive the fixed 16 kHz codec clock from GPIO14 BCLK, keep the DAC muted, and default GPIO9 speaker enable off. `src/lib/audio_capture.py` and `src/lib/capture_probe.py` add bounded 16 kHz 16-bit mono capture, WAV packaging, and serial level metrics. `src/lib/audio_playback.py` and `src/lib/playback_probe.py` add bounded 16 kHz 16-bit mono PCM/WAV speaker playback, generated tone output, GPIO9 gate timing, and write/underrun metrics. |
 | Local service contract | Implemented | `src/lib/service_contract.py`, `src/lib/service_client.py`, `service/mock_service.py`, `service/README.md`, and `tests/test_local_service_contract.py` define `/health`, `/session`, `/audio`, `/response/{session_id}`, and `/audio/{response_id}.wav` with a local-only firmware client and deterministic mock service. |
-| Push-to-talk assistant flow | Implemented, hardware validation pending | `src/main.py`, `src/lib/assistant_state.py`, `src/lib/push_to_talk.py`, `src/lib/display.py`, `src/lib/reliability.py`, `tests/test_main_startup.py`, and `tests/test_push_to_talk_flow.py` add normal-boot startup that remains available offline, GPIO42 reconnect-on-press with a required second press to record, explicit LCD offline/online text with red/green dots plus the configured Wi-Fi SSID on offline screens, bounded capture handoff, local service exchange, response text/audio handling, playback, bounded retries, diagnostics, and recoverable exchange error states. |
+| Push-to-talk assistant flow | Implemented, hardware validation pending | `src/main.py`, `src/lib/assistant_state.py`, `src/lib/push_to_talk.py`, `src/lib/display.py`, `src/lib/reliability.py`, `tests/test_main_startup.py`, and `tests/test_push_to_talk_flow.py` add normal-boot startup that remains available offline, separate Wi-Fi/service status, icon-plus-text offline/limited LCD rows, one-component-per-short-press recovery, a two-second bypass into limited mode, bounded capture handoff, local service exchange, response text/audio handling, playback, bounded retries, diagnostics, and recoverable exchange error states. |
 | MVP release packaging | Implemented, hardware validation pending | `src/lib/version.py`, `MVP.md`, `README.md`, `src/README.md`, and `tests/test_mvp_release.py` add local-only version metadata, install/configuration guidance, validation checklist, no-cloud network verification, and a validation report template. |
 | On-device inference feasibility | Implemented, hardware validation pending | `src/lib/inference_probe.py`, `INFERENCE_FEASIBILITY.md`, `dev_install.sh`, `dev_install.cmd`, `tools/windows_installer.py`, and host tests add an offline-first simulated inference probe, deterministic local prompt fixture, model metadata validation, no-network policy checks, and redacted GitHub-ready bench capture on Unix or Windows. No supported model runtime or inference routing has been imported. |
 

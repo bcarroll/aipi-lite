@@ -116,7 +116,7 @@ def run_push_to_talk_app(
     if connection_state == "ready":
         print_func("main: push-to-talk ready")
     else:
-        print_func("main: push-to-talk offline; press button to reconnect")
+        print_func("main: push-to-talk offline; tap to retry or hold 2s to bypass")
     print_func("main: polling right function button")
     return poll_button_loop_func(controller, button, idle_polls=idle_polls)
 

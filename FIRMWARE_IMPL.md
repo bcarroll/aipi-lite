@@ -32,7 +32,7 @@ with text so the checklist does not rely on color alone.
 
 1. ✅ Complete | 🟡 Not Validated - `feat/01-backup-recovery`
 2. ✅ Complete | 🟡 Not Validated - `feat/02-micropython-skeleton`
-3. ✅ Complete | ✅ Validated - `feat/03-gpio-status-input`
+3. ✅ Complete | 🟡 Not Validated - `feat/03-gpio-status-input`
 4. ✅ Complete | ✅ Validated - `feat/04-display-bringup`
 5. ✅ Complete | 🟡 Not Validated - `feat/05-local-wifi-policy`
 6. ✅ Complete | 🟡 Not Validated - `feat/06-es8311-codec-control`
@@ -73,13 +73,13 @@ tooling directories.
 | `feat/02-micropython-skeleton` | Implemented | `src/boot.py`, `src/main.py`, `src/lib/pins.py`, `src/README.md`, and host tests provide safe startup defaults, grouped pin constants, serial-visible bring-up status, protected GPIO10 behavior, and hardware-free regression coverage. The copied application root now keeps only startup files plus ignored operator config, with reusable application modules under `src/lib/`. `main.py` now continues from safe startup into the local push-to-talk application instead of stopping at a skeleton-ready screen. | Validate the normal boot serial output and push-to-talk readiness on physical hardware. |
 | `feat/04-display-bringup` | Implemented, hardware validated | `src/lib/display.py`, `src/lib/display_probe.py`, `src/lib/aipi_lite_config.py`, `src/main.py`, tracked external display drivers under `src/lib/drivers/`, and `tests/test_aipi_lite_display.py` add an ST7735 wrapper, PWM backlight control, named status screens, an opt-in display probe, and host-side layout coverage. Operator hardware validation on 2026-06-25 reported that `display_probe.run_probe(cycles=2)` passed. | Capture a photo or full display probe serial transcript during a future bench run if exact orientation, color, and readability evidence is needed. |
 | LCD pin constants | Implemented | `src/lib/pins.py` includes display, button, status LED, ES8311 audio, speaker enable, charge input, and board power constants from `SPEC.md`. | Verify unconfirmed GPIO10 power behavior before any branch attempts to drive it. |
-| `feat/03-gpio-status-input` | Implemented, hardware validated | `src/lib/status_led.py`, `src/lib/button.py`, `src/lib/io_probe.py`, and `tests/test_gpio_status_input.py` add GPIO46 status states, GPIO42 active-low debounce events, a GPIO-only serial probe, and host regression coverage. Operator hardware validation on 2026-06-25 observed the GPIO46 LED blink several colors, recorded the GPIO42 button press correctly, and reported no errors. | Capture a full `io_probe` serial transcript during a future bench run if exact output evidence is needed. |
+| `feat/03-gpio-status-input` | Implemented, long-press hardware validation pending | `src/lib/status_led.py`, `src/lib/button.py`, `src/lib/io_probe.py`, and `tests/test_gpio_status_input.py` add GPIO46 status states, GPIO42 active-low debounce plus press/release/once-per-hold long-press events, a GPIO-only serial probe, and host regression coverage. Operator hardware validation on 2026-06-25 observed the GPIO46 LED blink several colors, recorded the GPIO42 button press correctly, and reported no errors; the later two-second long-press event remains to be validated on hardware. | Capture a full `io_probe` serial transcript and validate the two-second long-press event during a future bench run. |
 | `feat/05-local-wifi-policy` | Implemented, hardware validation pending | `src/lib/wifi_config.py`, `src/lib/local_endpoint.py`, `src/lib/wifi_probe.py`, `src/main.py`, `.gitignore`, `install.sh`, and `tests/test_wifi_policy.py` add ignored local config loading, installer-assisted `local_wifi_config.py` creation, local-only endpoint validation, a Wi-Fi `/health` probe, nonfatal `OFFLINE` UI for connection timeouts, always-on redacted `wifi_trace` serial diagnostics with bounded status heartbeats, and host-side policy coverage. | Run normal boot and `wifi_probe.run_probe()` on physical hardware with and without a reachable local network, recording the exact `wifi_trace`, connection, endpoint, offline/online, LED, and display behavior. |
 | `feat/06-es8311-codec-control` | Implemented, hardware validation pending | `src/lib/es8311.py`, `src/lib/audio_probe.py`, `src/main.py`, and `tests/test_es8311_codec.py` add ES8311 I2C detection, register setup, GPIO9 speaker gate defaults, and host-side regression coverage. | Run `audio_probe.run_probe()` on physical hardware and record the observed scan and audio behavior. |
 | `feat/07-audio-capture` | Implemented, hardware validation pending | `src/lib/audio_capture.py`, `src/lib/capture_probe.py`, and `tests/test_audio_capture.py` add bounded 16 kHz 16-bit mono I2S capture, WAV packaging, capture metrics, an opt-in capture probe, BCLK-derived ES8311 clocking, and host-side coverage. | Run `capture_probe.run_probe()` on physical hardware and record gain, clipping, noise floor, dropped-sample behavior, and BCLK-derived codec behavior. |
 | `feat/08-audio-playback` | Implemented, hardware validation pending | `src/lib/audio_playback.py`, `src/lib/playback_probe.py`, and `tests/test_audio_playback.py` add bounded 16 kHz 16-bit mono PCM/WAV playback, generated low-volume test tone output, I2S TX setup on GPIO11/GPIO12/GPIO14, BCLK-derived ES8311 clocking, GPIO9 speaker enable timing, DAC mute/unmute safety, and host-side coverage for format rejection and write metrics. | Run `playback_probe.run_probe()` on physical hardware and record volume, output noise, underruns, and BCLK-derived codec behavior. |
 | `feat/09-local-service-contract` | Implemented | `src/lib/service_contract.py`, `src/lib/service_client.py`, `service/mock_service.py`, `service/README.md`, and `tests/test_local_service_contract.py` define the local-only API, stdlib mock service, firmware client, request/response payloads, error handling, and host-side contract coverage. | Use the client during `feat/10-push-to-talk-flow` integration and validate it against the mock service from device hardware. |
-| `feat/10-push-to-talk-flow` | Implemented, hardware validation pending | `src/main.py`, `src/lib/assistant_state.py`, `src/lib/push_to_talk.py`, `src/lib/display.py`, `tests/test_main_startup.py`, and `tests/test_push_to_talk_flow.py` add normal-boot push-to-talk startup, an explicit offline state that still enters the GPIO42 poll loop, manual reconnect-on-press that requires a second press to record, LCD `OFFLINE`/`ONLINE` text with red/green status dots and the configured Wi-Fi SSID on offline screens, shared LED/display/serial state output, bounded capture handoff, local service exchange, response playback, recoverable error states, and host-side flow coverage. | Run one complete exchange and an offline-to-online reconnect on physical hardware, recording the red/green LCD indicator, Wi-Fi SSID note, button behavior, capture, upload, response text, playback, and serial diagnostics. |
+| `feat/10-push-to-talk-flow` | Implemented, hardware validation pending | `src/main.py`, `src/lib/assistant_state.py`, `src/lib/push_to_talk.py`, `src/lib/display.py`, `tests/test_main_startup.py`, and `tests/test_push_to_talk_flow.py` add normal-boot push-to-talk startup, separate Wi-Fi/service connectivity status, fixed icon-plus-text `OFFLINE`/`LIMITED` rows, one-component-per-short-press recovery, a two-second bypass into limited mode with push-to-talk disabled, shared LED/display/serial state output, bounded capture handoff, local service exchange, response playback, recoverable error states, and host-side flow coverage. | Run one complete exchange plus Wi-Fi-only, service-only, and limited-mode recovery on physical hardware; confirm the icons/text, exact two-second hold, one-component retry order, push-to-talk gating, capture, upload, response, playback, and serial diagnostics. |
 | `feat/11-reliability-power-errors` | Implemented, hardware validation pending | `src/lib/reliability.py`, `src/lib/push_to_talk.py`, `MVP.md`, and `tests/test_reliability.py` add bounded retry/backoff, retry diagnostics, reconnect helper, runtime diagnostics formatting, GPIO21 charge-pulse observation, and GPIO10 board-power guarding. | Validate repeated sessions, Wi-Fi/service recovery, serial diagnostics, GPIO21 observations, and that GPIO10 remains unchanged on hardware. |
 | `feat/12-mvp-release` | Implemented, hardware validation pending | `src/lib/version.py`, `MVP.md`, `README.md`, `src/README.md`, and `tests/test_mvp_release.py` add local-only MVP version metadata, install/configuration guidance, validation checklist, report template, and no-cloud verification expectations. | Complete the MVP validation report from a physical hardware run and record tested MicroPython/runtime versions. |
 | `spike/13-on-device-inference-feasibility` | Implemented, hardware validation pending | `src/lib/inference_probe.py`, `INFERENCE_FEASIBILITY.md`, `README.md`, `src/README.md`, `dev_install.sh`, `dev_install.cmd`, `tools/windows_installer.py`, and host tests add an offline-first simulated inference resource probe, deterministic local prompt fixture, model metadata validation, no-network policy checks, a feasibility report template, and redacted GitHub-ready bench capture on Unix or Windows. | Run the appropriate `dev_install` inference capture on physical hardware and record heap, flash, timing, button, LED, display, and decision behavior. Speaker output is not required for this validation path. |
@@ -262,7 +262,7 @@ Expected commits:
 - `firmware: add side button input`
   - Read GPIO42 as active-low.
   - Add debounce logic.
-  - Expose press and release events.
+  - Expose press, release, and once-per-hold two-second long-press events.
 
 - `firmware: add IO probe mode`
   - Cycle LED states.
@@ -596,15 +596,14 @@ assistant loop.
 Expected commits:
 
 - `firmware: add assistant state machine`
-  - Model `booting`, `connecting`, `ready`, `recording`, `uploading`,
-    `processing`, `speaking`, and `error`.
+  - Model `booting`, `connecting`, `offline`, `limited`, `ready`, `recording`,
+    `uploading`, `processing`, `speaking`, and `error`.
   - Drive LED and display from the same state source.
 
 - `firmware: add push-to-talk controller`
-  - Button press starts capture.
-  - Button release stops capture.
-  - Long-press behavior remains reserved until power-button behavior is better
-    understood.
+  - A short press while blocked retries exactly the first offline dependency.
+  - A two-second hold bypasses `OFFLINE` into `LIMITED` without reconnecting.
+  - Button press/release starts and completes capture only when ready.
 
 - `firmware: integrate local service exchange`
   - Start session.
@@ -635,14 +634,18 @@ Implementation notes:
   state to existing LED/display status names. `StatusOutputs` updates serial,
   GPIO46 LED, and LCD from the same state transition source.
 - `push_to_talk.py` adds `PushToTalkController`, which validates local service
-  health, moves to `recording` on debounced button press, captures bounded WAV
-  audio on release, starts a local service session, uploads audio, retrieves
-  response text/audio, plays response WAV audio, and returns to `ready`.
+  health, tracks Wi-Fi and service status independently, retries exactly the
+  first offline dependency on a short press, enters limited mode after a
+  two-second offline hold, moves to `recording` only when both dependencies are
+  online, captures bounded WAV audio on release, starts a local service session,
+  uploads audio, retrieves response text/audio, plays response WAV audio, and
+  returns to `ready`.
 - Capture, service, and playback dependencies are injectable so host tests can
   cover normal flow, service failure, capture failure, playback failure, and
   button polling without attached hardware.
-- Long-press behavior remains reserved until GPIO10 board-power behavior is
-  physically validated.
+- Offline and limited screens use fixed Wi-Fi/service rows with icons and
+  explicit status text. The two-second bypass does not drive GPIO10, reconnect,
+  or enable push-to-talk.
 
 ### `feat/11-reliability-power-errors`
 

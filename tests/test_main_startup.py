@@ -169,7 +169,10 @@ class MainStartupTests(unittest.TestCase):
         self.assertEqual(result, "offline")
         self.assertEqual(controller.connect_calls, 1)
         self.assertEqual(poll_calls, [(controller, button)])
-        self.assertIn("main: push-to-talk offline; press button to reconnect", messages)
+        self.assertIn(
+            "main: push-to-talk offline; tap to retry or hold 2s to bypass",
+            messages,
+        )
         self.assertIn("main: polling right function button", messages)
 
     def test_controller_factory_routes_wifi_trace_to_normal_boot_serial(self):
