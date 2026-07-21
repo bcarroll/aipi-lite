@@ -94,12 +94,23 @@ GitHub reporting workflow.
 Windows 10 or later operators can use native Command Prompt entry points for
 the same application-first upload path. Install Python 3 for Windows with the
 `py` launcher (or make `python` available on `PATH`), connect the already
-MicroPython-flashed AIPI-Lite by USB-C, then identify its `COM` port:
+MicroPython-flashed AIPI-Lite by USB-C, then let the installer select one
+detected port or identify the target explicitly:
 
 ```cmd
 install.cmd --list-ports
 install.cmd --port COM3 --yes
+install.cmd --yes
 ```
+
+Direct `install.cmd` runs store the validated port as `AIPI_SERIAL_PORT=COMx`
+in the ignored root `.conf`. An explicit `--port` takes precedence and replaces
+the saved value. When `--port` is omitted, the installer reuses the saved port;
+if none is saved and exactly one COM port is detected, it selects and saves that
+port automatically. Zero or multiple detected ports require one explicit
+`install.cmd --port COMx` run. A stale or invalid saved value also requires an
+explicit port so the installer never silently switches to another serial
+device. `install.cmd --list-ports` remains read-only.
 
 The first normal run creates an ignored local virtual environment under
 `tools\.local\micropython-venv` and installs `mpremote`. `--yes` explicitly
@@ -129,6 +140,9 @@ dev_install.cmd --device-label bench-a --hardware-note "display readable" -- --p
 It displays installer output and writes raw and redacted transcripts plus
 non-secret metadata under ignored `tools\.local\dev-install\`. Use
 `--prepare-only` to create those local artifacts without uploading to a device.
+Port persistence is intentionally limited to direct `install.cmd` runs;
+developer inference captures and `validate.cmd` continue requiring an explicit
+COM port to identify the device whose evidence is being collected.
 For an offline inference feasibility run that independently publishes its
 redacted report, use the Windows developer wrapper with a locally authenticated
 GitHub CLI:

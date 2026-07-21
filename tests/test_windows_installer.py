@@ -57,6 +57,243 @@ class WindowsInstallerTests(unittest.TestCase):
         ):
             self.assertEqual(installer.list_windows_serial_ports(), ["COM12", "COM7"])
 
+    def test_config_update_is_atomic_and_preserves_unrelated_lines(self):
+        """Updating the saved port should preserve all unrelated installer answers."""
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            conf_file = Path(temporary_directory) / ".conf"
+            conf_file.write_text(
+                "# local installer answers\n"
+                "AIPI_SERIAL_PORT=COM3\n"
+                "AIPI_RESET_AFTER_UPLOAD=no\n"
+                "\n"
+                "AIPI_SERIAL_PORT=COM4\n",
+                encoding="utf-8",
+            )
+
+            installer.write_config_value(conf_file, "AIPI_SERIAL_PORT", "COM7")
+
+            self.assertEqual(
+                conf_file.read_text(encoding="utf-8"),
+                "# local installer answers\n"
+                "AIPI_SERIAL_PORT=COM7\n"
+                "AIPI_RESET_AFTER_UPLOAD=no\n"
+                "\n"
+                "AIPI_SERIAL_PORT=COM7\n",
+            )
+            self.assertEqual(
+                installer.read_config_value(conf_file, "AIPI_SERIAL_PORT"),
+                "COM7",
+            )
+            self.assertEqual(list(conf_file.parent.glob(".conf.tmp.*")), [])
+
+    def test_config_write_failure_preserves_original_file(self):
+        """A failed atomic replacement should leave the existing config unchanged."""
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            conf_file = Path(temporary_directory) / ".conf"
+            original = "AIPI_SERIAL_PORT=COM3\nAIPI_RESET_AFTER_UPLOAD=yes\n"
+            conf_file.write_text(original, encoding="utf-8")
+
+            with mock.patch.object(installer.os, "replace", side_effect=OSError("simulated")):
+                with self.assertRaises(OSError):
+                    installer.write_config_value(conf_file, "AIPI_SERIAL_PORT", "COM7")
+
+            self.assertEqual(conf_file.read_text(encoding="utf-8"), original)
+            self.assertEqual(list(conf_file.parent.glob(".conf.tmp.*")), [])
+
+    def test_config_update_preserves_windows_line_endings(self):
+        """Updating a Windows-created config should retain CRLF line endings."""
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            conf_file = Path(temporary_directory) / ".conf"
+            conf_file.write_bytes(
+                b"AIPI_SERIAL_PORT=COM3\r\nAIPI_RESET_AFTER_UPLOAD=yes\r\n"
+            )
+
+            installer.write_config_value(conf_file, "AIPI_SERIAL_PORT", "COM7")
+
+            self.assertEqual(
+                conf_file.read_bytes(),
+                b"AIPI_SERIAL_PORT=COM7\r\nAIPI_RESET_AFTER_UPLOAD=yes\r\n",
+            )
+
+    def test_direct_install_port_precedence_prefers_explicit_then_saved(self):
+        """An explicit port should override config, while omission should reuse config."""
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            conf_file = Path(temporary_directory) / ".conf"
+            conf_file.write_text("AIPI_SERIAL_PORT=COM7\n", encoding="utf-8")
+
+            explicit = installer.resolve_direct_install_port(
+                "com9",
+                conf_file=conf_file,
+                detected_ports=["COM7", "COM9"],
+            )
+            saved = installer.resolve_direct_install_port(
+                None,
+                conf_file=conf_file,
+                detected_ports=["COM7", "COM9"],
+            )
+
+            self.assertEqual(
+                (explicit.port, explicit.source, explicit.persist),
+                ("COM9", "explicit", True),
+            )
+            self.assertEqual(
+                (saved.port, saved.source, saved.persist),
+                ("COM7", "saved", False),
+            )
+
+    def test_direct_install_auto_selects_one_port_for_missing_empty_or_auto_config(self):
+        """One detected COM port should satisfy every no-saved-port first-run form."""
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            conf_file = Path(temporary_directory) / ".conf"
+            for configured_value in (None, "", "auto"):
+                with self.subTest(configured_value=configured_value):
+                    conf_file.unlink(missing_ok=True)
+                    if configured_value is not None:
+                        conf_file.write_text(
+                            "AIPI_SERIAL_PORT={}\n".format(configured_value),
+                            encoding="utf-8",
+                        )
+
+                    selection = installer.resolve_direct_install_port(
+                        None,
+                        conf_file=conf_file,
+                        detected_ports=["COM12"],
+                    )
+
+                    self.assertEqual(
+                        (selection.port, selection.source, selection.persist),
+                        ("COM12", "detected", True),
+                    )
+
+    def test_direct_install_requires_explicit_port_for_zero_or_multiple_ports(self):
+        """Ambiguous first-run discovery should stop without changing config."""
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            conf_file = Path(temporary_directory) / ".conf"
+
+            with self.assertRaisesRegex(installer.InstallerError, "connect the AIPI-Lite"):
+                installer.resolve_direct_install_port(
+                    None,
+                    conf_file=conf_file,
+                    detected_ports=[],
+                )
+            with self.assertRaisesRegex(installer.InstallerError, "COM7, COM9"):
+                installer.resolve_direct_install_port(
+                    None,
+                    conf_file=conf_file,
+                    detected_ports=["COM7", "COM9"],
+                )
+
+            self.assertFalse(conf_file.exists())
+
+    def test_direct_install_rejects_invalid_or_stale_saved_port(self):
+        """Saved-port errors should require explicit correction instead of switching devices."""
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            conf_file = Path(temporary_directory) / ".conf"
+            conf_file.write_text("AIPI_SERIAL_PORT=not-a-port\n", encoding="utf-8")
+
+            with self.assertRaisesRegex(installer.InstallerError, "AIPI_SERIAL_PORT"):
+                installer.resolve_direct_install_port(
+                    None,
+                    conf_file=conf_file,
+                    detected_ports=["COM9"],
+                )
+
+            conf_file.write_text("AIPI_SERIAL_PORT=COM7\n", encoding="utf-8")
+            with self.assertRaisesRegex(installer.InstallerError, "saved port COM7"):
+                installer.resolve_direct_install_port(
+                    None,
+                    conf_file=conf_file,
+                    detected_ports=["COM9"],
+                )
+
+            self.assertEqual(
+                conf_file.read_text(encoding="utf-8"),
+                "AIPI_SERIAL_PORT=COM7\n",
+            )
+
+    def test_direct_install_persists_explicit_port_before_failed_upload(self):
+        """A validated explicit selection should survive a later upload failure."""
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            conf_file = Path(temporary_directory) / ".conf"
+            conf_file.write_text("AIPI_RESET_AFTER_UPLOAD=yes\n", encoding="utf-8")
+            args = installer.create_parser().parse_args(
+                ["install", "--port", "com9", "--yes"]
+            )
+            sink = self.make_sink()
+
+            with (
+                mock.patch.object(installer, "CONF_FILE", conf_file),
+                mock.patch.object(installer, "list_windows_serial_ports", return_value=["COM9"]),
+                mock.patch.object(installer, "run_install_request", return_value=7) as run_install,
+            ):
+                self.assertEqual(installer.run_install_command(args, sink), 7)
+
+            request = run_install.call_args.args[0]
+            self.assertEqual(request.port, "COM9")
+            saved_config = conf_file.read_text(encoding="utf-8")
+            self.assertIn("AIPI_RESET_AFTER_UPLOAD=yes", saved_config)
+            self.assertIn("AIPI_SERIAL_PORT=COM9", saved_config)
+
+    def test_direct_install_persists_one_auto_detected_port(self):
+        """A first direct install should save its sole detected COM port."""
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            conf_file = Path(temporary_directory) / ".conf"
+            args = installer.create_parser().parse_args(["install", "--yes"])
+            sink = self.make_sink()
+
+            with (
+                mock.patch.object(installer, "CONF_FILE", conf_file),
+                mock.patch.object(installer, "list_windows_serial_ports", return_value=["COM12"]),
+                mock.patch.object(installer, "run_install_request", return_value=0) as run_install,
+            ):
+                self.assertEqual(installer.run_install_command(args, sink), 0)
+
+            self.assertEqual(run_install.call_args.args[0].port, "COM12")
+            self.assertEqual(
+                conf_file.read_text(encoding="utf-8"),
+                "AIPI_SERIAL_PORT=COM12\n",
+            )
+            self.assertIn("saved to .conf", sink.transcript)
+
+    def test_direct_install_stops_before_upload_when_config_write_fails(self):
+        """A persistence failure should stop before prerequisites or device changes."""
+        args = installer.create_parser().parse_args(
+            ["install", "--port", "COM7", "--yes"]
+        )
+        sink = self.make_sink()
+
+        with (
+            mock.patch.object(installer, "list_windows_serial_ports", return_value=["COM7"]),
+            mock.patch.object(installer, "write_config_value", side_effect=OSError("simulated")),
+            mock.patch.object(installer, "run_install_request") as run_install,
+        ):
+            self.assertEqual(installer.run_install_command(args, sink), 1)
+
+        run_install.assert_not_called()
+        self.assertIn("error: simulated", sink.transcript)
+
+    def test_direct_install_list_ports_does_not_modify_config(self):
+        """The Windows port diagnostic should remain read-only."""
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            conf_file = Path(temporary_directory) / ".conf"
+            original = "AIPI_SERIAL_PORT=COM7\n"
+            conf_file.write_text(original, encoding="utf-8")
+            args = installer.create_parser().parse_args(["install", "--list-ports"])
+            sink = self.make_sink()
+
+            with (
+                mock.patch.object(installer, "CONF_FILE", conf_file),
+                mock.patch.object(installer, "list_windows_serial_ports", return_value=["COM9"]),
+            ):
+                self.assertEqual(installer.run_install_command(args, sink), 0)
+
+            self.assertEqual(conf_file.read_text(encoding="utf-8"), original)
+
+    def test_developer_install_request_still_requires_an_explicit_port(self):
+        """Direct-install persistence should not relax developer capture targeting."""
+        with self.assertRaisesRegex(installer.InstallerError, "--port COMx is required"):
+            installer.install_request_from_args(["--yes"])
+
     def test_upload_runs_copy_then_reset(self):
         """A successful install should copy, remove legacy root modules, and reset."""
         executable = Path("C:/local/mpremote.exe")

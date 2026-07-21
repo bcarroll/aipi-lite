@@ -1,7 +1,7 @@
 # Windows Installer Serial-Port Persistence Design
 
 Date: 2026-07-21
-Status: Approved for specification review
+Status: Implemented; Windows hardware validation pending
 
 ## Summary
 

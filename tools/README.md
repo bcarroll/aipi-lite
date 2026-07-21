@@ -14,6 +14,23 @@ the AIPI-Lite application manifest. Unknown `/src` content is preserved with a
 warning. Cleanup preserves root `boot.py`, `main.py`, and the ignored operator
 `local_wifi_config.py`.
 
+Direct Windows uploads persist a validated COM port in the same ignored root
+`.conf` used by the Unix installer:
+
+```cmd
+install.cmd --port COM7 --yes
+install.cmd --yes
+```
+
+An explicit port has priority and seeds `AIPI_SERIAL_PORT`. Later direct runs
+reuse it without `--port`. With no saved value, exactly one detected COM port is
+selected and saved automatically; zero or multiple ports require an explicit
+selection. Invalid or disconnected saved ports also require an explicit
+correction, preventing a silent switch to another device. `--list-ports` does
+not modify `.conf`. This convenience applies only to `install.cmd`;
+`dev_install.cmd --inference-probe` and `validate.cmd` retain explicit-port
+requirements.
+
 ## Bootstrap Flashing Tools
 
 The preferred full install path is the repository root installer:

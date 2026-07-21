@@ -28,6 +28,7 @@ from device_application import ignored_upload_artifacts
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
+CONF_FILE = REPO_ROOT / ".conf"
 SRC_DIR = REPO_ROOT / "src"
 TOOLS_ROOT = REPO_ROOT / "tools" / ".local"
 VENV_DIR = TOOLS_ROOT / "micropython-venv"
@@ -44,6 +45,7 @@ UPLOAD_FAILURE_DIAGNOSTIC_PREFIXES = (
     "error: ",
 )
 COM_PORT_PATTERN = re.compile(r"COM[1-9][0-9]*", re.IGNORECASE)
+SERIAL_PORT_CONFIG_KEY = "AIPI_SERIAL_PORT"
 SECRET_PATTERN = re.compile(
     r"(?i)\b(password|passwd|token|secret|key|ssid)\s*([=:])\s*[^\s]+"
 )
@@ -95,6 +97,15 @@ class InstallRequest:
     no_reset: bool
     assume_yes: bool
     preflight_reset: bool = False
+
+
+@dataclass(frozen=True)
+class PortSelection:
+    """Describe a resolved direct-install COM port and its persistence source."""
+
+    port: str
+    source: str
+    persist: bool
 
 
 @dataclass(frozen=True)
@@ -182,7 +193,10 @@ def create_parser() -> argparse.ArgumentParser:
         "install",
         help="Upload src/ to a connected MicroPython device.",
     )
-    install.add_argument("--port", help="Windows serial port, for example COM3.")
+    install.add_argument(
+        "--port",
+        help="Windows serial port to validate and save, for example COM3.",
+    )
     install.add_argument("--no-reset", action="store_true", help="Do not reset after upload.")
     install.add_argument(
         "-y",
@@ -278,6 +292,74 @@ def normalize_com_port(port: str) -> str:
     return normalized
 
 
+def read_config_value(conf_file: Path, key: str) -> str | None:
+    """Read one exact plain-text key from an installer configuration file."""
+    try:
+        with conf_file.open("r", encoding="utf-8", newline="") as stream:
+            contents = stream.read()
+    except FileNotFoundError:
+        return None
+
+    prefix = f"{key}="
+    for line in contents.splitlines():
+        if line.startswith(prefix):
+            return line[len(prefix) :]
+    return None
+
+
+def write_config_value(conf_file: Path, key: str, value: str) -> None:
+    """Atomically update one plain-text config key while preserving other lines."""
+    try:
+        with conf_file.open("r", encoding="utf-8", newline="") as stream:
+            original = stream.read()
+    except FileNotFoundError:
+        original = ""
+
+    newline = "\r\n" if "\r\n" in original else "\n"
+    prefix = f"{key}="
+    lines = original.splitlines()
+    updated_lines = []
+    found = False
+    for line in lines:
+        if line.startswith(prefix):
+            updated_lines.append(f"{key}={value}")
+            found = True
+        else:
+            updated_lines.append(line)
+    if not found:
+        updated_lines.append(f"{key}={value}")
+    updated = newline.join(updated_lines) + newline
+
+    conf_file.parent.mkdir(parents=True, exist_ok=True)
+    temporary = conf_file.with_name(f"{conf_file.name}.tmp.{os.getpid()}")
+    try:
+        with temporary.open("w", encoding="utf-8", newline="") as stream:
+            stream.write(updated)
+        os.replace(temporary, conf_file)
+    finally:
+        try:
+            temporary.unlink()
+        except FileNotFoundError:
+            pass
+
+
+def read_saved_serial_port(conf_file: Path = CONF_FILE) -> str | None:
+    """Return a normalized saved COM port or None for missing and auto values."""
+    configured = read_config_value(conf_file, SERIAL_PORT_CONFIG_KEY)
+    if (
+        configured is None
+        or not configured.strip()
+        or configured.strip().lower() == "auto"
+    ):
+        return None
+    try:
+        return normalize_com_port(configured)
+    except InstallerError as error:
+        raise InstallerError(
+            "AIPI_SERIAL_PORT in .conf is invalid; run install.cmd --port COMx to correct it"
+        ) from error
+
+
 def list_windows_serial_ports() -> list[str]:
     """Return COM ports registered by Windows without introducing pyserial."""
     if os.name != "nt":
@@ -296,6 +378,55 @@ def list_windows_serial_ports() -> list[str]:
     if result.returncode != 0:
         return []
     return sorted({match.upper() for match in COM_PORT_PATTERN.findall(result.stdout)})
+
+
+def resolve_direct_install_port(
+    explicit_port: str | None,
+    *,
+    conf_file: Path = CONF_FILE,
+    detected_ports: Sequence[str] | None = None,
+) -> PortSelection:
+    """Resolve an install.cmd port from explicit, saved, or unambiguous discovery."""
+    if detected_ports is None:
+        detected_ports = list_windows_serial_ports()
+    detected = sorted({normalize_com_port(port) for port in detected_ports})
+
+    if explicit_port:
+        selected = normalize_com_port(explicit_port)
+        if selected not in detected:
+            if not detected:
+                raise InstallerError(
+                    f"requested port {selected} was not detected; connect the AIPI-Lite and retry"
+                )
+            raise InstallerError(
+                f"requested port {selected} was not detected; available ports: {', '.join(detected)}"
+            )
+        return PortSelection(selected, "explicit", True)
+
+    saved = read_saved_serial_port(conf_file)
+    if saved is not None:
+        if saved not in detected:
+            if not detected:
+                detail = "no Windows COM ports were detected"
+            else:
+                detail = f"available ports: {', '.join(detected)}"
+            raise InstallerError(
+                f"saved port {saved} was not detected; {detail}; "
+                "run install.cmd --port COMx to correct .conf"
+            )
+        return PortSelection(saved, "saved", False)
+
+    if len(detected) == 1:
+        return PortSelection(detected[0], "detected", True)
+    if not detected:
+        raise InstallerError(
+            "no Windows COM ports were detected; connect the AIPI-Lite and retry"
+        )
+    raise InstallerError(
+        "multiple Windows COM ports were detected: {}; run install.cmd --port COMx".format(
+            ", ".join(detected)
+        )
+    )
 
 
 def mpremote_path() -> Path:
@@ -1263,14 +1394,17 @@ def run_install_command(args: argparse.Namespace, sink: OutputSink) -> int:
         return 1
 
     try:
-        install_args: list[str] = []
-        if args.port:
-            install_args.extend(["--port", args.port])
-        if args.no_reset:
-            install_args.append("--no-reset")
-        if args.assume_yes:
-            install_args.append("--yes")
-        request = install_request_from_args(install_args)
+        selection = resolve_direct_install_port(args.port, conf_file=CONF_FILE)
+        if selection.persist:
+            write_config_value(CONF_FILE, SERIAL_PORT_CONFIG_KEY, selection.port)
+            sink.write(f"Using Windows serial port {selection.port}; saved to .conf.")
+        else:
+            sink.write(f"Using saved Windows serial port {selection.port} from .conf.")
+        request = InstallRequest(
+            port=selection.port,
+            no_reset=args.no_reset,
+            assume_yes=args.assume_yes,
+        )
         return run_install_request(request, sink)
     except (InstallerError, OSError, subprocess.SubprocessError) as error:
         sink.write(f"error: {error}", error=True)
