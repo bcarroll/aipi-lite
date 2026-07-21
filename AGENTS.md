@@ -2,6 +2,8 @@
 
 - Always commit completed changes automatically in this repository.
 - Always push completed commits automatically in this repository.
+- Always merge completed, validated feature-branch work into `main` and push
+  `main` automatically so other machines can pull the finished changes.
 - Do not commit generated downloads, local virtual environments, firmware dumps,
   credentials, device tokens, or other local-only artifacts.
 - Continue to include tests for generated Python code and documentation updates
