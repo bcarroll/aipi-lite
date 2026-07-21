@@ -492,6 +492,32 @@ endpoints are rejected by default and are not contacted. A Wi-Fi connection
 timeout remains a failed probe result, but it renders the normal `OFFLINE`
 screen instead of presenting `WiFiProbeError` as a fatal device error.
 
+Every normal boot, reconnect attempt, and explicit probe now emits bounded
+`wifi_trace` lines to serial. Status changes print immediately; an unchanged
+status prints at most once per second until the existing 15-second timeout.
+For example:
+
+```text
+wifi_trace phase=start timeout_ms=15000
+wifi_trace phase=interface active=1
+wifi_trace phase=connect_requested credentials_present=1
+wifi_trace phase=status elapsed_ms=0 connected=0 status=connecting status_code=1
+wifi_trace phase=timeout elapsed_ms=15000 connected=0 status=connecting status_code=1
+```
+
+The mapped status names are `idle`, `connecting`, `wrong_password`,
+`no_ap_found`, `connect_fail`, and `got_ip`. Unknown numeric driver states stay
+visible as `unknown`; runtimes without `WLAN.status()` report `unavailable`.
+ESP32 MicroPython may continue reporting `connecting` while its Wi-Fi driver
+retries, so the final status is the runtime's observation rather than a guessed
+cause. A successful connection line includes the local IP, netmask, gateway,
+and DNS values returned by `ifconfig()`.
+
+Trace lines never include the SSID, password, service URL, approved hostnames,
+MAC/BSSID, nearby access-point names, or arbitrary exception text. Exceptions
+include only their type and a numeric error code when the runtime provides one.
+The trace is serial-only; it is not stored, uploaded, or sent as telemetry.
+
 See [src/README.md](src/README.md) for firmware image selection, upload, serial
 log, and safety notes for the MicroPython application tree.
 

@@ -3,7 +3,9 @@
 import importlib
 from pathlib import Path
 import sys
+import types
 import unittest
+from unittest import mock
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -169,6 +171,51 @@ class MainStartupTests(unittest.TestCase):
         self.assertEqual(poll_calls, [(controller, button)])
         self.assertIn("main: push-to-talk offline; press button to reconnect", messages)
         self.assertIn("main: polling right function button", messages)
+
+    def test_controller_factory_routes_wifi_trace_to_normal_boot_serial(self):
+        """Normal controller wiring should use the active serial print function for Wi-Fi trace."""
+        captured = {}
+        messages = []
+        connect_calls = []
+        diagnostics = object()
+
+        push_to_talk_module = types.ModuleType("push_to_talk")
+
+        def create_controller(**kwargs):
+            """Capture normal controller dependencies."""
+            captured.update(kwargs)
+            return "controller"
+
+        push_to_talk_module.create_controller = create_controller
+        reliability_module = types.ModuleType("reliability")
+        reliability_module.DiagnosticsLog = lambda print_func: diagnostics
+        wifi_probe_module = types.ModuleType("wifi_probe")
+
+        def connect_wifi(config, wlan=None, print_func=print):
+            """Record connector arguments and emit one representative trace line."""
+            connect_calls.append((config, wlan))
+            print_func("wifi_trace phase=start timeout_ms=15000")
+            return "connected-wlan"
+
+        wifi_probe_module.connect_wifi = connect_wifi
+
+        with mock.patch.dict(
+            sys.modules,
+            {
+                "push_to_talk": push_to_talk_module,
+                "reliability": reliability_module,
+                "wifi_probe": wifi_probe_module,
+            },
+        ):
+            controller = self.main.create_push_to_talk_controller(print_func=messages.append)
+
+        result = captured["connect_wifi_func"]("config", wlan="existing-wlan")
+
+        self.assertEqual(controller, "controller")
+        self.assertIs(captured["diagnostics"], diagnostics)
+        self.assertEqual(result, "connected-wlan")
+        self.assertEqual(connect_calls, [("config", "existing-wlan")])
+        self.assertEqual(messages, ["wifi_trace phase=start timeout_ms=15000"])
 
 
 if __name__ == "__main__":

@@ -313,6 +313,32 @@ A Wi-Fi timeout returns a failed probe result for validation purposes while
 rendering the normal `OFFLINE` screen rather than a fatal `WiFiProbeError`
 screen.
 
+The shared connector always emits bounded `wifi_trace` serial output during
+normal boot, button-triggered reconnects, and explicit probes. It reports
+interface activation, the connection request, elapsed time, connection state,
+and the MicroPython `WLAN.status()` name/code. Status changes print immediately;
+an unchanged status prints no more than once per second. A typical timeout is:
+
+```text
+wifi_trace phase=start timeout_ms=15000
+wifi_trace phase=interface active=1
+wifi_trace phase=connect_requested credentials_present=1
+wifi_trace phase=status elapsed_ms=0 connected=0 status=connecting status_code=1
+wifi_trace phase=timeout elapsed_ms=15000 connected=0 status=connecting status_code=1
+```
+
+Known statuses map to `idle`, `connecting`, `wrong_password`, `no_ap_found`,
+`connect_fail`, and `got_ip`. Unknown numeric states remain visible, and missing
+status support reports `unavailable`. ESP32 MicroPython can keep reporting
+`connecting` while its driver retries, so use the final status as runtime
+evidence rather than a guaranteed root-cause label. Successful connections also
+report the local `ifconfig()` IP, netmask, gateway, and DNS values.
+
+The trace never prints the SSID, password, service URL, approved hostnames,
+MAC/BSSID, nearby networks, or arbitrary exception text. It reports only an
+exception type and numeric error code when available. Output remains on the
+local serial stream and is neither persisted nor transmitted.
+
 ## Safety Notes
 
 - `boot.py` must remain safe to run before hardware probes. It should not

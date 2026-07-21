@@ -31,20 +31,45 @@ def ensure_src_path():
 class FakeWLAN:
     """Test double for MicroPython station WLAN."""
 
-    def __init__(self, connected_after=1):
+    def __init__(
+        self,
+        connected_after=1,
+        statuses=None,
+        connect_error=None,
+        status_error=None,
+        ifconfig_values=None,
+        ifconfig_error=None,
+    ):
         """Create a fake WLAN that connects after a fixed poll count."""
         self.active_values = []
         self.connect_calls = []
         self.connected_after = connected_after
         self.polls = 0
+        self.statuses = list(statuses or ())
+        self.status_calls = 0
+        self.connect_error = connect_error
+        self.status_error = status_error
+        self.ifconfig_error = ifconfig_error
+        self.active_state = True
+        self.ifconfig_values = ifconfig_values or (
+            "192.168.1.44",
+            "255.255.255.0",
+            "192.168.1.1",
+            "192.168.1.1",
+        )
 
-    def active(self, enabled):
-        """Record active state changes."""
+    def active(self, enabled=None):
+        """Record or return the fake interface active state."""
+        if enabled is None:
+            return self.active_state
+        self.active_state = bool(enabled)
         self.active_values.append(enabled)
 
     def connect(self, ssid, password):
         """Record Wi-Fi connection credentials without logging the password."""
         self.connect_calls.append((ssid, password))
+        if self.connect_error is not None:
+            raise self.connect_error
 
     def isconnected(self):
         """Return connected after the configured number of polls."""
@@ -53,13 +78,33 @@ class FakeWLAN:
 
     def ifconfig(self):
         """Return a fake network tuple."""
-        return ("192.168.1.44", "255.255.255.0", "192.168.1.1", "192.168.1.1")
+        if self.ifconfig_error is not None:
+            raise self.ifconfig_error
+        return self.ifconfig_values
+
+    def status(self):
+        """Return an injected status or derive one from connection progress."""
+        if self.status_error is not None:
+            raise self.status_error
+        if self.statuses:
+            index = min(self.status_calls, len(self.statuses) - 1)
+            self.status_calls += 1
+            return self.statuses[index]
+        if self.polls > self.connected_after:
+            return FakeNetwork.STAT_GOT_IP
+        return FakeNetwork.STAT_CONNECTING
 
 
 class FakeNetwork(types.ModuleType):
     """Test double for MicroPython's network module."""
 
     STA_IF = "STA_IF"
+    STAT_IDLE = 0
+    STAT_CONNECTING = 1
+    STAT_WRONG_PASSWORD = -3
+    STAT_NO_AP_FOUND = -2
+    STAT_CONNECT_FAIL = -1
+    STAT_GOT_IP = 3
 
     def __init__(self, wlan):
         """Create a fake network module that returns the supplied WLAN."""
@@ -233,11 +278,13 @@ class WifiPolicyTests(unittest.TestCase):
         wlan = FakeWLAN(connected_after=2)
         network = FakeNetwork(wlan)
         sleeps = []
+        messages = []
         ticks = iter((0, 100, 200))
 
         connected = wifi_probe.connect_wifi(
             config,
             network_module=network,
+            print_func=messages.append,
             sleep_ms_func=sleeps.append,
             ticks_ms_func=lambda: next(ticks),
         )
@@ -247,6 +294,183 @@ class WifiPolicyTests(unittest.TestCase):
         self.assertEqual(wlan.active_values, [True])
         self.assertEqual(wlan.connect_calls, [("LabNet", "secret-password")])
         self.assertEqual(sleeps, [250])
+        self.assertIn("wifi_trace phase=start timeout_ms=15000", messages)
+        self.assertIn("wifi_trace phase=interface active=1", messages)
+        self.assertIn("wifi_trace phase=connect_requested credentials_present=1", messages)
+        self.assertIn(
+            "wifi_trace phase=status elapsed_ms=100 connected=0 status=connecting status_code=1",
+            messages,
+        )
+        self.assertIn(
+            "wifi_trace phase=connected elapsed_ms=200 connected=1 status=got_ip status_code=3 "
+            "ip=192.168.1.44 netmask=255.255.255.0 gateway=192.168.1.1 dns=192.168.1.1",
+            messages,
+        )
+        trace_text = "\n".join(messages)
+        self.assertNotIn("LabNet", trace_text)
+        self.assertNotIn("secret-password", trace_text)
+        self.assertNotIn("http://192.168.1.10", trace_text)
+
+    def test_connect_wifi_throttles_status_heartbeats_and_reports_timeout(self):
+        """Unchanged status should print once per second before the final timeout."""
+        wifi_config = self.import_module("wifi_config")
+        wifi_probe = self.import_module("wifi_probe")
+        config = wifi_config.WiFiConfig("LabNet", "secret-password", "http://192.168.1.10")
+        wlan = FakeWLAN(connected_after=100, statuses=(1, 1, 1, 1, 1, -2))
+        network = FakeNetwork(wlan)
+        messages = []
+        sleeps = []
+        ticks = iter((0, 0, 250, 500, 750, 1000, 1250))
+
+        with self.assertRaises(wifi_probe.WiFiProbeError):
+            wifi_probe.connect_wifi(
+                config,
+                network_module=network,
+                timeout_ms=1250,
+                print_func=messages.append,
+                sleep_ms_func=sleeps.append,
+                ticks_ms_func=lambda: next(ticks),
+            )
+
+        status_lines = [line for line in messages if "phase=status" in line]
+        self.assertEqual(
+            status_lines,
+            [
+                "wifi_trace phase=status elapsed_ms=0 connected=0 status=connecting status_code=1",
+                "wifi_trace phase=status elapsed_ms=1000 connected=0 status=connecting status_code=1",
+                "wifi_trace phase=status elapsed_ms=1250 connected=0 status=no_ap_found status_code=-2",
+            ],
+        )
+        self.assertEqual(
+            messages[-1],
+            "wifi_trace phase=timeout elapsed_ms=1250 connected=0 status=no_ap_found status_code=-2",
+        )
+        self.assertEqual(sleeps, [250, 250, 250, 250, 250])
+
+    def test_connect_wifi_redacts_exception_text_and_reports_numeric_error(self):
+        """Connection exceptions should expose type and errno without secret text."""
+        wifi_config = self.import_module("wifi_config")
+        wifi_probe = self.import_module("wifi_probe")
+        config = wifi_config.WiFiConfig("LabNet", "secret-password", "http://192.168.1.10")
+        error = OSError(17, "LabNet secret-password http://192.168.1.10")
+        wlan = FakeWLAN(connect_error=error)
+        messages = []
+
+        with self.assertRaises(OSError):
+            wifi_probe.connect_wifi(
+                config,
+                network_module=FakeNetwork(wlan),
+                print_func=messages.append,
+                ticks_ms_func=lambda: 0,
+            )
+
+        self.assertEqual(
+            messages[-1],
+            "wifi_trace phase=exception operation=connect error_type={} errno=17".format(
+                type(error).__name__
+            ),
+        )
+        trace_text = "\n".join(messages)
+        self.assertNotIn("LabNet", trace_text)
+        self.assertNotIn("secret-password", trace_text)
+        self.assertNotIn("http://192.168.1.10", trace_text)
+
+    def test_connect_wifi_status_failure_is_visible_but_nonfatal(self):
+        """A status inspection failure should not replace a successful connection."""
+        wifi_config = self.import_module("wifi_config")
+        wifi_probe = self.import_module("wifi_probe")
+        config = wifi_config.WiFiConfig("LabNet", "secret-password", "http://192.168.1.10")
+        wlan = FakeWLAN(connected_after=0, status_error=OSError(5, "sensitive driver text"))
+        messages = []
+
+        connected = wifi_probe.connect_wifi(
+            config,
+            wlan=wlan,
+            network_module=FakeNetwork(wlan),
+            print_func=messages.append,
+            ticks_ms_func=lambda: 25,
+        )
+
+        self.assertIs(connected, wlan)
+        self.assertIn(
+            "wifi_trace phase=exception operation=status error_type=OSError errno=5",
+            messages,
+        )
+        self.assertIn(
+            "wifi_trace phase=status elapsed_ms=0 connected=1 status=unavailable "
+            "status_code=unavailable",
+            messages,
+        )
+        self.assertNotIn("phase=connect_requested", "\n".join(messages))
+        self.assertNotIn("sensitive driver text", "\n".join(messages))
+
+    def test_connect_wifi_reports_unknown_driver_status(self):
+        """An unknown numeric driver status should remain visible without guessing."""
+        wifi_config = self.import_module("wifi_config")
+        wifi_probe = self.import_module("wifi_probe")
+        config = wifi_config.WiFiConfig("LabNet", "secret-password", "http://192.168.1.10")
+        wlan = FakeWLAN(connected_after=0, statuses=(99,))
+        messages = []
+
+        wifi_probe.connect_wifi(
+            config,
+            wlan=wlan,
+            network_module=FakeNetwork(wlan),
+            print_func=messages.append,
+            ticks_ms_func=lambda: 10,
+        )
+
+        self.assertIn(
+            "wifi_trace phase=status elapsed_ms=0 connected=1 status=unknown status_code=99",
+            messages,
+        )
+
+    def test_wifi_status_constants_map_to_stable_trace_names(self):
+        """Every standard MicroPython status constant should have a stable trace name."""
+        wifi_probe = self.import_module("wifi_probe")
+        network = FakeNetwork(FakeWLAN())
+
+        expected_names = {
+            network.STAT_IDLE: "idle",
+            network.STAT_CONNECTING: "connecting",
+            network.STAT_WRONG_PASSWORD: "wrong_password",
+            network.STAT_NO_AP_FOUND: "no_ap_found",
+            network.STAT_CONNECT_FAIL: "connect_fail",
+            network.STAT_GOT_IP: "got_ip",
+        }
+
+        for status_code, expected_name in expected_names.items():
+            self.assertEqual(wifi_probe._status_name(network, status_code), expected_name)
+
+    def test_connect_wifi_ifconfig_failure_is_visible_but_nonfatal(self):
+        """A local IP inspection failure should not replace a successful connection."""
+        wifi_config = self.import_module("wifi_config")
+        wifi_probe = self.import_module("wifi_probe")
+        config = wifi_config.WiFiConfig("LabNet", "secret-password", "http://192.168.1.10")
+        wlan = FakeWLAN(
+            connected_after=0,
+            ifconfig_error=OSError(12, "LabNet secret-password sensitive IP text"),
+        )
+        messages = []
+
+        connected = wifi_probe.connect_wifi(
+            config,
+            wlan=wlan,
+            network_module=FakeNetwork(wlan),
+            print_func=messages.append,
+            ticks_ms_func=lambda: 0,
+        )
+
+        self.assertIs(connected, wlan)
+        self.assertIn(
+            "wifi_trace phase=exception operation=ifconfig error_type=OSError errno=12",
+            messages,
+        )
+        self.assertTrue(any(message.startswith("wifi_trace phase=connected") for message in messages))
+        trace_text = "\n".join(messages)
+        self.assertNotIn("LabNet", trace_text)
+        self.assertNotIn("secret-password", trace_text)
+        self.assertNotIn("sensitive IP text", trace_text)
 
     def test_health_check_closes_response_and_reports_status(self):
         """health_check should close the HTTP response after reading status."""
@@ -299,6 +523,7 @@ class WifiPolicyTests(unittest.TestCase):
         status = wifi_probe.run_probe(
             config=config,
             wlan=wlan,
+            network_module=FakeNetwork(wlan),
             request_get=fake_get,
             status_led=led,
             status_display=display,
@@ -311,6 +536,7 @@ class WifiPolicyTests(unittest.TestCase):
         self.assertEqual(display.screens[0], ("wifi", "connecting"))
         self.assertEqual(display.screens[-1], ("ready", "health 200"))
         self.assertIn("wifi_probe: health ok 200", messages)
+        self.assertTrue(any(message.startswith("wifi_trace phase=start") for message in messages))
 
     def test_wifi_probe_timeout_renders_offline_instead_of_error(self):
         """A Wi-Fi timeout should preserve the device's nonfatal offline UI."""
@@ -331,6 +557,7 @@ class WifiPolicyTests(unittest.TestCase):
         status = wifi_probe.run_probe(
             config=config,
             wlan=wlan,
+            network_module=FakeNetwork(wlan),
             request_get=lambda url: self.fail("health request should not run offline"),
             status_led=led,
             status_display=display,
