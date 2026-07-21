@@ -1,5 +1,6 @@
 tools/.local/
 .tools/
+.superpowers/
 /micropython/
 .conf
 .conf.tmp.*
