@@ -1,7 +1,7 @@
 # Windows Upload Root-Destination Design
 
-**Date:** 2026-07-20  
-**Issue:** #31  
+**Date:** 2026-07-20
+**Issue:** #31
 **Status:** Approved for specification review
 
 ## Goal
