@@ -942,7 +942,26 @@ class WindowsInstallerTests(unittest.TestCase):
         self.assertEqual(statuses["codec"], 1)
         self.assertEqual(statuses["capture"], 1)
         self.assertEqual(statuses["playback"], 1)
+        self.assertEqual(statuses["wifi"], 1)
         self.assertEqual(statuses["inference"], 0)
+
+    def test_device_validation_sweep_includes_the_local_wifi_probe(self):
+        """The sweep should run the local Wi-Fi/health probe before inference."""
+        names = [probe.name for probe in installer.DEVICE_VALIDATION_PROBES]
+        self.assertIn("wifi", names)
+        self.assertLess(names.index("playback"), names.index("wifi"))
+        self.assertLess(names.index("wifi"), names.index("inference"))
+
+        wifi_probe = next(
+            probe for probe in installer.DEVICE_VALIDATION_PROBES if probe.name == "wifi"
+        )
+        self.assertEqual(wifi_probe.serial_prefix, "wifi_probe:")
+        self.assertEqual(wifi_probe.observations, ())
+        self.assertIn("wifi_probe.run_probe() == 'ok'", wifi_probe.command)
+
+        batch_code = installer.device_validation_batch_code(installer.DEVICE_VALIDATION_PROBES)
+        compile(batch_code, "<device-validation-batch>", "exec")
+        self.assertIn(f"exec({wifi_probe.command!r})", batch_code)
 
     def test_device_validation_uploads_without_reset_and_creates_issue(self):
         """Validation should upload once, run every probe, and publish redacted evidence."""
@@ -1013,6 +1032,9 @@ class WindowsInstallerTests(unittest.TestCase):
             self.assertIn("Aggregate validation status: `0`", issue_body)
             self.assertIn("Device validation batch status: `0`", issue_body)
             self.assertIn("GPIO42 button press and release were observed: `pass`", issue_body)
+            self.assertIn("- wifi: `0`", issue_body)
+            self.assertIn("wifi_probe: complete", issue_body)
+            self.assertIn("probe_wifi_status=0", metadata)
             self.assertIn("inference_probe: complete", issue_body)
             self.assertNotIn("## Redacted Upload Failure Diagnostics", issue_body)
             self.assertNotIn("COM7", issue_body)

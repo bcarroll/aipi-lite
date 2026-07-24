@@ -147,13 +147,19 @@ validate.cmd --port COM8 --yes --device-label bench-a
 ```
 
 The command hard-resets the device, waits one second, uploads `src/`, then runs
-the display, GPIO status/button, codec, capture, playback, and offline inference
-probes through one raw-REPL session. It emits a per-probe result, continues
-after a device-side probe failure so the report contains all available evidence,
-and avoids reconnecting between probes. It does not reset into normal startup
-after the upload. After the sequence, answer the prompts with `pass`, `fail`,
-or `not-observed` for each physical observation. Only an all-pass run exits
-successfully.
+the display, GPIO status/button, codec, capture, playback, local Wi-Fi/health,
+and offline inference probes through one raw-REPL session. It emits a per-probe
+result, continues after a device-side probe failure so the report contains all
+available evidence, and avoids reconnecting between probes. It does not reset
+into normal startup after the upload. After the sequence, answer the prompts with
+`pass`, `fail`, or `not-observed` for each physical observation. Only an all-pass
+run exits successfully.
+
+The `wifi` probe connects to the operator-configured local network and calls the
+local `/health` endpoint, so a passing run requires an uploaded
+`src/local_wifi_config.py` and a reachable local mock service
+(`python3 -m service.mock_service ...`). Without both, the `wifi` probe fails and
+the aggregate status is non-zero.
 
 Each parsed run writes raw/redacted transcripts, metadata, and a GitHub-ready
 body under ignored `tools\.local\device-validation\`. The target repository is
@@ -161,9 +167,9 @@ body under ignored `tools\.local\device-validation\`. The target repository is
 For an application upload failure, that body contains at most 12 redacted
 high-signal diagnostics; the complete transcript remains local. Missing or
 unauthenticated `gh` leaves the body local and reports the publishing failure
-without changing the measured validation result. The workflow excludes Wi-Fi,
-local-service, and push-to-talk validation and does not flash firmware, erase
-flash, or drive GPIO10.
+without changing the measured validation result. The workflow includes the local
+Wi-Fi/health check but excludes full push-to-talk validation and does not flash
+firmware, erase flash, or drive GPIO10.
 
 For deeper hardware feedback, pass installer tracing through the wrapper:
 

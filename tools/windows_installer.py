@@ -149,6 +149,11 @@ DEVICE_VALIDATION_PROBES = (
         observations=("speaker",),
     ),
     DeviceValidationProbe(
+        name="wifi",
+        command="import wifi_probe; assert wifi_probe.run_probe() == 'ok'",
+        serial_prefix="wifi_probe:",
+    ),
+    DeviceValidationProbe(
         name="inference",
         command="import inference_probe; inference_probe.run_probe()",
         serial_prefix="inference_probe:",
