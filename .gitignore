@@ -1,6 +1,7 @@
 tools/.local/
 .tools/
 .superpowers/
+.worktrees/
 /micropython/
 .conf
 .conf.tmp.*
