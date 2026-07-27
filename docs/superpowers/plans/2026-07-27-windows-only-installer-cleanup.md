@@ -122,12 +122,108 @@ git push origin main
 - Modify: `src/README.md`
 - Modify: `tools/README.md`
 - Modify: `INFERENCE_FEASIBILITY.md`
+- Modify: `tests/test_recovery_docs.py`
+- Modify: `tests/test_mvp_release.py`
 
 **Interfaces:**
 - Consumes: existing `install.cmd`, `dev_install.cmd`, and `validate.cmd` command-line interfaces
-- Produces: one consistent Windows-only operator and developer workflow
+- Produces: one consistent Windows-only operator and developer workflow plus static regression coverage for the supported recovery guidance
 
-- [ ] **Step 1: Update repository instructions and top-level user workflow**
+- [ ] **Step 1: Replace obsolete recovery-documentation assertions**
+
+In `tests/test_recovery_docs.py`, retain the existing module, imports,
+`setUpClass`, and class structure but replace the four test methods with:
+
+```python
+    def test_documents_supported_application_recovery(self):
+        """Recovery docs should explain the supported Windows application path."""
+        for expected in (
+            "Bootloader Mode",
+            "Application Recovery",
+            "install.cmd --port COM3 --yes",
+            "validate.cmd --port COM3 --yes",
+            "already-flashed ESP32_GENERIC_S3 MicroPython",
+        ):
+            self.assertIn(expected, self.recovery_text)
+
+    def test_documents_unavailable_firmware_automation(self):
+        """Recovery docs should clearly bound unsupported firmware operations."""
+        for expected in (
+            "does not automate",
+            "stock firmware backup",
+            "MicroPython flashing",
+            "stock firmware restore",
+            "separately approved",
+        ):
+            self.assertIn(expected, self.recovery_text)
+        for retired in (
+            "./install.sh",
+            "--flash-micropython",
+            "--restore-backup",
+            "read-flash 0 0x1000000",
+        ):
+            self.assertNotIn(retired, self.recovery_text)
+
+    def test_documents_recovery_safety_checklist(self):
+        """Recovery docs should retain federal and hardware safety boundaries."""
+        for expected in (
+            "Recovery Safety Checklist",
+            "stable USB power",
+            "SPEC.md",
+            "public cloud",
+            "not staged in Git",
+            "GPIO10",
+        ):
+            self.assertIn(expected, self.recovery_text)
+
+    def test_roadmap_and_readme_reference_current_recovery(self):
+        """Top-level docs should point to the Windows-only recovery boundary."""
+        self.assertIn("[RECOVERY.md](RECOVERY.md)", self.readme_text)
+        self.assertIn("install.cmd --port COM3 --yes", self.readme_text)
+        self.assertIn("does not automate firmware backup", self.readme_text)
+        self.assertIn("`feat/01-backup-recovery` | Retired", self.impl_text)
+        self.assertIn("Windows CMD", self.impl_text)
+```
+
+In `tests/test_mvp_release.py`, replace
+`test_mvp_documentation_contains_required_checklists` with:
+
+```python
+    def test_mvp_documentation_contains_required_checklists(self):
+        """MVP docs should describe the Windows-only local release workflow."""
+        mvp_text = (REPO_ROOT / "MVP.md").read_text(encoding="utf-8")
+
+        for expected in (
+            "Firmware Recovery Limitations",
+            "MVP Install Guide",
+            "MVP Configuration Guide",
+            "MVP Validation Checklist",
+            "Validation Report Template",
+            "No-cloud network verification",
+            "install.cmd",
+            "validate.cmd",
+            "GPIO10 board-power control",
+            "Installer capture issue/link",
+            "Windows installer command",
+            "but without",
+        ):
+            self.assertIn(expected, mvp_text)
+        self.assertNotIn("install.sh", mvp_text)
+        self.assertNotIn("dev_install.sh", mvp_text)
+```
+
+- [ ] **Step 2: Run the updated documentation tests and verify they fail**
+
+Run:
+
+```bash
+python3 -m unittest tests.test_recovery_docs tests.test_mvp_release -v
+```
+
+Expected: the documentation assertions fail because current active docs still
+describe the retiring Unix workflows.
+
+- [ ] **Step 3: Update repository instructions and top-level user workflow**
 
 In `AGENTS.md`, replace the `install.sh` instruction with the supported Windows
 entry points and remove `bash -n install.sh` from required checks. Keep
@@ -153,7 +249,7 @@ dev_install.cmd --inference-probe --gh bcarroll/aipi-lite --device-label bench-a
 - Keep local-only configuration, Wi-Fi probe, application behavior, physical
   validation, security, and host-test guidance.
 
-- [ ] **Step 2: Update recovery and developer runbooks**
+- [ ] **Step 4: Update recovery and developer runbooks**
 
 Rewrite `RECOVERY.md` so it:
 
@@ -178,7 +274,7 @@ Remove WSL serial mappings and Unix trace instructions. Retain redaction,
 GitHub authentication, ignored artifact, and failure-reporting guidance that is
 implemented by the Windows helper.
 
-- [ ] **Step 3: Update MVP, application, tooling, and inference guides**
+- [ ] **Step 5: Update MVP, application, tooling, and inference guides**
 
 In `MVP.md`, replace Unix install and capture commands with Windows CMD
 equivalents, remove Unix syntax checks from the validation checklist and report
@@ -197,7 +293,7 @@ In `INFERENCE_FEASIBILITY.md`, remove the Unix captured-bench path and make the
 existing Windows captured-bench command the sole supported wrapper workflow.
 Use `COM3` rather than a Unix serial-device path in the report template.
 
-- [ ] **Step 4: Review active documentation for stale operational references**
+- [ ] **Step 6: Review active documentation for stale operational references**
 
 Run:
 
@@ -207,12 +303,12 @@ rg -n 'install\.sh|dev_install\.sh' AGENTS.md README.md RECOVERY.md DEVELOPER.md
 
 Expected: no matches.
 
-- [ ] **Step 5: Run focused documentation-adjacent regression checks**
+- [ ] **Step 7: Run focused documentation-adjacent regression checks**
 
 Run:
 
 ```bash
-python3 -m unittest tests.test_windows_only_installers tests.test_windows_installer tests.test_mvp_release tests.test_wifi_policy -v
+python3 -m unittest tests.test_windows_only_installers tests.test_windows_installer tests.test_recovery_docs tests.test_mvp_release tests.test_wifi_policy -v
 bash -n tools/setup_micropython_tools.sh
 git diff --check
 ```
@@ -220,10 +316,10 @@ git diff --check
 Expected: all tests and syntax checks pass; `git diff --check` produces no
 output.
 
-- [ ] **Step 6: Commit and push the active documentation**
+- [ ] **Step 8: Commit and push the active documentation**
 
 ```bash
-git add AGENTS.md README.md RECOVERY.md DEVELOPER.md MVP.md src/README.md tools/README.md INFERENCE_FEASIBILITY.md
+git add AGENTS.md README.md RECOVERY.md DEVELOPER.md MVP.md src/README.md tools/README.md INFERENCE_FEASIBILITY.md tests/test_recovery_docs.py tests/test_mvp_release.py
 git commit -m "docs: make installer guidance Windows-only"
 git push origin main
 ```
