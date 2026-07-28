@@ -8,14 +8,13 @@ source that must be uploaded to the device is tracked under `src/lib/`.
 The Windows `install.cmd` flow stages a cache-free source tree and copies its
 children to the explicit `mpremote` device-root destination `:/`, so startup
 files land at `/boot.py` and `/main.py` and application modules land under
-`/lib`. Windows and Unix installs share guarded cleanup that removes known
-legacy root modules and removes a misplaced `/src` tree only when it matches
-the AIPI-Lite application manifest. Unknown `/src` content is preserved with a
-warning. Cleanup preserves root `boot.py`, `main.py`, and the ignored operator
+`/lib`. The install uses guarded cleanup that removes known legacy root modules
+and removes a misplaced `/src` tree only when it matches the AIPI-Lite
+application manifest. Unknown `/src` content is preserved with a warning.
+Cleanup preserves root `boot.py`, `main.py`, and the ignored operator
 `local_wifi_config.py`.
 
-Direct Windows uploads persist a validated COM port in the same ignored root
-`.conf` used by the Unix installer:
+Direct Windows uploads persist a validated COM port in the ignored root `.conf`:
 
 ```cmd
 install.cmd --port COM7 --yes
@@ -33,55 +32,51 @@ requirements.
 
 ## Bootstrap Flashing Tools
 
-The preferred full install path is the repository root installer:
+The full install path is the Windows installer:
 
-```bash
-./install.sh --port /dev/cu.usbmodem31101
+```cmd
+install.cmd --port COM3 --yes
 ```
 
-It assumes ESP32_GENERIC_S3 MicroPython is already flashed on the connected
-device, prompts before downloading missing local prerequisites, stores answers
-in the ignored root `.conf` file, maps application files directly to device
-root with `mpremote`, performs the shared guarded cleanup, and resets the device
-in that cleanup connection. A reset failure after confirmed cleanup returns
-success with a manual power-cycle warning. Normal installs do not run an
-automatic `git pull`, back up stock firmware, erase flash, or write a
-MicroPython firmware image. Use
-`--self-update` only when an intentional `git pull --ff-only` and restart is
-wanted.
-Before explicit flash-sensitive operations, it verifies the ESP32-S3 ROM
-bootloader responds to `esptool chip-id` without auto-reset. Add
-`--flash-micropython --backup-stock` or set `AIPI_FLASH_MICROPYTHON=1` and
-`AIPI_BACKUP_STOCK_FIRMWARE=1` when a fresh stock recovery image is required
-before flashing.
+It assumes MicroPython is already flashed on the connected device, prompts
+before downloading missing local prerequisites, stores answers in the ignored
+root `.conf` file, copies application files to the device root with `mpremote`,
+performs the guarded cleanup, and resets the device in that cleanup connection.
+A reset failure after confirmed cleanup returns success with a manual
+power-cycle warning.
+
+`tools/windows_installer.py` backs the Windows CMD entry points and now also
+performs MicroPython firmware flashing with `--flash-micropython`. Flashing
+writes the Octal-SPIRAM build `ESP32_GENERIC_S3-SPIRAM_OCT`, which the AIPI-Lite
+requires because it has 8 MB of Octal PSRAM; the plain `ESP32_GENERIC_S3` build
+leaves the Wi-Fi driver without internal DRAM and fails with `Wifi Out of
+Memory`. The `--firmware-url`, `--baud`, and `--skip-erase` flags tune the flash
+step:
+
+```cmd
+install.cmd --port COM3 --flash-micropython --yes
+```
+
 Installer prompts are printed explicitly so they remain visible through
-`dev_install.sh` captures. In noninteractive runs, optional prompts use safe
+`dev_install.cmd` captures. In noninteractive runs, optional prompts use safe
 defaults, confirmations default to `no`, and the installer exits instead of
-waiting silently.
-Existing `--skip-backup` and `AIPI_SKIP_STOCK_BACKUP=1` remain accepted for
-explicit application-first install runs.
+waiting silently. Automated stock-firmware backup and restore are not provided
+by the repository scripts; those recovery operations are manual and documented
+in RECOVERY.md.
 
 Use the development wrapper when an install run should produce a shareable
 transcript for GitHub issue review or hardware validation analysis:
 
-```bash
-./dev_install.sh \
-  --gh \
-  --gh-title "AIPI-Lite bench-a install capture" \
-  --device-label bench-a \
-  --hardware-note "captured serial-visible install behavior" \
-  -- --port /dev/cu.usbmodem31101
+```cmd
+dev_install.cmd --gh bcarroll/aipi-lite --gh-title "AIPI-Lite bench-a install capture" --device-label bench-a --hardware-note "captured serial-visible install behavior" -- --port COM3 --yes
 ```
 
-`dev_install.sh` stores generated artifacts under
-`tools/.local/dev-install/`, which is ignored by Git. Each run includes the raw
-visible installer transcript, a redacted transcript, run metadata, and a
-GitHub-ready Markdown issue body. `--gh OWNER/REPO` creates a new issue through
-an already-authenticated `gh` CLI; bare `--gh` uses `AIPI_GITHUB_REPO` or the
-local `origin` remote when possible. `--issue OWNER/REPO#123` comments on an
-existing issue instead. Installer help captures and known stock-backup-blocked
-captures are kept local instead of creating automatic issues; use `--issue`
-after bench triage when one should be attached to a chosen tracker. If GitHub
+`dev_install.cmd` stores generated artifacts under `tools\.local\dev-install\`,
+which is ignored by Git. Each run includes the raw visible installer transcript,
+a redacted transcript, run metadata, and a GitHub-ready Markdown issue body.
+`--gh OWNER/REPO` creates a new issue through an already-authenticated `gh` CLI;
+bare `--gh` uses `AIPI_GITHUB_REPO` or the local `origin` remote when possible.
+`--issue OWNER/REPO#123` comments on an existing issue instead. If GitHub
 tooling is missing or unauthenticated, the local issue body remains available
 for manual review.
 
@@ -89,52 +84,28 @@ for manual review.
 
 Use the opt-in inference mode to upload the current application tree, run the
 offline `inference_probe`, and create one redacted GitHub issue with the bench
-evidence. It requires an explicit serial port and rejects flash, restore,
-backup, cleanup, help, and self-update operations so the run stays
-application-first. It disables generated Wi-Fi configuration and appends
-`--no-reset` before running the probe so the normal Wi-Fi application flow is
-not started during the capture.
-
-```bash
-./dev_install.sh \
-  --inference-probe \
-  --gh \
-  --device-label bench-a \
-  --inference-check display=pass \
-  --inference-check status-led=pass \
-  --inference-check button=pass \
-  --inference-check offline=pass \
-  -- --port /dev/cu.usbmodem31101
-```
-
-The check names are `display`, `status-led`, `button`, and `offline`; each
-value is `pass`, `fail`, or `not-observed`. The wrapper does not infer physical
-observations that were not supplied. It captures the stable probe serial lines,
-feasibility decision, and operator checks in the redacted issue body while
-keeping raw output, the local artifact path, and serial-device path local.
-`--prepare-only` skips the GitHub create step. A missing or unauthenticated
-`gh` CLI also leaves the redacted body local without masking the actual
-installer or probe exit status. Set `AIPI_DEV_MPREMOTE` only when an alternate
-local `mpremote` command is required, such as host-side test fixtures.
-
-### Windows Inference Feasibility Capture
-
-The Windows machine attached to the device can independently create the same
-GitHub issue through the native CMD wrapper. Install Python 3 and the GitHub
-CLI on that machine, authenticate `gh`, then run this from the repository root:
+evidence. It requires an explicit COM port and rejects flash, cleanup, and help
+operations so the run stays application-first. It disables generated Wi-Fi
+configuration and appends `--no-reset` before running the probe so the normal
+Wi-Fi application flow is not started during the capture. Install Python 3 and
+the GitHub CLI, authenticate `gh`, then run this from the repository root:
 
 ```cmd
 gh auth login
 dev_install.cmd --inference-probe --gh bcarroll/aipi-lite --device-label bench-a --inference-check display=pass --inference-check status-led=pass --inference-check button=pass --inference-check offline=pass -- --port COM3 --yes
 ```
 
-The command forces a no-reset application upload, runs only the offline probe,
-and writes raw/redacted artifacts plus `github-issue-body.md` under ignored
-`tools\.local\dev-install\`. It creates a new issue only with `--gh`; failed
-repository resolution, missing GitHub tooling, or GitHub authentication/creation
-failure leaves that redacted body local without masking the application or probe
-result. The issue body excludes COM ports, secrets, MAC addresses, and local
-paths.
+The check names are `display`, `status-led`, `button`, and `offline`; each value
+is `pass`, `fail`, or `not-observed`. The wrapper does not infer physical
+observations that were not supplied. It forces a no-reset application upload,
+runs only the offline probe, and writes raw/redacted artifacts plus
+`github-issue-body.md` under ignored `tools\.local\dev-install\`. It captures the
+stable probe serial lines, feasibility decision, and operator checks in the
+redacted issue body while keeping raw output, the local artifact path, and COM
+port local. It creates a new issue only with `--gh`; `--prepare-only` skips the
+GitHub create step. A missing or unauthenticated `gh` CLI leaves the redacted
+body local without masking the actual installer or probe exit status. The issue
+body excludes COM ports, secrets, MAC addresses, and local paths.
 
 ### Windows Physical Device Validation
 
@@ -170,33 +141,6 @@ unauthenticated `gh` leaves the body local and reports the publishing failure
 without changing the measured validation result. The workflow includes the local
 Wi-Fi/health check but excludes full push-to-talk validation and does not flash
 firmware, erase flash, or drive GPIO10.
-
-For deeper hardware feedback, pass installer tracing through the wrapper:
-
-```bash
-./dev_install.sh --trace -- --port /dev/cu.usbmodem31101
-```
-
-Trace mode enables installer debug logging and writes a separate redacted trace
-file under `tools/.local/debug/`. The trace records phase transitions,
-firmware metadata and checksum for explicit flash runs, prerequisite state,
-best-effort esptool target identity for explicit flash/restore runs,
-MicroPython/mpremote probes, upload inventory, command exit statuses, and reset
-status. It does not commit firmware dumps or local secrets.
-
-To force a clean prerequisite setup without deleting operational artifacts, run:
-
-```bash
-./install.sh --clean-tools
-```
-
-The cleanup removes `tools/.local/micropython-venv/`,
-`tools/.local/downloads/firmware/`, and other ignored prerequisite artifacts.
-It preserves tracked MicroPython libraries in `src/lib/`, stock backups in
-`tools/.local/backups/`, debug logs in `tools/.local/debug/`, and developer
-install captures in `tools/.local/dev-install/`. Use
-`./dev_install.sh --clean-tools` when the cleanup transcript should be captured
-for issue review.
 
 Use the setup script directly when you only want to stage tools, firmware, and
 libraries without flashing:

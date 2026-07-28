@@ -3,6 +3,12 @@
 Date: 2026-07-27
 Status: Approved for implementation
 
+> **Superseded 2026-07-28:** the Windows installer now DOES perform MicroPython
+> firmware flashing (`install.cmd --flash-micropython`, Octal-SPIRAM build
+> `ESP32_GENERIC_S3-SPIRAM_OCT`). The retirement of the Unix scripts still
+> stands; the "no Windows flashing" statement below no longer holds. Automated
+> stock-firmware backup and restore remain unavailable through repository scripts.
+
 ## Goal
 
 Retire the Unix installer entry points because future operator and developer

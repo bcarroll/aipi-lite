@@ -1170,5 +1170,169 @@ class WindowsInstallerTests(unittest.TestCase):
             self.assertIn("gh CLI not available", sink.transcript)
 
 
+class WindowsFirmwareFlashTests(unittest.TestCase):
+    """Validate Octal-SPIRAM firmware selection and flashing on Windows."""
+
+    SAMPLE_BOARD_HTML = """
+    <h2>Firmware</h2>
+    <a href="/resources/firmware/ESP32_GENERIC_S3-20260406-v1.28.0.bin">bin</a>
+    <a href="/resources/firmware/ESP32_GENERIC_S3-20260410-v1.29.0-preview.55.bin">preview</a>
+    <h2>Firmware (Support for Octal-SPIRAM)</h2>
+    <a href="/resources/firmware/ESP32_GENERIC_S3-SPIRAM_OCT-20260410-v1.29.0-preview.55.bin">preview</a>
+    <a href="/resources/firmware/ESP32_GENERIC_S3-SPIRAM_OCT-20260406-v1.28.0.bin">bin</a>
+    <h2>Firmware (4MiB flash)</h2>
+    <a href="/resources/firmware/ESP32_GENERIC_S3-FLASH_4M-20250415-v1.25.0.bin">bin</a>
+    """
+
+    def make_sink(self):
+        """Create an isolated output sink for a host-side test."""
+        return installer.OutputSink(io.StringIO(), io.StringIO())
+
+    def test_selects_stable_octal_spiram_build_over_other_variants(self):
+        """Selection should return the SPIRAM_OCT stable build, not standard/4M/preview."""
+        url = installer.select_spiram_oct_firmware_url(self.SAMPLE_BOARD_HTML)
+        self.assertEqual(
+            url,
+            "https://micropython.org/resources/firmware/"
+            "ESP32_GENERIC_S3-SPIRAM_OCT-20260406-v1.28.0.bin",
+        )
+        self.assertNotIn("preview", url)
+        self.assertNotIn("FLASH_4M", url)
+
+    def test_selection_error_when_no_octal_spiram_build_present(self):
+        """An HTML page without a SPIRAM_OCT build should raise a clear error."""
+        html = '<a href="/resources/firmware/ESP32_GENERIC_S3-20260406-v1.28.0.bin">bin</a>'
+        with self.assertRaises(installer.InstallerError):
+            installer.select_spiram_oct_firmware_url(html)
+
+    def test_resolve_firmware_url_passes_explicit_url_through(self):
+        """An explicit --firmware-url should be used verbatim without fetching."""
+        explicit = "https://example.invalid/custom-firmware.bin"
+
+        def fail_fetch(_url):
+            raise AssertionError("explicit URL must not trigger a page fetch")
+
+        self.assertEqual(
+            installer.resolve_firmware_url(explicit, fetch=fail_fetch),
+            explicit,
+        )
+
+    def test_resolve_firmware_url_resolves_latest_from_board_page(self):
+        """The default 'latest' should fetch the board page and pick SPIRAM_OCT."""
+        url = installer.resolve_firmware_url("latest", fetch=lambda _url: self.SAMPLE_BOARD_HTML)
+        self.assertIn("SPIRAM_OCT", url)
+
+    def test_esptool_commands_target_esp32s3_port_baud_and_offset(self):
+        """Erase and write commands should match the device chip, port, and offset."""
+        python = Path("C:/venv/Scripts/python.exe")
+        erase = installer.esptool_erase_command(python, "COM5")
+        self.assertEqual(
+            erase,
+            [str(python), "-m", "esptool", "--chip", "esp32s3", "--port", "COM5", "erase_flash"],
+        )
+        write = installer.esptool_write_command(python, "COM5", "460800", Path("fw.bin"))
+        self.assertEqual(
+            write,
+            [
+                str(python),
+                "-m",
+                "esptool",
+                "--chip",
+                "esp32s3",
+                "--port",
+                "COM5",
+                "--baud",
+                "460800",
+                "write_flash",
+                "0",
+                "fw.bin",
+            ],
+        )
+
+    def test_flash_then_upload_runs_erase_write_then_copy_in_order(self):
+        """With --flash-micropython, erase and write precede the application upload."""
+        request = installer.InstallRequest(
+            port="COM7", no_reset=False, assume_yes=True, flash_micropython=True
+        )
+        sink = self.make_sink()
+
+        def successful_command(command, output_sink):
+            """Complete each command and emit the cleanup marker for the exec call."""
+            if "exec" in command:
+                output_sink.write(installer.CLEANUP_COMPLETE_MARKER)
+            return 0
+
+        with (
+            mock.patch.object(installer, "list_windows_serial_ports", return_value=["COM7"]),
+            mock.patch.object(
+                installer, "ensure_flash_tooling", return_value=Path("C:/venv/Scripts/python.exe")
+            ),
+            mock.patch.object(
+                installer,
+                "resolve_firmware_url",
+                return_value="https://micropython.org/fw/ESP32_GENERIC_S3-SPIRAM_OCT.bin",
+            ),
+            mock.patch.object(installer, "download_firmware", return_value=Path("fw.bin")),
+            mock.patch.object(installer, "ensure_mpremote", return_value=Path("mpremote.exe")),
+            mock.patch.object(
+                installer, "run_streaming", side_effect=successful_command
+            ) as run_streaming,
+        ):
+            self.assertEqual(installer.run_install_request(request, sink), 0)
+
+        commands = [call.args[0] for call in run_streaming.call_args_list]
+        self.assertIn("erase_flash", commands[0])
+        self.assertIn("write_flash", commands[1])
+        self.assertEqual(commands[2][3:6], ["fs", "cp", "-r"])
+        self.assertIn("MicroPython flash complete.", sink.transcript)
+
+    def test_flash_write_failure_stops_before_upload(self):
+        """A failed flash write should return its status and never upload the app."""
+        request = installer.InstallRequest(
+            port="COM7", no_reset=False, assume_yes=True, flash_micropython=True
+        )
+        sink = self.make_sink()
+
+        def flash_then_fail(command, _output_sink):
+            """Erase succeeds; the write_flash step fails."""
+            return 0 if "erase_flash" in command else 4
+
+        with (
+            mock.patch.object(installer, "list_windows_serial_ports", return_value=["COM7"]),
+            mock.patch.object(
+                installer, "ensure_flash_tooling", return_value=Path("python.exe")
+            ),
+            mock.patch.object(installer, "resolve_firmware_url", return_value="http://x/fw.bin"),
+            mock.patch.object(installer, "download_firmware", return_value=Path("fw.bin")),
+            mock.patch.object(installer, "ensure_mpremote") as ensure_mpremote,
+            mock.patch.object(installer, "run_streaming", side_effect=flash_then_fail),
+        ):
+            self.assertEqual(installer.run_install_request(request, sink), 4)
+
+        ensure_mpremote.assert_not_called()
+        self.assertIn("Flash write failed with status 4.", sink.transcript)
+
+    def test_default_install_does_not_flash(self):
+        """Without --flash-micropython the installer uploads only, never flashing."""
+        request = installer.InstallRequest(port="COM7", no_reset=False, assume_yes=True)
+        sink = self.make_sink()
+
+        def successful_command(command, output_sink):
+            """Complete each command and emit the cleanup marker for the exec call."""
+            if "exec" in command:
+                output_sink.write(installer.CLEANUP_COMPLETE_MARKER)
+            return 0
+
+        with (
+            mock.patch.object(installer, "list_windows_serial_ports", return_value=["COM7"]),
+            mock.patch.object(installer, "ensure_mpremote", return_value=Path("mpremote.exe")),
+            mock.patch.object(installer, "run_flash") as run_flash,
+            mock.patch.object(installer, "run_streaming", side_effect=successful_command),
+        ):
+            self.assertEqual(installer.run_install_request(request, sink), 0)
+
+        run_flash.assert_not_called()
+
+
 if __name__ == "__main__":
     unittest.main()

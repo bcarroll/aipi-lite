@@ -236,6 +236,11 @@ is worth the added firmware complexity.
 
 ## Developer Install Capture
 
+> **Retired history (2026-07-28):** the Unix `dev_install.sh` / `install.sh`
+> wrappers described in this section have been removed. The supported developer
+> capture surface is now `dev_install.cmd` (backed by
+> `tools/windows_installer.py`). The design intent below is preserved as history.
+
 Add a host-only `dev_install.sh` wrapper for the development team. The wrapper
 should run the normal `install.sh` flow with the installer arguments supplied on
 the command line, preserve the interactive prompts and exit status an operator
@@ -295,7 +300,7 @@ baseline:
 
 | Plan component | Imported status | Evidence |
 | --- | --- | --- |
-| Flashing support | Implemented for backup/recovery milestone | `install.sh`, `RECOVERY.md`, `tools/setup_micropython_tools.sh`, `tools/README.md`, and `README.md` document and automate upload-only application installs by default, explicit installer self-update, sanitized debug artifacts, exact-size adaptive stock backup, structured `stock_backup_blocked` trace diagnostics, prerequisite cleanup, opt-in MicroPython flashing, source upload including tracked `src/lib` libraries, and stock restore using ignored local artifacts. |
+| Flashing support | Windows CMD scripts are the supported surface; the Unix `install.sh` tooling is retired history | The retired `install.sh` (removed) once automated upload-only installs, self-update, sanitized debug/trace artifacts, exact-size adaptive stock backup, `stock_backup_blocked` diagnostics, prerequisite cleanup, opt-in MicroPython flashing, and stock restore. The supported installer is now Windows-only: `install.cmd` / `dev_install.cmd` / `validate.cmd`, backed by `tools/windows_installer.py`, with `RECOVERY.md`, `tools/setup_micropython_tools.sh`, `tools/README.md`, and `README.md`. `install.cmd --flash-micropython` now flashes the Octal-SPIRAM build `ESP32_GENERIC_S3-SPIRAM_OCT`, required because the board has 8 MB Octal PSRAM; the plain `ESP32_GENERIC_S3` build leaves the ESP-IDF Wi-Fi driver without internal DRAM and fails instantly with `Wifi Out of Memory`. Automated stock backup and restore are no longer provided by repository scripts and are manual recovery steps. |
 | MicroPython application entrypoint | Implemented | `src/main.py` renders a boot status screen, keeps GPIO10 board-power untouched, disables the speaker gate by default, initializes available status outputs, connects the local Wi-Fi/service path through the push-to-talk controller, and polls GPIO42 for press/release/long-press events. |
 | Pin mapping | Partially implemented | `src/lib/display.py` uses GPIO3 backlight, GPIO15 CS, GPIO7 D/C, GPIO18 reset, GPIO16 SCLK, and GPIO17 MOSI, matching the LCD pins in `SPEC.md`. |
 | Display bring-up | Implemented, hardware validation pending | `src/lib/display.py` wraps ST7735 setup, PWM backlight control, text layout, named status screens, and component-aware offline/limited rows; `src/lib/display_probe.py` cycles boot, Wi-Fi, offline, limited, ready, recording, processing, speaking, and error screens. |
@@ -305,7 +310,7 @@ baseline:
 | Local service contract | Implemented | `src/lib/service_contract.py`, `src/lib/service_client.py`, `service/mock_service.py`, `service/README.md`, and `tests/test_local_service_contract.py` define `/health`, `/session`, `/audio`, `/response/{session_id}`, and `/audio/{response_id}.wav` with a local-only firmware client and deterministic mock service. |
 | Push-to-talk assistant flow | Implemented, hardware validation pending | `src/main.py`, `src/lib/assistant_state.py`, `src/lib/push_to_talk.py`, `src/lib/display.py`, `src/lib/reliability.py`, `tests/test_main_startup.py`, and `tests/test_push_to_talk_flow.py` add normal-boot startup that remains available offline, separate Wi-Fi/service status, icon-plus-text offline/limited LCD rows, one-component-per-short-press recovery, a two-second bypass into limited mode, bounded capture handoff, local service exchange, response text/audio handling, playback, bounded retries, diagnostics, and recoverable exchange error states. |
 | MVP release packaging | Implemented, hardware validation pending | `src/lib/version.py`, `MVP.md`, `README.md`, `src/README.md`, and `tests/test_mvp_release.py` add local-only version metadata, install/configuration guidance, validation checklist, no-cloud network verification, and a validation report template. |
-| On-device inference feasibility | Implemented, hardware validation pending | `src/lib/inference_probe.py`, `INFERENCE_FEASIBILITY.md`, `dev_install.sh`, `dev_install.cmd`, `tools/windows_installer.py`, and host tests add an offline-first simulated inference probe, deterministic local prompt fixture, model metadata validation, no-network policy checks, and redacted GitHub-ready bench capture on Unix or Windows. No supported model runtime or inference routing has been imported. |
+| On-device inference feasibility | Implemented, hardware validation pending | `src/lib/inference_probe.py`, `INFERENCE_FEASIBILITY.md`, `dev_install.cmd`, `tools/windows_installer.py`, and host tests add an offline-first simulated inference probe, deterministic local prompt fixture, model metadata validation, no-network policy checks, and redacted GitHub-ready bench capture on Windows. (The retired Unix `dev_install.sh` capture path has been removed.) No supported model runtime or inference routing has been imported. |
 
 The imported baseline should be treated as hardware evidence for the display
 branch and as a starting point for refactoring into the planned firmware layout.

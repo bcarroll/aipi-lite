@@ -62,11 +62,11 @@ class MvpReleaseTests(unittest.TestCase):
             "MVP Validation Checklist",
             "Validation Report Template",
             "No-cloud network verification",
-            "ESP32_GENERIC_S3 MicroPython",
+            "ESP32_GENERIC_S3-SPIRAM_OCT",
             "GPIO10 board-power control",
             "Installer capture issue/link",
             "Installer bootloader verification passes",
-            "but without",
+            "Stock-firmware backup is not automated",
         ):
             self.assertIn(expected, mvp_text)
 

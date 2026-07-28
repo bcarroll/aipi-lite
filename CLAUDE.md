@@ -22,29 +22,35 @@ python3 -m unittest tests.test_main_startup -v
 python3 -m unittest tests.test_main_startup.ClassName.test_method
 
 # Pre-commit checks expected by AGENTS.md
-bash -n install.sh
 bash -n tools/setup_micropython_tools.sh
 git diff --check
-
-# Upload the app to a MicroPython-flashed device (Unix)
-./install.sh --port /dev/cu.usbmodem31101
-./install.sh --list-ports          # probe serial ports, read-only
 
 # Run the stdlib-only local mock service for development
 python3 -m service.mock_service --host 127.0.0.1 --port 8080
 ```
 
-Windows uses `install.cmd` / `dev_install.cmd` / `validate.cmd` (backed by
-`tools/windows_installer.py`); Windows does not support firmware flash/backup/restore.
-Explicit firmware flashing, stock backup, and restore are Unix-only via
-`install.sh --flash-micropython` (see RECOVERY.md).
+The installer is **Windows-only**: `install.cmd` / `dev_install.cmd` / `validate.cmd`,
+all backed by `tools/windows_installer.py`. Typical use:
+
+```cmd
+install.cmd --port COM3 --yes                      :: upload src/ to the device
+install.cmd --list-ports                           :: probe COM ports, read-only
+install.cmd --port COM3 --flash-micropython --yes  :: flash MicroPython, then upload
+```
+
+`--flash-micropython` downloads and writes the **Octal-SPIRAM** MicroPython build
+(`ESP32_GENERIC_S3-SPIRAM_OCT`) — required by the board's 8 MB PSRAM; the plain
+`ESP32_GENERIC_S3` build starves the Wi-Fi radio of internal DRAM and fails with
+"Wifi Out of Memory". Stock-firmware **backup and restore are not automated**; they
+are manual recovery steps (see RECOVERY.md). The Unix `install.sh`/`dev_install.sh`
+scripts were retired.
 
 ## Architecture
 
 **Two trees, two languages, one boundary.** `src/` is MicroPython that runs on the
-device; everything else (`tools/`, `service/`, `tests/`, `install.sh`) is CPython/bash
-that runs on the host. They meet only at the serial upload — the host copies `src/`
-children to the device root `:/`, producing `/boot.py`, `/main.py`, `/lib`.
+device; everything else (`tools/`, `service/`, `tests/`, the `*.cmd` installers) is
+CPython that runs on the host. They meet only at the serial upload — the host copies
+`src/` children to the device root `:/`, producing `/boot.py`, `/main.py`, `/lib`.
 
 **Device import model.** `src/lib/` is uploaded to device `/lib`, so device code imports
 by *bare module name* (`import pins`, `from display import ...`), never `from src.lib...`.
@@ -85,12 +91,15 @@ They are kept out of the normal boot path so a bad probe never bricks startup. T
 `validate.cmd` and `dev_install.cmd --inference-probe` chain these into redacted,
 GitHub-ready bench reports.
 
-**Installer internals** (`install.sh`, `tools/device_application.py`,
-`tools/windows_installer.py`): `device_application.py` holds shared upload logic — the
-list of `LEGACY_ROOT_MODULES` to clean up (modules that used to live at root, now under
+**Installer internals** (`tools/windows_installer.py`, `tools/device_application.py`):
+`windows_installer.py` implements the `install`/`developer`/`validate` subcommands
+behind the `*.cmd` entry points, including optional `--flash-micropython`
+(SPIRAM_OCT selection via `select_spiram_oct_firmware_url`, download, and `esptool`
+erase/write). `device_application.py` holds shared upload logic — the list of
+`LEGACY_ROOT_MODULES` to clean up (modules that used to live at root, now under
 `/lib`), guarded `/src` removal (only when contents match the app manifest), and cache
-artifact filtering. Both the Unix and Windows installers share this cleanup + single
-`mpremote` connection for reset. Installer answers persist to a git-ignored root `.conf`.
+artifact filtering. Upload uses a single `mpremote` connection for cleanup + reset.
+Installer answers persist to a git-ignored root `.conf`.
 
 ## Conventions and guardrails
 
@@ -110,7 +119,7 @@ artifact filtering. Both the Unix and Windows installers share this cleanup + si
   `SPEC.md` and hardware testing confirm safe behavior.
 - Include tests for new Python code and update docs where appropriate.
 - **Before committing** firmware, installer, or tooling changes, run the relevant checks:
-  `python3 -m unittest discover -s tests -v`, `bash -n install.sh`,
+  `python3 -m unittest discover -s tests -v`,
   `bash -n tools/setup_micropython_tools.sh`, and `git diff --check`.
 
 ## Docs as source of truth

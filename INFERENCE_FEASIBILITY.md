@@ -59,7 +59,7 @@ does not load model binaries.
 Run it after uploading `src/`:
 
 ```bash
-mpremote connect /dev/cu.usbmodem31101 exec "import inference_probe; inference_probe.run_probe()"
+mpremote connect COM3 exec "import inference_probe; inference_probe.run_probe()"
 ```
 
 Expected serial output includes elapsed time, iteration count, heap metrics,
@@ -67,54 +67,32 @@ button poll count, fixture response, and the decision reason.
 
 ## Captured Bench Run
 
-Use `dev_install.sh --inference-probe` when the current application should be
+Use `dev_install.cmd --inference-probe` when the current application should be
 uploaded, the probe evidence should be captured, and the redacted result should
 be prepared as a new GitHub issue. The mode remains offline-first: it does not
-configure Wi-Fi, call an endpoint, load a model, use the speaker, back up
-firmware, flash firmware, or reset into the normal Wi-Fi application flow.
-
-```bash
-./dev_install.sh \
-  --inference-probe \
-  --gh \
-  --device-label bench-a \
-  --inference-check display=pass \
-  --inference-check status-led=pass \
-  --inference-check button=pass \
-  --inference-check offline=pass \
-  -- --port /dev/cu.usbmodem31101
-```
-
-The explicit `--port` is required. Each `--inference-check` accepts one of
-`pass`, `fail`, or `not-observed`; checks not supplied are reported as
-`not-observed`. The wrapper retains raw output locally, redacts the serial
-device path, secrets, Wi-Fi values, tokens, and MAC addresses from the issue
-body, then records the installer/probe statuses, decision, reason, stable
-serial lines, and operator checks. `--gh OWNER/REPO` creates one new issue per
-run, while a bare `--gh` resolves the configured repository or `origin`.
-
-If `gh` is unavailable or unauthenticated, the wrapper leaves the redacted
-`github-issue-body.md` under ignored `tools/.local/dev-install/` and preserves
-the actual installer/probe exit status. A `defer_inference` or
-`offline_unsupported` decision is recorded evidence, not a wrapper failure.
-
-### Windows Captured Bench Run
-
-On the Windows machine physically connected to the AIPI-Lite, use the native
-Command Prompt wrapper. It runs independently and publishes the same redacted
-evidence for later GitHub Issue Worker review:
+configure Wi-Fi, call an endpoint, load a model, use the speaker, flash
+firmware, or reset into the normal Wi-Fi application flow. Run it from the
+Windows Command Prompt on the machine physically connected to the AIPI-Lite:
 
 ```cmd
 gh auth login
 dev_install.cmd --inference-probe --gh bcarroll/aipi-lite --device-label bench-a --inference-check display=pass --inference-check status-led=pass --inference-check button=pass --inference-check offline=pass -- --port COM3 --yes
 ```
 
-The `COM` port must be explicit. Inference mode forces a no-reset upload, then
-runs the offline probe without generating Wi-Fi configuration or starting the
-normal application flow. `--gh OWNER/REPO` creates a new issue; bare `--gh`
-uses a GitHub `origin` remote when it can be resolved. A missing or
-unauthenticated `gh` CLI leaves the redacted body in ignored
-`tools\.local\dev-install\` without changing the real validation result.
+The explicit `--port COM3` is required. Each `--inference-check` accepts one of
+`pass`, `fail`, or `not-observed`; checks not supplied are reported as
+`not-observed`. Inference mode forces a no-reset upload, then runs the offline
+probe without generating Wi-Fi configuration or starting the normal application
+flow. The wrapper retains raw output locally, redacts the COM port, secrets,
+Wi-Fi values, tokens, and MAC addresses from the issue body, then records the
+installer/probe statuses, decision, reason, stable serial lines, and operator
+checks. `--gh OWNER/REPO` creates one new issue per run, while a bare `--gh`
+resolves the configured repository or `origin`.
+
+If `gh` is unavailable or unauthenticated, the wrapper leaves the redacted
+`github-issue-body.md` under ignored `tools\.local\dev-install\` and preserves
+the actual installer/probe exit status. A `defer_inference` or
+`offline_unsupported` decision is recorded evidence, not a wrapper failure.
 
 ## Success Criteria
 
@@ -153,7 +131,7 @@ Firmware commit:
 Speaker connected: no
 
 Command:
-mpremote connect /dev/cu.usbmodem31101 exec "import inference_probe; inference_probe.run_probe()"
+mpremote connect COM3 exec "import inference_probe; inference_probe.run_probe()"
 
 Observed serial lines:
 - elapsed_ms / iterations:

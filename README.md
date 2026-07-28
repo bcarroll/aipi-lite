@@ -4,98 +4,17 @@ Local-only replacement firmware work for the XORIGIN AI PI-Lite / AIPI Lite.
 
 ## Current MicroPython Workflow
 
-Use the repository installer to upload the current application baseline to an
-AIPI-Lite that already has ESP32_GENERIC_S3 MicroPython flashed:
+The repository installer is Windows-only. Run it from a Windows 10 or later
+Command Prompt with Python 3 installed (the `py` launcher, or `python` on
+`PATH`). Connect the AIPI-Lite over USB-C, then upload the current application
+baseline:
 
-```bash
-./install.sh --port /dev/cu.usbmodem31101
+```cmd
+install.cmd --port COM3 --yes
 ```
 
-The installer does not run `git pull` by default. Use `--self-update` or
-`AIPI_INSTALL_SELF_UPDATE=1` only when you intentionally want it to run
-`git pull --ff-only` and restart itself before installer actions.
-
-For issue reporting or future troubleshooting context, add `--debug` to keep a
-sanitized installer transcript and environment summary under
-`tools/.local/debug/`:
-
-```bash
-./install.sh --debug --port /dev/cu.usbmodem31101
-```
-
-The debug file path is printed during the run. Use `--debug-file FILE` when a
-specific GitHub issue artifact path is needed. The generated file redacts common
-secrets, credentials, SSIDs, tokens, and MAC-like identifiers before writing the
-transcript.
-
-Use `--trace` when a hardware or firmware install run needs deeper feedback for
-improvement. Trace mode enables `--debug` and writes a separate redacted trace
-artifact under `tools/.local/debug/` with installer phase transitions,
-prerequisite status, MicroPython/mpremote runtime probes, source upload
-inventory, command exit statuses, and reset status. Explicit firmware flashing
-runs also include firmware path/size/checksum metadata and best-effort esptool
-target identity probes:
-
-```bash
-./install.sh --trace --port /dev/cu.usbmodem31101
-```
-
-Use `--trace-file FILE` when a specific local trace path is needed. Trace files
-remain ignored local artifacts and must be reviewed before sharing; the
-installer redacts common secrets, credentials, SSIDs, tokens, and MAC-like
-identifiers but does not commit or copy firmware dumps.
-
-Use `--clean-tools` when you need to remove downloaded prerequisite artifacts
-before a fresh setup run:
-
-```bash
-./install.sh --clean-tools
-```
-
-This removes the local MicroPython virtual environment, downloaded firmware
-cache, and other ignored prerequisite artifacts under `tools/.local/`. It
-preserves tracked MicroPython libraries in `src/lib/`, stock firmware backups,
-installer debug logs, and developer install captures. `--clean-prereqs` is
-accepted as an alias.
-
-For development-team install captures and future hardware validation runs, use
-`dev_install.sh`. It runs the same `install.sh` path, passes installer arguments
-through unchanged, shows installer output interactively, and stores raw,
-redacted, metadata, and GitHub issue-body artifacts under ignored
-`tools/.local/dev-install/`:
-
-```bash
-./dev_install.sh \
-  --device-label bench-a \
-  --hardware-note "display probe readable after install" \
-  -- --port /dev/cu.usbmodem31101
-```
-
-Add `--issue OWNER/REPO#NUMBER` or a GitHub issue URL to post the redacted issue
-body as a comment when the `gh` CLI is already installed and authenticated. Use
-`--gh OWNER/REPO` to create a new GitHub issue from the same redacted body, or
-use bare `--gh` to read the repository from `AIPI_GITHUB_REPO` or the local
-`origin` remote. Add `--gh-title TITLE` when a specific issue title is useful.
-Installer help captures and known stock-backup-blocked install captures stay
-local instead of creating automatic issues; use `--issue OWNER/REPO#NUMBER`
-after bench triage to append one to a chosen tracking issue.
-If GitHub tooling is missing, unauthenticated, or `--prepare-only` is supplied,
-the script leaves the issue body locally for inspection or manual submission.
-The wrapper returns the installer exit status so capture or posting problems do
-not mask install failures. The same cleanup option can be captured by running
-`./dev_install.sh --clean-tools`. For deeper hardware feedback, run the wrapper
-with `--trace -- ...` so the visible transcript records the local trace artifact
-path while the installer writes detailed trace data under `tools/.local/debug/`.
-See [DEVELOPER.md](DEVELOPER.md) for the concise connected-device test and
-GitHub reporting workflow.
-
-### Windows CMD workflow
-
-Windows 10 or later operators can use native Command Prompt entry points for
-the same application-first upload path. Install Python 3 for Windows with the
-`py` launcher (or make `python` available on `PATH`), connect the already
-MicroPython-flashed AIPI-Lite by USB-C, then let the installer select one
-detected port or identify the target explicitly:
+Let the installer select a single detected port, or identify the target
+explicitly:
 
 ```cmd
 install.cmd --list-ports
@@ -111,6 +30,9 @@ port automatically. Zero or multiple detected ports require one explicit
 `install.cmd --port COMx` run. A stale or invalid saved value also requires an
 explicit port so the installer never silently switches to another serial
 device. `install.cmd --list-ports` remains read-only.
+
+See [DEVELOPER.md](DEVELOPER.md) for the concise connected-device test and
+GitHub reporting workflow.
 
 The first normal run creates an ignored local virtual environment under
 `tools\.local\micropython-venv` and installs `mpremote`. `--yes` explicitly
@@ -159,112 +81,74 @@ up firmware, or flash firmware. The published body excludes raw transcripts,
 COM ports, secrets, MAC addresses, and local paths. If `gh` is unavailable or
 cannot create the issue, the redacted `github-issue-body.md` remains under
 ignored `tools\.local\dev-install\` and the installer/probe result is
-preserved. Windows still does not support firmware flashing, backup, restore,
-or trace artifacts; use the Unix scripts for those workflows.
+preserved. The inference capture never flashes firmware; firmware flashing is a
+separate explicit `install.cmd --flash-micropython` operation described below.
+Automated stock-firmware backup and restore are not provided by the repository
+scripts and remain manual recovery steps.
 
 If local prerequisites are missing, the installer prompts before downloading or
 installing components under ignored `tools/.local/`, then continues with the
 upload workflow after approval. The default setup path installs `mpremote`,
 ensures external MicroPython library source exists under `src/lib/`, and skips
 downloading a MicroPython firmware image.
-Prompts are written explicitly so they remain visible through `dev_install.sh`
+Prompts are written explicitly so they remain visible through `dev_install.cmd`
 captures. If stdin is not interactive, the installer uses safe defaults for
 optional prompts, treats confirmations as `no`, and exits instead of waiting
 silently.
 
 Installer answers are stored in a root `.conf` file, which is ignored by Git.
-The script reads that file on later runs for values such as serial port,
+The installer reads that file on later runs for values such as serial port,
 download approval, upload approval, bootloader confirmation for explicit flash
-or restore runs, flash approval, backup path, reset preference, and optional
-local Wi-Fi config generation values.
-Run `./install.sh --list-env` to print the supported environment override names
-without expanding the main help screen.
+runs, flash approval, reset preference, and optional local Wi-Fi config
+generation values.
 
-Run `./install.sh --list-ports` to probe available serial ports before an
-upload. The diagnostic uses the repo-local `mpremote` when it is installed,
-reports responsive MicroPython ports, and falls back to raw serial candidates
-when no MicroPython device responds. On WSL, Windows names such as `COM8`
-usually need the Linux device path, such as `/dev/ttyS8` when that mapping is
-available, or a USB serial attachment that appears as `/dev/ttyACM*` or
-`/dev/ttyUSB*`.
+Run `install.cmd --list-ports` to probe available COM ports before an upload.
+The diagnostic uses the repo-local `mpremote` when it is installed, reports
+responsive MicroPython ports, and falls back to raw serial candidates when no
+MicroPython device responds.
 
-Run without `--port` to have the installer run the same discovery routine before
-falling back to `mpremote` auto-detect. If exactly one responsive MicroPython
-device is found, the installer stores and uses that port for the upload:
+Run without `--port` to have the installer reuse the saved port or, if none is
+saved, select a single detected COM port automatically.
 
-```bash
-./install.sh
+### Firmware flashing
+
+The Windows installer can flash MicroPython firmware. Use explicit flashing only
+when the connected device needs MicroPython installed or replaced:
+
+```cmd
+install.cmd --port COM3 --flash-micropython --yes
 ```
 
-When `--port` is omitted but a previous port is saved in `.conf`, the installer
-prompts to confirm that saved port before reusing it. Press Enter to keep the
-saved port, type a different port to replace it, or type `auto` to fall back to
-discovery and auto-detect. An explicit `--port`, an `AIPI_SERIAL_PORT`
-environment value, `--yes`, and non-interactive runs all keep the saved port
-without prompting.
+Flashing selects and writes the Octal-SPIRAM build
+`ESP32_GENERIC_S3-SPIRAM_OCT`. This build is required because the AIPI-Lite has
+8 MB of Octal PSRAM (see [SPEC.md](SPEC.md)). The plain `ESP32_GENERIC_S3` build
+that was previously flashed leaves the ESP-IDF Wi-Fi driver without internal
+DRAM, so Wi-Fi init fails instantly with `Wifi Out of Memory`. Writing the
+SPIRAM_OCT build is the fix for that failure.
 
-Use explicit firmware flashing only when the connected device needs
-ESP32_GENERIC_S3 MicroPython installed or replaced:
+Flash-related flags on `install.cmd`:
 
-```bash
-./install.sh --port /dev/cu.usbmodem31101 --flash-micropython
+- `--flash-micropython` performs the flash before the application upload.
+- `--firmware-url URL` overrides the firmware image; the default is the latest
+  SPIRAM_OCT build.
+- `--baud RATE` sets the flash baud rate (default `460800`).
+- `--skip-erase` skips the pre-flash chip erase.
+
+Pin an explicit SPIRAM_OCT build when the latest image is not the right target:
+
+```cmd
+install.cmd --port COM3 --flash-micropython --firmware-url https://micropython.org/resources/firmware/ESP32_GENERIC_S3-SPIRAM_OCT-20260406-v1.28.0.bin --yes
 ```
 
-Use a specific MicroPython firmware build when the latest standard
-ESP32_GENERIC_S3 image is not the right target:
+The operator still needs to connect the device over USB-C and put the AIPI-Lite
+into ESP32-S3 bootloader mode for firmware flashing, because those are physical
+actions. Bootloader access currently requires removing the four back screws,
+pressing the button under the display while plugging the device into USB-C, and
+confirming that the screen remains black.
 
-```bash
-./install.sh --port /dev/cu.usbmodem31101 \
-  --flash-micropython \
-  --firmware-url https://micropython.org/resources/firmware/ESP32_GENERIC_S3-20260406-v1.28.0.bin
-```
-
-In `--flash-micropython` and restore modes, `esptool` auto-detection can record
-a successful ESP32-S3 bootloader port in `.conf` and reuse it for backup
-retries, erase, and flash commands so later steps do not rescan every host
-serial device.
-
-Before backing up, erasing, writing, or restoring firmware, the installer
-requires bootloader confirmation and verifies the ROM bootloader answers
-`esptool chip-id` without auto-reset. If that check fails, the installer prints
-the bootloader steps and stops before stock backup, erase, write, or restore
-operations. Normal installs skip stock backup and firmware flashing so an
-already-prepared MicroPython device can receive only the application source.
-Recovery-focused runs can add `--flash-micropython --backup-stock` or set
-`AIPI_FLASH_MICROPYTHON=1` and `AIPI_BACKUP_STOCK_FIRMWARE=1` to read the
-16 MB stock flash image to `tools/.local/backups/` before explicit firmware
-flashing. Existing `--skip-backup` and `AIPI_SKIP_STOCK_BACKUP=1` remain
-accepted for explicit application-first flash runs.
-
-When `--flash-micropython --backup-stock` is used, the backup read is chunked by
-default so a failed transfer cannot be mistaken for a complete stock image on
-the next run. If a backup stalls on a specific USB setup, reduce the chunk size
-with `--backup-chunk-size 0x40000` or set `AIPI_BACKUP_CHUNK_SIZE=0x40000` in
-`.conf`. The installer also retries failed backup chunks down to 4 KiB without
-resetting the chip between chunks; a repeat failure at the same offset should be
-treated as an address-specific read failure or an unstable USB path. In
-`--trace` mode the installer records this as `event=stock_backup_blocked`,
-including the failing offset, final retry chunk size, selected port, backup
-path, and flash size. Rerun with `--flash-micropython` but without
-`--backup-stock` only when stock recovery is not required.
-
-The user still needs to put the AIPI-Lite into ESP32-S3 bootloader mode for
-explicit firmware flash or restore operations, and connect the device over
-USB-C because those are physical actions.
-
-Bootloader access currently requires removing the four back screws, pressing the
-button under the display while plugging the device into USB-C, and confirming
-that the screen remains black.
-
-The Unix installer maps each file under `src/` directly to device root, filters
-host cache artifacts, and uses the same guarded `/src` and legacy-module
-cleanup as the Windows installer. Cleanup and reset share one `mpremote`
-connection. If cleanup succeeds but reset cannot be confirmed, installation
-succeeds with a manual power-cycle warning. Set `AIPI_RESET_AFTER_UPLOAD=no` in
-`.conf` or pass `--no-reset` to skip reset while retaining cleanup.
-
-Backup, restore, expected output, and safety details are documented in
-[RECOVERY.md](RECOVERY.md).
+Stock-firmware backup and restore are not automated by the repository scripts.
+They are manual, out-of-band recovery steps only; see [RECOVERY.md](RECOVERY.md)
+for the manual procedure and the flashing safety checklist.
 
 See [tools/README.md](tools/README.md) for lower-level setup tooling.
 
@@ -389,22 +273,14 @@ mpremote connect /dev/cu.usbmodem31101 exec "import inference_probe; inference_p
 ```
 
 For a repeatable application-first bench run with a redacted, GitHub-ready
-report, use the developer wrapper's inference mode. It requires one explicit
-serial port, uploads the current `src/` application tree without flashing or
-backing up firmware, disables generated Wi-Fi configuration, avoids a device
-reset into normal startup, then runs the offline probe. Record the physical
-checks from the operator's observation; omitted checks remain `not-observed`.
+report, use the Windows developer wrapper's inference mode. It requires one
+explicit COM port, uploads the current `src/` application tree without flashing
+firmware, disables generated Wi-Fi configuration, avoids a device reset into
+normal startup, then runs the offline probe. Record the physical checks from the
+operator's observation; omitted checks remain `not-observed`.
 
-```bash
-./dev_install.sh \
-  --inference-probe \
-  --gh \
-  --device-label bench-a \
-  --inference-check display=pass \
-  --inference-check status-led=pass \
-  --inference-check button=pass \
-  --inference-check offline=pass \
-  -- --port /dev/cu.usbmodem31101
+```cmd
+dev_install.cmd --inference-probe --gh bcarroll/aipi-lite --device-label bench-a --inference-check display=pass --inference-check status-led=pass --inference-check button=pass --inference-check offline=pass -- --port COM3 --yes
 ```
 
 `--gh OWNER/REPO` creates one new issue for the run; bare `--gh` uses the
@@ -476,7 +352,7 @@ configuration, validation checklist, and report template are in
 [MVP.md](MVP.md).
 
 The Wi-Fi/local-service probe requires an ignored `local_wifi_config.py` file on
-the device. During application upload, `install.sh` checks the selected app
+the device. During application upload, `install.cmd` checks the selected app
 directory for `local_wifi_config.py`. If it is missing, the installer prompts to
 create `src/local_wifi_config.py`; if it already exists, the installer prompts
 before re-creating it. The generated or hand-written file should look like:

@@ -11,7 +11,7 @@ FIRMWARE_IMPL = REPO_ROOT / "FIRMWARE_IMPL.md"
 
 
 class RecoveryDocumentationTests(unittest.TestCase):
-    """Validate that feat/01 recovery procedures stay documented."""
+    """Validate the Windows-only, flash-capable recovery procedures stay documented."""
 
     @classmethod
     def setUpClass(cls):
@@ -20,31 +20,31 @@ class RecoveryDocumentationTests(unittest.TestCase):
         cls.readme_text = README.read_text(encoding="utf-8")
         cls.impl_text = FIRMWARE_IMPL.read_text(encoding="utf-8")
 
-    def test_documents_stock_backup_procedure(self):
-        """Recovery docs should explain bootloader access and stock backup."""
+    def test_documents_windows_firmware_flashing(self):
+        """Recovery docs should explain Windows SPIRAM_OCT firmware flashing."""
         self.assertIn("Bootloader Mode", self.recovery_text)
-        self.assertIn("Stock Firmware Backup", self.recovery_text)
+        self.assertIn("MicroPython Firmware Flashing", self.recovery_text)
+        self.assertIn("install.cmd --port COM3 --flash-micropython --yes", self.recovery_text)
+        self.assertIn("ESP32_GENERIC_S3-SPIRAM_OCT", self.recovery_text)
+        self.assertIn("8 MB of Octal PSRAM", self.recovery_text)
+        self.assertIn("Wifi Out of Memory", self.recovery_text)
+        self.assertIn("--firmware-url", self.recovery_text)
+        self.assertIn("--skip-erase", self.recovery_text)
+
+    def test_documents_manual_stock_backup_procedure(self):
+        """Recovery docs should explain the manual, out-of-band stock backup."""
+        self.assertIn("Stock Firmware Backup (manual only)", self.recovery_text)
+        self.assertIn("not automated by the repository scripts", self.recovery_text)
         self.assertIn("read-flash 0 0x1000000", self.recovery_text)
         self.assertIn("tools/.local/backups/", self.recovery_text)
-        self.assertIn("--backup-chunk-size", self.recovery_text)
+        self.assertIn("16777216", self.recovery_text)
         self.assertIn("1048576/16777216", self.recovery_text)
-        self.assertIn("0x00100000", self.recovery_text)
-        self.assertIn("4 KiB", self.recovery_text)
-        self.assertIn("exactly matches `AIPI_FLASH_SIZE`", self.recovery_text)
-        self.assertIn("--backup-stock", self.recovery_text)
-        self.assertIn("--flash-micropython --backup-stock", self.recovery_text)
-        self.assertIn("AIPI_FLASH_MICROPYTHON=1", self.recovery_text)
-        self.assertIn("AIPI_BACKUP_STOCK_FIRMWARE=1", self.recovery_text)
-        self.assertIn("--skip-backup", self.recovery_text)
-        self.assertIn("AIPI_SKIP_STOCK_BACKUP=1", self.recovery_text)
-        self.assertIn("assume the device already", self.recovery_text)
-        self.assertIn("ESP32_GENERIC_S3 MicroPython firmware", self.recovery_text)
-        self.assertIn("verifies the ROM bootloader answers `esptool chip-id`", self.recovery_text)
+        self.assertIn("Expected backup indicators", self.recovery_text)
 
-    def test_documents_stock_restore_procedure(self):
-        """Recovery docs should explain restore commands and expected signals."""
-        self.assertIn("Stock Firmware Restore", self.recovery_text)
-        self.assertIn("--restore-backup", self.recovery_text)
+    def test_documents_manual_stock_restore_procedure(self):
+        """Recovery docs should explain manual restore commands and expected signals."""
+        self.assertIn("Stock Firmware Restore (manual only)", self.recovery_text)
+        self.assertIn("erase_flash", self.recovery_text)
         self.assertIn("write_flash 0", self.recovery_text)
         self.assertIn("Expected restore indicators", self.recovery_text)
         self.assertIn("MicroPython banner", self.recovery_text)
@@ -56,20 +56,17 @@ class RecoveryDocumentationTests(unittest.TestCase):
         self.assertIn("SPEC.md", self.recovery_text)
         self.assertIn("public cloud", self.recovery_text)
         self.assertIn("not staged in Git", self.recovery_text)
-        self.assertIn("accepts that stock firmware recovery may be unavailable", self.recovery_text)
-        self.assertIn("before backup, erase, write, or restore commands", self.recovery_text)
+        self.assertIn("stock firmware recovery may be unavailable", self.recovery_text)
         self.assertIn("upload-only install path", self.recovery_text)
 
     def test_roadmap_and_readme_reference_recovery(self):
-        """Top-level docs should point users to recovery procedures."""
+        """Top-level docs should point users to Windows recovery procedures."""
         self.assertIn("[RECOVERY.md](RECOVERY.md)", self.readme_text)
-        self.assertIn("does not run `git pull` by default", self.readme_text)
-        self.assertIn("already has ESP32_GENERIC_S3 MicroPython flashed", self.readme_text)
-        self.assertIn("--flash-micropython --backup-stock", self.readme_text)
-        self.assertIn("`feat/01-backup-recovery` | Implemented", self.impl_text)
-        self.assertIn("smaller-chunk retries", self.impl_text)
-        self.assertIn("uploads application source by default", self.impl_text)
-        self.assertIn("without auto-reset before backup, erase, write, or restore operations", self.impl_text)
+        self.assertIn("install.cmd --port COM3 --flash-micropython --yes", self.readme_text)
+        self.assertIn("ESP32_GENERIC_S3-SPIRAM_OCT", self.readme_text)
+        self.assertIn("Wifi Out of Memory", self.readme_text)
+        self.assertIn("`feat/01-backup-recovery` | Retired Unix workflow", self.impl_text)
+        self.assertIn("install.cmd --flash-micropython", self.impl_text)
 
 
 if __name__ == "__main__":

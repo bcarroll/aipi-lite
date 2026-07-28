@@ -2,8 +2,10 @@
 
 The module is called by the repository's native CMD entry points. It keeps
 Windows-specific host tooling under ``tools/.local`` and supports application
-upload, developer capture, and physical device validation; firmware flash and
-recovery actions remain available through the established Unix workflow.
+upload, developer capture, physical device validation, and optional MicroPython
+firmware flashing. Flashing selects the Octal-SPIRAM build required by the
+board's 8 MB PSRAM. Stock-firmware backup and restore are deliberately not
+automated here; they remain manual recovery steps (see RECOVERY.md).
 """
 
 from __future__ import annotations
@@ -19,6 +21,7 @@ import subprocess
 import sys
 import tempfile
 from typing import Callable, Sequence, TextIO
+from urllib.request import urlopen
 
 from device_application import CLEANUP_COMPLETE_MARKER
 from device_application import LEGACY_ROOT_MODULES
@@ -34,6 +37,18 @@ TOOLS_ROOT = REPO_ROOT / "tools" / ".local"
 VENV_DIR = TOOLS_ROOT / "micropython-venv"
 CAPTURE_ROOT = TOOLS_ROOT / "dev-install"
 DEVICE_VALIDATION_ROOT = TOOLS_ROOT / "device-validation"
+FIRMWARE_DOWNLOAD_DIR = TOOLS_ROOT / "downloads" / "firmware"
+MICROPYTHON_BOARD_URL = "https://micropython.org/download/ESP32_GENERIC_S3/"
+MICROPYTHON_BASE_URL = "https://micropython.org"
+DEFAULT_FLASH_BAUD = "460800"
+ESP32_CHIP = "esp32s3"
+FLASH_WRITE_OFFSET = "0"
+# The AIPI-Lite carries 8 MB Octal PSRAM, so MicroPython must be the
+# Octal-SPIRAM build; the plain ESP32_GENERIC_S3 image leaves the radio without
+# internal DRAM and Wi-Fi init fails with "Wifi Out of Memory".
+SPIRAM_OCT_FIRMWARE_PATTERN = re.compile(
+    r"/resources/firmware/ESP32_GENERIC_S3-SPIRAM_OCT-[0-9]{8}-v[0-9][0-9.]*\.bin"
+)
 VALIDATION_PREFLIGHT_RESET_DELAY_SECONDS = "1.0"
 MAX_UPLOAD_FAILURE_DIAGNOSTIC_LINES = 12
 UPLOAD_FAILURE_DIAGNOSTIC_PREFIXES = (
@@ -97,6 +112,10 @@ class InstallRequest:
     no_reset: bool
     assume_yes: bool
     preflight_reset: bool = False
+    flash_micropython: bool = False
+    firmware_url: str = "latest"
+    baud: str = DEFAULT_FLASH_BAUD
+    skip_erase: bool = False
 
 
 @dataclass(frozen=True)
@@ -208,12 +227,32 @@ def create_parser() -> argparse.ArgumentParser:
         "--yes",
         dest="assume_yes",
         action="store_true",
-        help="Approve local mpremote prerequisite setup.",
+        help="Approve local tooling setup and the destructive flash step.",
     )
     install.add_argument(
         "--list-ports",
         action="store_true",
         help="List detected Windows COM ports and exit.",
+    )
+    install.add_argument(
+        "--flash-micropython",
+        action="store_true",
+        help="Erase the device and flash the Octal-SPIRAM MicroPython build before upload.",
+    )
+    install.add_argument(
+        "--firmware-url",
+        default="latest",
+        help="MicroPython firmware .bin URL for --flash-micropython. Default: latest SPIRAM_OCT.",
+    )
+    install.add_argument(
+        "--baud",
+        default=DEFAULT_FLASH_BAUD,
+        help=f"Flash baud rate for --flash-micropython. Default: {DEFAULT_FLASH_BAUD}.",
+    )
+    install.add_argument(
+        "--skip-erase",
+        action="store_true",
+        help="With --flash-micropython, write firmware without erasing flash first.",
     )
 
     developer = commands.add_parser(
@@ -497,6 +536,144 @@ def ensure_mpremote(assume_yes: bool, sink: OutputSink) -> Path:
     return executable
 
 
+def esptool_path() -> Path:
+    """Return the expected Windows esptool console-script location."""
+    return VENV_DIR / "Scripts" / "esptool.exe"
+
+
+def ensure_flash_tooling(assume_yes: bool, sink: OutputSink) -> Path:
+    """Ensure the shared venv exists with esptool and return its Python path."""
+    ensure_mpremote(assume_yes, sink)
+    python = venv_python_path()
+    if esptool_path().is_file():
+        return python
+    sink.write("Installing esptool into the local virtual environment...")
+    if run_streaming([str(python), "-m", "pip", "install", "esptool"], sink) != 0:
+        raise InstallerError("unable to install esptool into the local virtual environment")
+    return python
+
+
+def fetch_url_text(url: str) -> str:
+    """Return the decoded text body of a URL using only the standard library."""
+    with urlopen(url, timeout=60) as response:  # noqa: S310 - fixed micropython.org host
+        return response.read().decode("utf-8")
+
+
+def select_spiram_oct_firmware_url(html: str) -> str:
+    """Return the newest stable Octal-SPIRAM firmware URL from board-page HTML."""
+    for path in SPIRAM_OCT_FIRMWARE_PATTERN.findall(html):
+        if "preview" in path:
+            continue
+        return f"{MICROPYTHON_BASE_URL}{path}"
+    raise InstallerError(
+        "could not find a stable ESP32_GENERIC_S3-SPIRAM_OCT firmware image; "
+        "pass --firmware-url with an explicit .bin URL"
+    )
+
+
+def resolve_firmware_url(
+    firmware_url: str,
+    *,
+    fetch: Callable[[str], str] = fetch_url_text,
+) -> str:
+    """Return an explicit firmware URL or resolve the latest SPIRAM_OCT build."""
+    if firmware_url and firmware_url != "latest":
+        return firmware_url
+    return select_spiram_oct_firmware_url(fetch(MICROPYTHON_BOARD_URL))
+
+
+def firmware_filename(url: str) -> str:
+    """Return the .bin file name from a firmware URL, ignoring query strings."""
+    return url.split("?", 1)[0].rsplit("/", 1)[-1]
+
+
+def download_firmware(url: str, sink: OutputSink, *, opener=urlopen) -> Path:
+    """Download a firmware image into the local downloads directory."""
+    FIRMWARE_DOWNLOAD_DIR.mkdir(parents=True, exist_ok=True)
+    destination = FIRMWARE_DOWNLOAD_DIR / firmware_filename(url)
+    sink.write(f"Downloading {url}...")
+    with opener(url, timeout=120) as response:  # noqa: S310 - fixed micropython.org host
+        payload = response.read()
+    destination.write_bytes(payload)
+    sink.write(f"Saved firmware to {destination}")
+    return destination
+
+
+def esptool_erase_command(python: Path, port: str) -> list[str]:
+    """Return the esptool command that erases the device flash."""
+    return [
+        str(python),
+        "-m",
+        "esptool",
+        "--chip",
+        ESP32_CHIP,
+        "--port",
+        port,
+        "erase_flash",
+    ]
+
+
+def esptool_write_command(python: Path, port: str, baud: str, firmware_path: Path) -> list[str]:
+    """Return the esptool command that writes a firmware image at offset 0."""
+    return [
+        str(python),
+        "-m",
+        "esptool",
+        "--chip",
+        ESP32_CHIP,
+        "--port",
+        port,
+        "--baud",
+        baud,
+        "write_flash",
+        FLASH_WRITE_OFFSET,
+        str(firmware_path),
+    ]
+
+
+def confirm_flash(assume_yes: bool) -> bool:
+    """Ask before erasing and reflashing the device unless approval was supplied."""
+    if assume_yes:
+        return True
+    if not sys.stdin.isatty():
+        return False
+    answer = input("Flashing erases all data on the device. Continue? [y/N] ").strip()
+    return answer.lower() in {"y", "yes"}
+
+
+def run_flash(request: InstallRequest, sink: OutputSink) -> int:
+    """Resolve, download, and flash the MicroPython firmware for the request."""
+    python = ensure_flash_tooling(request.assume_yes, sink)
+    sink.write("Resolving MicroPython firmware...")
+    firmware_url = resolve_firmware_url(request.firmware_url)
+    sink.write(f"Selected firmware: {firmware_url}")
+    firmware_path = download_firmware(firmware_url, sink)
+
+    if not confirm_flash(request.assume_yes):
+        raise InstallerError(
+            "flashing erases the device and was not approved; rerun with --yes"
+        )
+
+    if request.skip_erase:
+        sink.write("Skipping flash erase by --skip-erase.")
+    else:
+        sink.write(f"Erasing flash on {request.port}...")
+        erase_status = run_streaming(esptool_erase_command(python, request.port), sink)
+        if erase_status != 0:
+            sink.write(f"Flash erase failed with status {erase_status}.", error=True)
+            return erase_status
+
+    sink.write(f"Writing MicroPython to {request.port} at {request.baud} baud...")
+    write_status = run_streaming(
+        esptool_write_command(python, request.port, request.baud, firmware_path), sink
+    )
+    if write_status != 0:
+        sink.write(f"Flash write failed with status {write_status}.", error=True)
+        return write_status
+    sink.write("MicroPython flash complete.")
+    return 0
+
+
 def validate_upload_request(request: InstallRequest) -> None:
     """Check that the requested app upload can safely begin."""
     if not SRC_DIR.is_dir():
@@ -571,6 +748,10 @@ def application_cleanup_command(
 def run_install_request(request: InstallRequest, sink: OutputSink) -> int:
     """Upload the application source and reset the target unless reset is disabled."""
     validate_upload_request(request)
+    if request.flash_micropython:
+        flash_status = run_flash(request, sink)
+        if flash_status != 0:
+            return flash_status
     executable = ensure_mpremote(request.assume_yes, sink)
     if request.preflight_reset:
         sink.write(
@@ -658,6 +839,10 @@ def install_request_from_args(args: Sequence[str]) -> InstallRequest:
         port=normalize_com_port(parsed.port),
         no_reset=parsed.no_reset,
         assume_yes=parsed.assume_yes,
+        flash_micropython=parsed.flash_micropython,
+        firmware_url=parsed.firmware_url,
+        baud=parsed.baud,
+        skip_erase=parsed.skip_erase,
     )
 
 
@@ -1409,6 +1594,10 @@ def run_install_command(args: argparse.Namespace, sink: OutputSink) -> int:
             port=selection.port,
             no_reset=args.no_reset,
             assume_yes=args.assume_yes,
+            flash_micropython=args.flash_micropython,
+            firmware_url=args.firmware_url,
+            baud=args.baud,
+            skip_erase=args.skip_erase,
         )
         return run_install_request(request, sink)
     except (InstallerError, OSError, subprocess.SubprocessError) as error:
