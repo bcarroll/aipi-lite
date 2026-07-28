@@ -196,6 +196,13 @@ device is found, the installer stores and uses that port for the upload:
 ./install.sh
 ```
 
+When `--port` is omitted but a previous port is saved in `.conf`, the installer
+prompts to confirm that saved port before reusing it. Press Enter to keep the
+saved port, type a different port to replace it, or type `auto` to fall back to
+discovery and auto-detect. An explicit `--port`, an `AIPI_SERIAL_PORT`
+environment value, `--yes`, and non-interactive runs all keep the saved port
+without prompting.
+
 Use explicit firmware flashing only when the connected device needs
 ESP32_GENERIC_S3 MicroPython installed or replaced:
 

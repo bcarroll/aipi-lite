@@ -1,6 +1,8 @@
 """Tests for the root install.sh firmware installer."""
 
 from pathlib import Path
+import os
+import pty
 import shutil
 import subprocess
 import tempfile
@@ -52,6 +54,32 @@ class InstallScriptTests(unittest.TestCase):
         )
         mpremote.chmod(0o755)
         return tmp_install, app_dir
+
+    def _run_with_pty_stdin(self, tmp_install, repo_root, args, prompt_input):
+        """Run the installer with a pseudo-terminal stdin so tty prompts activate.
+
+        Returns the combined stdout/stderr text and the process exit code.
+        """
+        master, slave = pty.openpty()
+        proc = subprocess.Popen(
+            [str(tmp_install), *args],
+            cwd=repo_root,
+            stdin=slave,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+        )
+        os.close(slave)
+        os.write(master, prompt_input.encode("utf-8"))
+        try:
+            output, _ = proc.communicate(timeout=90)
+        except subprocess.TimeoutExpired:
+            proc.kill()
+            output, _ = proc.communicate()
+            os.close(master)
+            self.fail("installer hung waiting on prompt input:\n{}".format(output))
+        os.close(master)
+        return output, proc.returncode
 
     def test_resolves_latest_official_micropython_firmware(self):
         """The installer should resolve the latest stable ESP32-S3 firmware URL."""
@@ -451,6 +479,114 @@ class InstallScriptTests(unittest.TestCase):
             mpremote_log = (repo_root / "mpremote.log").read_text(encoding="utf-8")
             self.assertIn("connect /dev/ttyS8 resume exec", mpremote_log)
             self.assertIn("connect /dev/ttyS8 fs cp", mpremote_log)
+
+    def test_saved_port_prompt_accepts_a_new_port(self):
+        """An interactive no-port run should let the operator replace the saved port."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            repo_root = Path(tmpdir)
+            tmp_install, _app_dir = self._make_upload_fixture(repo_root)
+            (repo_root / ".conf").write_text(
+                "AIPI_SERIAL_PORT=/dev/ttyS8\n"
+                "AIPI_CONFIRM_UPLOAD=yes\n"
+                "AIPI_CREATE_LOCAL_WIFI_CONFIG=no\n",
+                encoding="utf-8",
+            )
+
+            stdout, returncode = self._run_with_pty_stdin(
+                tmp_install, repo_root, ["--no-reset"], "/dev/ttyUSB1\n"
+            )
+
+            self.assertEqual(returncode, 0, stdout)
+            self.assertIn("Port: /dev/ttyUSB1", stdout)
+            self.assertIn(
+                "AIPI_SERIAL_PORT=/dev/ttyUSB1",
+                (repo_root / ".conf").read_text(encoding="utf-8"),
+            )
+            mpremote_log = (repo_root / "mpremote.log").read_text(encoding="utf-8")
+            self.assertIn("connect /dev/ttyUSB1 fs cp", mpremote_log)
+            self.assertNotIn("connect /dev/ttyS8 fs cp", mpremote_log)
+
+    def test_saved_port_prompt_keeps_saved_port_on_empty_answer(self):
+        """Pressing Enter at the saved-port prompt should reuse the saved port."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            repo_root = Path(tmpdir)
+            tmp_install, _app_dir = self._make_upload_fixture(repo_root)
+            (repo_root / ".conf").write_text(
+                "AIPI_SERIAL_PORT=/dev/ttyS8\n"
+                "AIPI_CONFIRM_UPLOAD=yes\n"
+                "AIPI_CREATE_LOCAL_WIFI_CONFIG=no\n",
+                encoding="utf-8",
+            )
+
+            stdout, returncode = self._run_with_pty_stdin(
+                tmp_install, repo_root, ["--no-reset"], "\n"
+            )
+
+            self.assertEqual(returncode, 0, stdout)
+            self.assertIn("Port: /dev/ttyS8", stdout)
+            self.assertIn(
+                "AIPI_SERIAL_PORT=/dev/ttyS8",
+                (repo_root / ".conf").read_text(encoding="utf-8"),
+            )
+            self.assertIn(
+                "connect /dev/ttyS8 fs cp",
+                (repo_root / "mpremote.log").read_text(encoding="utf-8"),
+            )
+
+    def test_saved_port_reused_without_prompt_when_noninteractive(self):
+        """A closed stdin should reuse the saved port and warn instead of hanging."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            repo_root = Path(tmpdir)
+            tmp_install, _app_dir = self._make_upload_fixture(repo_root)
+            (repo_root / ".conf").write_text(
+                "AIPI_SERIAL_PORT=/dev/ttyS8\n"
+                "AIPI_CONFIRM_UPLOAD=yes\n"
+                "AIPI_CREATE_LOCAL_WIFI_CONFIG=no\n",
+                encoding="utf-8",
+            )
+
+            result = subprocess.run(
+                [str(tmp_install), "--no-reset"],
+                cwd=repo_root,
+                stdin=subprocess.DEVNULL,
+                text=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                check=False,
+            )
+
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertIn("using saved port /dev/ttyS8", result.stderr)
+            self.assertIn("Port: /dev/ttyS8", result.stdout)
+            self.assertIn(
+                "connect /dev/ttyS8 fs cp",
+                (repo_root / "mpremote.log").read_text(encoding="utf-8"),
+            )
+
+    def test_saved_port_reused_without_prompt_when_yes_supplied(self):
+        """--yes should silently reuse the saved port without a confirmation prompt."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            repo_root = Path(tmpdir)
+            tmp_install, _app_dir = self._make_upload_fixture(repo_root)
+            (repo_root / ".conf").write_text(
+                "AIPI_SERIAL_PORT=/dev/ttyS8\n"
+                "AIPI_CREATE_LOCAL_WIFI_CONFIG=no\n",
+                encoding="utf-8",
+            )
+
+            result = subprocess.run(
+                [str(tmp_install), "--no-reset", "--yes"],
+                cwd=repo_root,
+                stdin=subprocess.DEVNULL,
+                text=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                check=False,
+            )
+
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertNotIn("Serial port:", result.stderr)
+            self.assertIn("Port: /dev/ttyS8", result.stdout)
 
     def test_reset_failure_after_cleanup_requires_manual_power_cycle(self):
         """Unix reset failure after confirmed cleanup should return success with guidance."""

@@ -37,6 +37,7 @@ TRACE_FILE="${AIPI_INSTALL_TRACE_FILE:-}"
 ASSUME_YES=0
 LIST_PORTS=0
 PORT_OPTION_PROVIDED=0
+PORT_FROM_CONFIG=0
 PORT_DISCOVERY_ATTEMPTED=0
 SKIP_ERASE=0
 RESTORE_MODE=0
@@ -1025,6 +1026,31 @@ prompt_value_from_config() {
 prompt_serial_port() {
   local answer
 
+  # When --port was not given but .conf holds a saved port, let the operator
+  # confirm the saved port or type a different one before it is reused. An
+  # explicit --port, an AIPI_SERIAL_PORT environment value, --yes, and
+  # non-interactive runs all keep the saved port without prompting.
+  if [[ "${PORT_OPTION_PROVIDED}" -eq 0 && "${PORT_FROM_CONFIG}" -eq 1 && -n "${PORT}" ]]; then
+    if [[ "${ASSUME_YES}" -eq 1 ]]; then
+      config_set "AIPI_SERIAL_PORT" "${PORT}"
+      return
+    fi
+    if answer="$(read_prompt_answer "Serial port: Enter to keep saved '${PORT}', type a new port, or 'auto' to auto-detect" "${PORT}")"; then
+      case "${answer}" in
+        "") ;;
+        auto | AUTO | Auto) PORT="" ;;
+        *) PORT="${answer}" ;;
+      esac
+    else
+      echo "warning: Serial port confirmation skipped because prompt input is not available; using saved port ${PORT}." >&2
+    fi
+    if [[ -n "${PORT}" ]]; then
+      config_set "AIPI_SERIAL_PORT" "${PORT}"
+      return
+    fi
+    # PORT cleared for auto-detect; fall through to discovery below.
+  fi
+
   if [[ -n "${PORT}" ]]; then
     config_set "AIPI_SERIAL_PORT" "${PORT}"
     return
@@ -1261,6 +1287,9 @@ apply_config_defaults() {
 
   if [[ -z "${PORT}" ]] && configured_value="$(config_get "AIPI_SERIAL_PORT")"; then
     PORT="${configured_value}"
+    if [[ "${PORT}" != "auto" ]]; then
+      PORT_FROM_CONFIG=1
+    fi
   fi
   if [[ "${PORT}" == "auto" ]]; then
     PORT=""
