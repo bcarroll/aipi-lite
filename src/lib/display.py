@@ -297,6 +297,7 @@ class StatusDisplay:
         self.tft = hardware.tft
         self.backlight = hardware.backlight
         self.font = font or load_sysfont()
+        self._current_status = None
 
     def backlight_on(self, level=65535):
         """Turn on the display backlight."""
@@ -309,6 +310,15 @@ class StatusDisplay:
     def clear(self, color=BLACK):
         """Clear the display to a single RGB565 color."""
         self.tft.fill(color)
+        self._current_status = None
+
+    def _clear_body(self, color):
+        """Clear only the body-text region, leaving the title and status dot intact."""
+        self.tft.fillrect(
+            (0, BODY_Y),
+            (SCREEN_SIZE[0], SCREEN_SIZE[1] - BODY_Y),
+            color,
+        )
 
     def _draw_wifi_icon(self, y, color):
         """Draw a compact Wi-Fi signal graphic using bounded line primitives."""
@@ -407,7 +417,13 @@ class StatusDisplay:
         return title, rows, actions
 
     def render_status(self, status, detail=None):
-        """Render a named status screen with optional detail text."""
+        """Render a named status screen with optional detail text.
+
+        When the status is unchanged from the previous render (for example a
+        connection stage updating its detail line), only the body-text region is
+        repainted so the title and status dot stay put and the screen does not
+        flicker with a full clear.
+        """
         definition = screen_definition(status)
         background = definition["background"]
         foreground = definition["foreground"]
@@ -415,14 +431,20 @@ class StatusDisplay:
         lines = layout_status_lines(status, detail)
 
         self.backlight_on()
-        self.clear(background)
-        self.tft.text((LEFT_MARGIN, TITLE_Y), title, foreground, self.font, TITLE_SCALE, nowrap=True)
-        status_dot = definition.get("status_dot")
-        if status_dot is not None:
-            self.tft.fillcircle(STATUS_DOT_POSITION, STATUS_DOT_RADIUS, status_dot)
+        if status == self._current_status:
+            self._clear_body(background)
+        else:
+            self.clear(background)
+            self.tft.text(
+                (LEFT_MARGIN, TITLE_Y), title, foreground, self.font, TITLE_SCALE, nowrap=True
+            )
+            status_dot = definition.get("status_dot")
+            if status_dot is not None:
+                self.tft.fillcircle(STATUS_DOT_POSITION, STATUS_DOT_RADIUS, status_dot)
         for index, line in enumerate(lines):
             y = BODY_Y + index * BODY_LINE_HEIGHT
             self.tft.text((LEFT_MARGIN, y), line, foreground, self.font, BODY_SCALE, nowrap=True)
+        self._current_status = status
         return title, lines
 
 

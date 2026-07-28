@@ -139,6 +139,10 @@ class FakeTFT:
         """Record rectangle drawing calls used by the service graphic."""
         self.calls.append(("rect", start, size, color))
 
+    def fillrect(self, start, size, color):
+        """Record filled-rectangle calls used by partial body redraws."""
+        self.calls.append(("fillrect", start, size, color))
+
 
 class FakeTime(types.ModuleType):
     """Minimal replacement for MicroPython's time module."""
@@ -341,6 +345,59 @@ class AipiLiteDisplayConfigTests(unittest.TestCase):
         self.assertEqual(title, "SERVICE")
         self.assertIn("Local service", lines)
         self.assertIn("Checking", lines)
+
+    def test_same_status_updates_body_only_without_full_clear(self):
+        """Re-rendering the same status should repaint only the body region."""
+        clear_imported_modules()
+        install_micropython_stubs()
+        display = self.import_display()
+        hardware = display.create_display_hardware(
+            pin_factory=FakePin,
+            pwm_factory=FakePWM,
+            spi_factory=FakeSPI,
+            tft_factory=FakeTFT,
+        )
+        renderer = display.StatusDisplay(hardware, font=FAKE_FONT)
+
+        renderer.render_status("wifi", detail="Associating")
+        tft = FakeTFT.created[-1]
+        first_render_calls = len(tft.calls)
+
+        renderer.render_status("wifi", detail="Got IP")
+
+        update_calls = tft.calls[first_render_calls:]
+        # The stage update must not clear the whole screen or redraw the title.
+        self.assertNotIn(("fill", display.BLACK), update_calls)
+        self.assertFalse(any(call[0] == "text" and call[2] == "WI-FI" for call in update_calls))
+        # It clears only the body region, then draws the new body text.
+        self.assertIn(
+            ("fillrect", (0, display.BODY_Y), (display.SCREEN_SIZE[0], display.SCREEN_SIZE[1] - display.BODY_Y), display.BLACK),
+            update_calls,
+        )
+        self.assertTrue(any(call[0] == "text" and "Got IP" in call[2] for call in update_calls))
+
+    def test_status_change_does_full_clear_and_redraws_title(self):
+        """Switching to a different status should clear fully and redraw the title."""
+        clear_imported_modules()
+        install_micropython_stubs()
+        display = self.import_display()
+        hardware = display.create_display_hardware(
+            pin_factory=FakePin,
+            pwm_factory=FakePWM,
+            spi_factory=FakeSPI,
+            tft_factory=FakeTFT,
+        )
+        renderer = display.StatusDisplay(hardware, font=FAKE_FONT)
+
+        renderer.render_status("wifi", detail="Connected")
+        tft = FakeTFT.created[-1]
+        boundary = len(tft.calls)
+
+        renderer.render_status("service", detail="Checking")
+
+        change_calls = tft.calls[boundary:]
+        self.assertIn(("fill", display.BLACK), change_calls)
+        self.assertTrue(any(call[0] == "text" and call[2] == "SERVICE" for call in change_calls))
 
     def test_status_display_renders_ready_screen_and_controls_backlight(self):
         """StatusDisplay should clear, draw text, and turn on the backlight."""

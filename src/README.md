@@ -277,6 +277,11 @@ component-aware `OFFLINE` screen. Each stage also prints an
 alongside the existing `wifi_trace` output. Stage labels never include the SSID,
 password, or service URL.
 
+Stage updates that stay on the same screen repaint only the body-text region
+(via a single `fillrect`) instead of clearing the whole display, so the title
+and status dot stay put and the screen does not flicker as stages advance. A
+change to a different status still does a full clear and title redraw.
+
 If Wi-Fi or the local service is unavailable, the controller shows fixed
 `Wi-Fi` and `SERVICE` rows with check/cross icons plus explicit
 `ONLINE`/`OFFLINE` text. A short press retries exactly the first offline
