@@ -39,9 +39,14 @@ class FakeWLAN:
         status_error=None,
         ifconfig_values=None,
         ifconfig_error=None,
+        active_error=None,
+        active_fail_times=None,
     ):
         """Create a fake WLAN that connects after a fixed poll count."""
         self.active_values = []
+        self.active_error = active_error
+        self.active_fail_times = active_fail_times
+        self.active_attempts = 0
         self.connect_calls = []
         self.connected_after = connected_after
         self.polls = 0
@@ -62,6 +67,10 @@ class FakeWLAN:
         """Record or return the fake interface active state."""
         if enabled is None:
             return self.active_state
+        if enabled and self.active_error is not None:
+            self.active_attempts += 1
+            if self.active_fail_times is None or self.active_attempts <= self.active_fail_times:
+                raise self.active_error
         self.active_state = bool(enabled)
         self.active_values.append(enabled)
 
@@ -310,6 +319,87 @@ class WifiPolicyTests(unittest.TestCase):
         self.assertNotIn("LabNet", trace_text)
         self.assertNotIn("secret-password", trace_text)
         self.assertNotIn("http://192.168.1.10", trace_text)
+
+    def test_create_wlan_retries_activation_after_transient_oserror(self):
+        """A momentarily failing radio should be retried, not fail instantly."""
+        wifi_probe = self.import_module("wifi_probe")
+        wlan = FakeWLAN(active_error=OSError("Wifi Internal Error"), active_fail_times=2)
+        network = FakeNetwork(wlan)
+        messages = []
+        sleeps = []
+        collects = []
+
+        result = wifi_probe.create_wlan(
+            network_module=network,
+            print_func=messages.append,
+            sleep_ms_func=sleeps.append,
+            collect_garbage=lambda: collects.append(True),
+        )
+
+        self.assertIs(result, wlan)
+        self.assertEqual(wlan.active_attempts, 3)
+        self.assertEqual(wlan.active_values, [True])
+        self.assertEqual(len(collects), 3)
+        self.assertEqual(sleeps, [wifi_probe.INTERFACE_RETRY_DELAY_MS] * 2)
+        retry_lines = [line for line in messages if "phase=exception operation=interface_retry" in line]
+        self.assertEqual(
+            retry_lines,
+            [
+                "wifi_trace phase=exception operation=interface_retry "
+                "error_type=OSError detail=Wifi_Internal_Error attempt=1",
+                "wifi_trace phase=exception operation=interface_retry "
+                "error_type=OSError detail=Wifi_Internal_Error attempt=2",
+            ],
+        )
+
+    def test_create_wlan_raises_after_exhausting_activation_attempts(self):
+        """Activation that never succeeds should raise after bounded retries."""
+        wifi_probe = self.import_module("wifi_probe")
+        wlan = FakeWLAN(active_error=OSError("Wifi Internal Error"))
+        network = FakeNetwork(wlan)
+        messages = []
+        sleeps = []
+
+        with self.assertRaises(OSError):
+            wifi_probe.create_wlan(
+                network_module=network,
+                attempts=3,
+                print_func=messages.append,
+                sleep_ms_func=sleeps.append,
+                collect_garbage=lambda: None,
+            )
+
+        self.assertEqual(wlan.active_attempts, 3)
+        self.assertEqual(sleeps, [wifi_probe.INTERFACE_RETRY_DELAY_MS] * 2)
+        retry_lines = [line for line in messages if "operation=interface_retry" in line]
+        self.assertEqual(len(retry_lines), 2)
+
+    def test_connect_wifi_interface_oserror_surfaces_redacted_detail(self):
+        """A radio-init OSError should trace a scrubbed detail without secrets."""
+        wifi_config = self.import_module("wifi_config")
+        wifi_probe = self.import_module("wifi_probe")
+        config = wifi_config.WiFiConfig("LabNet", "secret-password", "http://192.168.1.10")
+        wlan = FakeWLAN(active_error=OSError("Wifi Internal Error"))
+        network = FakeNetwork(wlan)
+        messages = []
+
+        with self.assertRaises(OSError):
+            wifi_probe.connect_wifi(
+                config,
+                network_module=network,
+                print_func=messages.append,
+                sleep_ms_func=lambda _ms: None,
+                ticks_ms_func=lambda: 0,
+            )
+
+        self.assertIn(
+            "wifi_trace phase=exception operation=interface "
+            "error_type=OSError detail=Wifi_Internal_Error",
+            messages,
+        )
+        trace_text = "\n".join(messages)
+        self.assertNotIn("LabNet", trace_text)
+        self.assertNotIn("secret-password", trace_text)
 
     def test_connect_wifi_throttles_status_heartbeats_and_reports_timeout(self):
         """Unchanged status should print once per second before the final timeout."""

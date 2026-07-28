@@ -10,6 +10,14 @@ from wifi_config import offline_network_detail
 STATUS_OK = "ok"
 STATUS_ERROR = "error"
 TRACE_HEARTBEAT_MS = 1000
+INTERFACE_ACTIVATION_ATTEMPTS = 3
+INTERFACE_RETRY_DELAY_MS = 500
+_DETAIL_MAX_LENGTH = 48
+_DETAIL_SAFE_CHARS = (
+    "abcdefghijklmnopqrstuvwxyz"
+    "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+    "0123456789._-/:"
+)
 
 WIFI_STATUS_NAMES = (
     ("STAT_IDLE", 0, "idle"),
@@ -66,11 +74,49 @@ def _load_network_module(network_module=None):
     return network
 
 
-def create_wlan(network_module=None):
-    """Create and activate the MicroPython station WLAN interface."""
+def _collect_garbage():
+    """Free heap before the Wi-Fi driver's large contiguous allocation."""
+    try:
+        import gc
+
+        gc.collect()
+    except Exception:
+        pass
+
+
+def create_wlan(
+    network_module=None,
+    attempts=INTERFACE_ACTIVATION_ATTEMPTS,
+    print_func=print,
+    sleep_ms_func=sleep_ms,
+    collect_garbage=_collect_garbage,
+):
+    """Create and activate the MicroPython station WLAN interface.
+
+    The radio driver needs a large contiguous heap allocation, so a garbage
+    collection precedes each activation and transient ``OSError`` failures
+    (for example "Wifi Internal Error") are retried a bounded number of times
+    before giving up. This keeps a momentarily busy or memory-starved radio
+    from failing the whole connect instantly.
+    """
     network_mod = _load_network_module(network_module)
     wlan = network_mod.WLAN(network_mod.STA_IF)
-    wlan.active(True)
+    total_attempts = max(1, int(attempts))
+    for attempt in range(1, total_attempts + 1):
+        collect_garbage()
+        try:
+            wlan.active(True)
+            return wlan
+        except OSError as exc:
+            if attempt >= total_attempts:
+                raise
+            _emit_exception_trace(
+                print_func,
+                "interface_retry",
+                exc,
+                extra_fields=(("attempt", attempt),),
+            )
+            sleep_ms_func(INTERFACE_RETRY_DELAY_MS)
     return wlan
 
 
@@ -96,12 +142,48 @@ def _numeric_error(error):
     return None
 
 
-def _emit_exception_trace(print_func, operation, error):
-    """Trace an exception type and optional numeric code without its message."""
+def _config_secrets(config):
+    """Return the configured values that must never leak into trace output."""
+    return (
+        getattr(config, "ssid", ""),
+        getattr(config, "password", ""),
+        getattr(config, "local_service_url", ""),
+    )
+
+
+def _error_detail(error, redact=()):
+    """Return a bounded, secret-scrubbed token from an exception message.
+
+    Driver errors like "Wifi Internal Error" carry no numeric ``errno``, so the
+    message is the only clue. It is scrubbed of any configured secrets, reduced
+    to a safe single-token charset, and length-bounded before it is traced.
+    """
+    arguments = getattr(error, "args", ())
+    text = str(arguments[0]) if arguments else str(error)
+    if not text:
+        return None
+    for secret in redact:
+        secret_text = str(secret)
+        if secret_text:
+            text = text.replace(secret_text, "***")
+    token = "".join(char if char in _DETAIL_SAFE_CHARS else "_" for char in text)
+    token = token.strip("_")
+    if not token:
+        return None
+    return token[:_DETAIL_MAX_LENGTH]
+
+
+def _emit_exception_trace(print_func, operation, error, redact=(), extra_fields=()):
+    """Trace an exception type with a numeric code or a redacted detail token."""
     fields = [("operation", operation), ("error_type", type(error).__name__)]
     error_number = _numeric_error(error)
     if error_number is not None:
         fields.append(("errno", error_number))
+    else:
+        detail = _error_detail(error, redact)
+        if detail is not None:
+            fields.append(("detail", detail))
+    fields.extend(extra_fields)
     _emit_trace(print_func, "exception", fields)
 
 
@@ -209,14 +291,18 @@ def connect_wifi(
     try:
         if created:
             active_network_module = _load_network_module(network_module)
-            wlan = create_wlan(active_network_module)
+            wlan = create_wlan(
+                active_network_module,
+                print_func=print_func,
+                sleep_ms_func=sleep_ms_func,
+            )
         elif active_network_module is None:
             try:
                 active_network_module = _load_network_module()
             except Exception:
                 active_network_module = None
     except Exception as exc:
-        _emit_exception_trace(print_func, "interface", exc)
+        _emit_exception_trace(print_func, "interface", exc, redact=_config_secrets(config))
         raise
 
     _emit_trace(
@@ -254,7 +340,7 @@ def connect_wifi(
     try:
         wlan.connect(config.ssid, config.password)
     except Exception as exc:
-        _emit_exception_trace(print_func, "connect", exc)
+        _emit_exception_trace(print_func, "connect", exc, redact=_config_secrets(config))
         raise
     credentials_present = int(bool(config.ssid) and bool(config.password))
     _emit_trace(

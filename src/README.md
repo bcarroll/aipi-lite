@@ -339,6 +339,20 @@ wifi_trace phase=status elapsed_ms=0 connected=0 status=connecting status_code=1
 wifi_trace phase=timeout elapsed_ms=15000 connected=0 status=connecting status_code=1
 ```
 
+Bringing the radio up needs a large contiguous heap allocation, so interface
+activation runs a `gc.collect()` first and retries a transient `OSError` (for
+example the string-only "Wifi Internal Error", which carries no `errno`) a
+bounded number of times before failing. Each retry prints a
+`phase=exception operation=interface_retry` line with the attempt number, and
+the final failure is a `phase=exception operation=interface` line — so a radio
+that never initializes fails visibly instead of silently and instantly:
+
+```text
+wifi_trace phase=exception operation=interface_retry error_type=OSError detail=Wifi_Internal_Error attempt=1
+wifi_trace phase=exception operation=interface_retry error_type=OSError detail=Wifi_Internal_Error attempt=2
+wifi_trace phase=exception operation=interface error_type=OSError detail=Wifi_Internal_Error
+```
+
 Known statuses map to `idle`, `connecting`, `wrong_password`, `no_ap_found`,
 `connect_fail`, and `got_ip`. Unknown numeric states remain visible, and missing
 status support reports `unavailable`. ESP32 MicroPython can keep reporting
@@ -347,9 +361,12 @@ evidence rather than a guaranteed root-cause label. Successful connections also
 report the local `ifconfig()` IP, netmask, gateway, and DNS values.
 
 The trace never prints the SSID, password, service URL, approved hostnames,
-MAC/BSSID, nearby networks, or arbitrary exception text. It reports only an
-exception type and numeric error code when available. Output remains on the
-local serial stream and is neither persisted nor transmitted.
+MAC/BSSID, or nearby networks. It reports an exception type plus either a numeric
+error code or, when none is available, a bounded `detail` token derived from the
+driver message. That token is scrubbed of the configured secrets, reduced to a
+safe single-token charset, and length-limited, so a low-level radio error stays
+diagnosable without leaking configuration. Output remains on the local serial
+stream and is neither persisted nor transmitted.
 
 ## Safety Notes
 
