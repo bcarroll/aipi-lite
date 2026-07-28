@@ -266,6 +266,17 @@ GPIO42 button continuously. The controller is dependency-injectable for host
 tests and hardware validation. It does not add public endpoints, cloud calls,
 telemetry, OTA behavior, or model downloads.
 
+While connecting, the LCD shows the live connection stage instead of a single
+static screen. The `WI-FI` screen steps through short, secret-free labels
+reported by the connector (`Starting radio`, `Radio ready`, `Requesting join`,
+`Associating`, `AP not found`, `Auth failed`, `Got IP`, `Connected`,
+`Timed out`), and a `SERVICE` screen then shows the local-service check
+(`Checking`, `Retry N`) before the controller lands on `ONLINE` or the
+component-aware `OFFLINE` screen. Each stage also prints an
+`assistant: stage wifi: ...` / `assistant: stage service: ...` line to serial
+alongside the existing `wifi_trace` output. Stage labels never include the SSID,
+password, or service URL.
+
 If Wi-Fi or the local service is unavailable, the controller shows fixed
 `Wi-Fi` and `SERVICE` rows with check/cross icons plus explicit
 `ONLINE`/`OFFLINE` text. A short press retries exactly the first offline

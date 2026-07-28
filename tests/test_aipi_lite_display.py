@@ -278,6 +278,7 @@ class AipiLiteDisplayConfigTests(unittest.TestCase):
             (
                 "boot",
                 "wifi",
+                "service",
                 "offline",
                 "limited",
                 "ready",
@@ -321,6 +322,25 @@ class AipiLiteDisplayConfigTests(unittest.TestCase):
         max_chars = display.max_chars_for_width(display.BODY_SCALE)
         self.assertTrue(all(len(line) <= max_chars for line in lines))
         self.assertIn("Check serial", lines)
+
+    def test_status_display_renders_service_stage_screen(self):
+        """The SERVICE screen should show its title, static lines, and stage detail."""
+        clear_imported_modules()
+        install_micropython_stubs()
+        display = self.import_display()
+        hardware = display.create_display_hardware(
+            pin_factory=FakePin,
+            pwm_factory=FakePWM,
+            spi_factory=FakeSPI,
+            tft_factory=FakeTFT,
+        )
+        renderer = display.StatusDisplay(hardware, font=FAKE_FONT)
+
+        title, lines = renderer.render_status("service", detail="Checking")
+
+        self.assertEqual(title, "SERVICE")
+        self.assertIn("Local service", lines)
+        self.assertIn("Checking", lines)
 
     def test_status_display_renders_ready_screen_and_controls_backlight(self):
         """StatusDisplay should clear, draw text, and turn on the backlight."""

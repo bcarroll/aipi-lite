@@ -158,12 +158,13 @@ class DiagnosticsLog:
 class ReconnectManager:
     """Ensure a WLAN connection is available before local service calls."""
 
-    def __init__(self, config, connect_func, wlan=None, diagnostics=None):
+    def __init__(self, config, connect_func, wlan=None, diagnostics=None, stage_func=None):
         """Create a reconnect manager around the configured Wi-Fi connector."""
         self.config = config
         self.connect_func = connect_func
         self.wlan = wlan
         self.diagnostics = diagnostics
+        self.stage_func = stage_func
 
     def is_connected(self):
         """Return True when the current WLAN reports a connection."""
@@ -175,7 +176,10 @@ class ReconnectManager:
             return self.wlan
         if self.diagnostics is not None:
             self.diagnostics.record("network", "reconnect")
-        self.wlan = self.connect_func(self.config, wlan=self.wlan)
+        if self.stage_func is not None:
+            self.wlan = self.connect_func(self.config, wlan=self.wlan, stage_func=self.stage_func)
+        else:
+            self.wlan = self.connect_func(self.config, wlan=self.wlan)
         return self.wlan
 
 

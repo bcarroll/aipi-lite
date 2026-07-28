@@ -194,7 +194,7 @@ class MainStartupTests(unittest.TestCase):
         reliability_module.DiagnosticsLog = lambda print_func: diagnostics
         wifi_probe_module = types.ModuleType("wifi_probe")
 
-        def connect_wifi(config, wlan=None, print_func=print):
+        def connect_wifi(config, wlan=None, print_func=print, stage_func=None):
             """Record connector arguments and emit one representative trace line."""
             connect_calls.append((config, wlan))
             print_func("wifi_trace phase=start timeout_ms=15000")

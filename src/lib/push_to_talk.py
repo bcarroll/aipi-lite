@@ -102,7 +102,7 @@ class PushToTalkController:
             connectivity=self.connectivity,
         )
         try:
-            self._retry(lambda: self.service_client.health(), "service_health")
+            self._check_service_health()
             self.connectivity = self.connectivity.with_service(True)
             self.state_machine.transition(STATE_READY, connectivity=self.connectivity)
             return STATE_READY
@@ -170,7 +170,7 @@ class PushToTalkController:
             connectivity=self.connectivity,
         )
         try:
-            self._retry(lambda: self.service_client.health(), "service_health")
+            self._check_service_health()
             self.connectivity = self.connectivity.with_service(True)
         except Exception as exc:
             return self._handle_service_failure(blocked_state, exc)
@@ -223,7 +223,7 @@ class PushToTalkController:
         """Return the assistant to ready after a visible error state."""
         return self.state_machine.reset_to_ready(detail=detail)
 
-    def _retry(self, operation, name):
+    def _retry(self, operation, name, stage_func=None):
         """Run a named local operation through the retry policy."""
         def on_retry(attempt, delay_ms, error):
             if self.diagnostics is not None:
@@ -233,12 +233,27 @@ class PushToTalkController:
                     {"attempt": attempt, "delay_ms": delay_ms, "type": type(error).__name__},
                 )
             self._ensure_network()
+            if stage_func is not None:
+                stage_func(attempt)
 
         return call_with_retries(
             operation,
             policy=self.retry_policy,
             sleep_ms_func=self.sleep_ms_func,
             on_retry=on_retry,
+        )
+
+    def _service_stage(self, detail):
+        """Show a local-service connection stage on the display and serial."""
+        self.state_machine.render_progress("service", detail)
+
+    def _check_service_health(self):
+        """Check local service health while showing connection stages."""
+        self._service_stage("Checking")
+        self._retry(
+            lambda: self.service_client.health(),
+            "service_health",
+            stage_func=lambda attempt: self._service_stage("Retry {}".format(attempt)),
         )
 
     def _ensure_network(self):
@@ -313,7 +328,13 @@ def create_controller(
     outputs = StatusOutputs(status_led=status_led, status_display=status_display, print_func=print_func)
     state_machine = AssistantStateMachine(outputs=outputs, diagnostics=diagnostics)
     if reconnect_manager is None and connect_wifi_func is not None and configuration_error is None:
-        reconnect_manager = ReconnectManager(config, connect_wifi_func, wlan=wlan, diagnostics=diagnostics)
+        reconnect_manager = ReconnectManager(
+            config,
+            connect_wifi_func,
+            wlan=wlan,
+            diagnostics=diagnostics,
+            stage_func=lambda stage: state_machine.render_progress("wifi", stage),
+        )
     return PushToTalkController(
         service_client,
         state_machine=state_machine,

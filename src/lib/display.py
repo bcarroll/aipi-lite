@@ -44,6 +44,7 @@ CONNECTIVITY_ACTION_Y = (91, 108)
 STATUS_ORDER = (
     "boot",
     "wifi",
+    "service",
     "offline",
     "limited",
     "ready",
@@ -63,6 +64,12 @@ STATUS_SCREENS = {
     "wifi": {
         "title": "WI-FI",
         "lines": ("Connecting", "Local network"),
+        "foreground": CYAN,
+        "background": BLACK,
+    },
+    "service": {
+        "title": "SERVICE",
+        "lines": ("Checking", "Local service"),
         "foreground": CYAN,
         "background": BLACK,
     },

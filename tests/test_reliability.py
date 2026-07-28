@@ -153,6 +153,25 @@ class ReliabilityTests(unittest.TestCase):
         self.assertIs(manager.ensure_connected(), replacement)
         self.assertEqual(calls, [("config", dropped)])
 
+    def test_reconnect_manager_forwards_stage_func_when_set(self):
+        """A configured stage_func should be forwarded to the connector on reconnect."""
+        forwarded = []
+        dropped = FakeWLAN(connected=False)
+        replacement = FakeWLAN(connected=True)
+
+        def connect(config, wlan=None, stage_func=None):
+            """Record the forwarded stage callback and return a fresh WLAN."""
+            forwarded.append(stage_func)
+            return replacement
+
+        stage = lambda label: None
+        manager = self.reliability.ReconnectManager(
+            "config", connect, wlan=dropped, stage_func=stage
+        )
+
+        self.assertIs(manager.ensure_connected(), replacement)
+        self.assertEqual(forwarded, [stage])
+
     def test_charge_pulse_reader_reports_observation_only(self):
         """ChargePulseReader should read GPIO21 without deriving battery percentage."""
         pin = FakeInputPin(value=1)

@@ -133,6 +133,17 @@ class StatusOutputs:
                 )
             )
 
+    def render_progress(self, display_status, detail):
+        """Render a transient connection-stage screen without a state transition.
+
+        This updates the display and serial only; it deliberately leaves the LED,
+        recorded events, history, and diagnostics untouched so stage updates never
+        crowd out real state transitions.
+        """
+        if self.status_display is not None:
+            self.status_display.render_status(display_status, detail=detail)
+        self.print_func("assistant: stage {}: {}".format(display_status, detail))
+
 
 class AssistantStateMachine:
     """Track assistant state transitions and notify shared UI outputs."""
@@ -174,6 +185,11 @@ class AssistantStateMachine:
                 connectivity=blocked_connectivity,
             )
         return state
+
+    def render_progress(self, display_status, detail):
+        """Show a connection-stage screen for the current state without transitioning."""
+        if self.outputs is not None:
+            self.outputs.render_progress(display_status, detail)
 
     def is_ready(self):
         """Return True when the assistant can accept a push-to-talk press."""

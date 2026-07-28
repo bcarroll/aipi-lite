@@ -502,9 +502,11 @@ class PushToTalkFlowTests(unittest.TestCase):
                 """Return connected after the first connect call."""
                 return True
 
-        def connect_wifi(config_arg, wlan=None):
+        def connect_wifi(config_arg, wlan=None, stage_func=None):
             """Record the Wi-Fi reconnect request."""
             connect_calls.append((config_arg, wlan))
+            if stage_func is not None:
+                stage_func("Connected")
             return ConnectedWLAN()
 
         controller = self.push_to_talk.create_controller(
@@ -523,6 +525,46 @@ class PushToTalkFlowTests(unittest.TestCase):
         self.assertEqual(service.calls, [("health",)])
         self.assertEqual(display.screens[-1], ("ready", None))
         self.assertIn("assistant: state connecting: local service", messages)
+
+    def test_connect_renders_wifi_and_service_stage_screens(self):
+        """Connecting should render Wi-Fi stage screens and a SERVICE stage screen."""
+        wifi_config = importlib.import_module("wifi_config")
+        config = wifi_config.WiFiConfig("LabNet", "secret-password", "http://192.168.1.10:8080")
+        service = FakeServiceClient()
+        display = FakeStatusDisplay()
+        messages = []
+
+        class ConnectedWLAN:
+            """Fake WLAN that reports an active connection."""
+
+            def isconnected(self):
+                """Report a live connection after the reconnect call."""
+                return True
+
+        def connect_wifi(config_arg, wlan=None, stage_func=None):
+            """Report representative Wi-Fi stages through the callback."""
+            if stage_func is not None:
+                stage_func("Radio ready")
+                stage_func("Associating")
+                stage_func("Connected")
+            return ConnectedWLAN()
+
+        controller = self.push_to_talk.create_controller(
+            config=config,
+            service_client=service,
+            status_display=display,
+            print_func=messages.append,
+            connect_wifi_func=connect_wifi,
+        )
+
+        self.assertEqual(controller.connect(), "ready")
+        self.assertIn(("wifi", "Associating"), display.screens)
+        self.assertIn(("service", "Checking"), display.screens)
+        self.assertEqual(display.screens[-1], ("ready", None))
+        self.assertIn("assistant: stage wifi: Associating", messages)
+        self.assertIn("assistant: stage service: Checking", messages)
+        stage_text = "\n".join(messages)
+        self.assertNotIn("secret-password", stage_text)
 
     def test_capture_failure_enters_error_state(self):
         """Capture errors should stop the exchange and show an error state."""

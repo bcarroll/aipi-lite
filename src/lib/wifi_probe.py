@@ -28,6 +28,31 @@ WIFI_STATUS_NAMES = (
     ("STAT_GOT_IP", 3, "got_ip"),
 )
 
+# Short, secret-free labels shown on the LCD for each driver status name.
+WIFI_STAGE_LABELS = {
+    "idle": "Idle",
+    "connecting": "Associating",
+    "wrong_password": "Auth failed",
+    "no_ap_found": "AP not found",
+    "connect_fail": "Join failed",
+    "got_ip": "Got IP",
+}
+
+
+def _emit_stage(stage_func, label):
+    """Report a human-readable connection stage without affecting serial trace."""
+    if stage_func is None:
+        return
+    try:
+        stage_func(label)
+    except Exception:
+        pass
+
+
+def _stage_label_for_status(status_name):
+    """Map a driver status name to a short LCD stage label."""
+    return WIFI_STAGE_LABELS.get(status_name, "Working")
+
 
 class WiFiProbeError(Exception):
     """Raised when Wi-Fi or local health probing fails."""
@@ -281,10 +306,17 @@ def connect_wifi(
     print_func=print,
     sleep_ms_func=sleep_ms,
     ticks_ms_func=ticks_ms,
+    stage_func=None,
 ):
-    """Connect to configured Wi-Fi and return the active WLAN object."""
+    """Connect to configured Wi-Fi and return the active WLAN object.
+
+    ``stage_func`` is an optional callback that receives short, secret-free stage
+    labels (for example "Starting radio", "Associating", "Got IP") so callers can
+    show connection progress on a display. It never receives credentials.
+    """
     started = ticks_ms_func()
     _emit_trace(print_func, "start", (("timeout_ms", timeout_ms),))
+    _emit_stage(stage_func, "Starting radio")
 
     created = wlan is None
     active_network_module = network_module
@@ -303,6 +335,7 @@ def connect_wifi(
                 active_network_module = None
     except Exception as exc:
         _emit_exception_trace(print_func, "interface", exc, redact=_config_secrets(config))
+        _emit_stage(stage_func, "Radio error")
         raise
 
     _emit_trace(
@@ -310,6 +343,7 @@ def connect_wifi(
         "interface",
         (("active", _active_trace_value(wlan, created, print_func)),),
     )
+    _emit_stage(stage_func, "Radio ready")
 
     connected = _is_connected(wlan, print_func)
     status_enabled = True
@@ -335,12 +369,14 @@ def connect_wifi(
             "connected",
             _connected_trace_fields(0, status_code, status_name, wlan, print_func),
         )
+        _emit_stage(stage_func, "Connected")
         return wlan
 
     try:
         wlan.connect(config.ssid, config.password)
     except Exception as exc:
         _emit_exception_trace(print_func, "connect", exc, redact=_config_secrets(config))
+        _emit_stage(stage_func, "Join failed")
         raise
     credentials_present = int(bool(config.ssid) and bool(config.password))
     _emit_trace(
@@ -348,6 +384,7 @@ def connect_wifi(
         "connect_requested",
         (("credentials_present", credentials_present),),
     )
+    _emit_stage(stage_func, "Requesting join")
 
     last_status_key = None
     last_status_trace_ms = None
@@ -377,6 +414,8 @@ def connect_wifi(
                     ("status_code", status_code if status_code is not None else "unavailable"),
                 ),
             )
+            if status_changed and not connected:
+                _emit_stage(stage_func, _stage_label_for_status(status_name))
             last_status_key = status_key
             last_status_trace_ms = elapsed_ms
 
@@ -392,6 +431,7 @@ def connect_wifi(
                     print_func,
                 ),
             )
+            _emit_stage(stage_func, "Connected")
             return wlan
         if elapsed_ms >= timeout_ms:
             _emit_trace(
@@ -404,6 +444,7 @@ def connect_wifi(
                     ("status_code", status_code if status_code is not None else "unavailable"),
                 ),
             )
+            _emit_stage(stage_func, "Timed out")
             raise WiFiProbeError("Wi-Fi connection timed out")
         sleep_ms_func(250)
 

@@ -62,9 +62,9 @@ def create_push_to_talk_controller(status_led=None, status_display=None, print_f
     from reliability import DiagnosticsLog
     from wifi_probe import connect_wifi
 
-    def connect_wifi_with_trace(config, wlan=None):
+    def connect_wifi_with_trace(config, wlan=None, stage_func=None):
         """Connect Wi-Fi while routing always-on trace output to serial."""
-        return connect_wifi(config, wlan=wlan, print_func=print_func)
+        return connect_wifi(config, wlan=wlan, print_func=print_func, stage_func=stage_func)
 
     diagnostics = DiagnosticsLog(print_func=print_func)
     return create_controller(

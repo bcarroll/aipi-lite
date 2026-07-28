@@ -401,6 +401,56 @@ class WifiPolicyTests(unittest.TestCase):
         self.assertNotIn("LabNet", trace_text)
         self.assertNotIn("secret-password", trace_text)
 
+    def test_connect_wifi_reports_stage_labels_to_callback(self):
+        """connect_wifi should report friendly stage labels without leaking secrets."""
+        wifi_config = self.import_module("wifi_config")
+        wifi_probe = self.import_module("wifi_probe")
+        config = wifi_config.WiFiConfig("LabNet", "secret-password", "http://192.168.1.10")
+        wlan = FakeWLAN(connected_after=1, statuses=(1, 3))
+        network = FakeNetwork(wlan)
+        stages = []
+        ticks = iter((0, 100, 200, 300))
+
+        wifi_probe.connect_wifi(
+            config,
+            network_module=network,
+            print_func=lambda _line: None,
+            sleep_ms_func=lambda _ms: None,
+            ticks_ms_func=lambda: next(ticks),
+            stage_func=stages.append,
+        )
+
+        self.assertEqual(stages[0], "Starting radio")
+        self.assertIn("Radio ready", stages)
+        self.assertIn("Requesting join", stages)
+        self.assertEqual(stages[-1], "Connected")
+        self.assertNotIn("LabNet", stages)
+        self.assertNotIn("secret-password", stages)
+
+    def test_connect_wifi_reports_timeout_stage(self):
+        """A Wi-Fi timeout should surface a 'Timed out' stage after failure labels."""
+        wifi_config = self.import_module("wifi_config")
+        wifi_probe = self.import_module("wifi_probe")
+        config = wifi_config.WiFiConfig("LabNet", "secret-password", "http://192.168.1.10")
+        wlan = FakeWLAN(connected_after=100, statuses=(-2,))
+        network = FakeNetwork(wlan)
+        stages = []
+        ticks = iter((0, 0, 250))
+
+        with self.assertRaises(wifi_probe.WiFiProbeError):
+            wifi_probe.connect_wifi(
+                config,
+                network_module=network,
+                timeout_ms=250,
+                print_func=lambda _line: None,
+                sleep_ms_func=lambda _ms: None,
+                ticks_ms_func=lambda: next(ticks),
+                stage_func=stages.append,
+            )
+
+        self.assertIn("AP not found", stages)
+        self.assertEqual(stages[-1], "Timed out")
+
     def test_connect_wifi_throttles_status_heartbeats_and_reports_timeout(self):
         """Unchanged status should print once per second before the final timeout."""
         wifi_config = self.import_module("wifi_config")
