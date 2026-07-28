@@ -11,7 +11,7 @@ automated here; they remain manual recovery steps (see RECOVERY.md).
 from __future__ import annotations
 
 import argparse
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import datetime, timezone
 import os
 from pathlib import Path
@@ -20,6 +20,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import time
 from typing import Callable, Sequence, TextIO
 from urllib.request import urlopen
 
@@ -43,6 +44,9 @@ MICROPYTHON_BASE_URL = "https://micropython.org"
 DEFAULT_FLASH_BAUD = "460800"
 ESP32_CHIP = "esp32s3"
 FLASH_WRITE_OFFSET = "0"
+# Seconds to wait after flashing for the device to hard-reset into MicroPython
+# and its USB serial port to re-enumerate before an mpremote upload connects.
+POST_FLASH_BOOT_DELAY_SECONDS = 6.0
 # The AIPI-Lite carries 8 MB Octal PSRAM, so MicroPython must be the
 # Octal-SPIRAM build; the plain ESP32_GENERIC_S3 image leaves the radio without
 # internal DRAM and Wi-Fi init fails with "Wifi Out of Memory".
@@ -600,7 +604,11 @@ def download_firmware(url: str, sink: OutputSink, *, opener=urlopen) -> Path:
 
 
 def esptool_erase_command(python: Path, port: str) -> list[str]:
-    """Return the esptool command that erases the device flash."""
+    """Return the esptool command that erases flash and stays in the bootloader.
+
+    ``--after no_reset`` keeps the chip in download mode so the immediately
+    following ``write_flash`` does not have to re-enter the bootloader.
+    """
     return [
         str(python),
         "-m",
@@ -609,12 +617,18 @@ def esptool_erase_command(python: Path, port: str) -> list[str]:
         ESP32_CHIP,
         "--port",
         port,
+        "--after",
+        "no_reset",
         "erase_flash",
     ]
 
 
 def esptool_write_command(python: Path, port: str, baud: str, firmware_path: Path) -> list[str]:
-    """Return the esptool command that writes a firmware image at offset 0."""
+    """Return the esptool command that writes firmware and hard-resets the device.
+
+    ``--after hard_reset`` reboots the board into the freshly written MicroPython
+    so a subsequent mpremote upload can connect.
+    """
     return [
         str(python),
         "-m",
@@ -623,6 +637,8 @@ def esptool_write_command(python: Path, port: str, baud: str, firmware_path: Pat
         ESP32_CHIP,
         "--port",
         port,
+        "--after",
+        "hard_reset",
         "--baud",
         baud,
         "write_flash",
@@ -670,7 +686,7 @@ def run_flash(request: InstallRequest, sink: OutputSink) -> int:
     if write_status != 0:
         sink.write(f"Flash write failed with status {write_status}.", error=True)
         return write_status
-    sink.write("MicroPython flash complete.")
+    sink.write("MicroPython flash complete; device hard-reset into MicroPython.")
     return 0
 
 
@@ -752,6 +768,14 @@ def run_install_request(request: InstallRequest, sink: OutputSink) -> int:
         flash_status = run_flash(request, sink)
         if flash_status != 0:
             return flash_status
+        sink.write(
+            f"Waiting {POST_FLASH_BOOT_DELAY_SECONDS:.0f}s for the device to reboot "
+            "into MicroPython before upload..."
+        )
+        time.sleep(POST_FLASH_BOOT_DELAY_SECONDS)
+        # Reset once more through mpremote so the upload starts from a clean boot
+        # even if the port re-enumerated after flashing.
+        request = replace(request, preflight_reset=True)
     executable = ensure_mpremote(request.assume_yes, sink)
     if request.preflight_reset:
         sink.write(

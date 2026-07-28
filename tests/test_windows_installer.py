@@ -1223,12 +1223,23 @@ class WindowsFirmwareFlashTests(unittest.TestCase):
         self.assertIn("SPIRAM_OCT", url)
 
     def test_esptool_commands_target_esp32s3_port_baud_and_offset(self):
-        """Erase and write commands should match the device chip, port, and offset."""
+        """Erase stays in bootloader; write hard-resets into MicroPython at offset 0."""
         python = Path("C:/venv/Scripts/python.exe")
         erase = installer.esptool_erase_command(python, "COM5")
         self.assertEqual(
             erase,
-            [str(python), "-m", "esptool", "--chip", "esp32s3", "--port", "COM5", "erase_flash"],
+            [
+                str(python),
+                "-m",
+                "esptool",
+                "--chip",
+                "esp32s3",
+                "--port",
+                "COM5",
+                "--after",
+                "no_reset",
+                "erase_flash",
+            ],
         )
         write = installer.esptool_write_command(python, "COM5", "460800", Path("fw.bin"))
         self.assertEqual(
@@ -1241,6 +1252,8 @@ class WindowsFirmwareFlashTests(unittest.TestCase):
                 "esp32s3",
                 "--port",
                 "COM5",
+                "--after",
+                "hard_reset",
                 "--baud",
                 "460800",
                 "write_flash",
@@ -1249,8 +1262,8 @@ class WindowsFirmwareFlashTests(unittest.TestCase):
             ],
         )
 
-    def test_flash_then_upload_runs_erase_write_then_copy_in_order(self):
-        """With --flash-micropython, erase and write precede the application upload."""
+    def test_flash_then_upload_waits_for_reboot_then_resets_before_copy(self):
+        """Flashing should erase, write, wait for reboot, then reset before copy."""
         request = installer.InstallRequest(
             port="COM7", no_reset=False, assume_yes=True, flash_micropython=True
         )
@@ -1274,17 +1287,25 @@ class WindowsFirmwareFlashTests(unittest.TestCase):
             ),
             mock.patch.object(installer, "download_firmware", return_value=Path("fw.bin")),
             mock.patch.object(installer, "ensure_mpremote", return_value=Path("mpremote.exe")),
+            mock.patch.object(installer.time, "sleep") as sleep,
             mock.patch.object(
                 installer, "run_streaming", side_effect=successful_command
             ) as run_streaming,
         ):
             self.assertEqual(installer.run_install_request(request, sink), 0)
 
+        sleep.assert_called_once_with(installer.POST_FLASH_BOOT_DELAY_SECONDS)
         commands = [call.args[0] for call in run_streaming.call_args_list]
         self.assertIn("erase_flash", commands[0])
         self.assertIn("write_flash", commands[1])
-        self.assertEqual(commands[2][3:6], ["fs", "cp", "-r"])
-        self.assertIn("MicroPython flash complete.", sink.transcript)
+        # The upload connection resets and settles the freshly booted device first.
+        self.assertEqual(
+            commands[2][3:6],
+            ["reset", "sleep", installer.VALIDATION_PREFLIGHT_RESET_DELAY_SECONDS],
+        )
+        self.assertIn("fs", commands[2])
+        self.assertIn("cp", commands[2])
+        self.assertIn("device hard-reset into MicroPython", sink.transcript)
 
     def test_flash_write_failure_stops_before_upload(self):
         """A failed flash write should return its status and never upload the app."""

@@ -55,6 +55,10 @@ Flash-related flags:
 - `--baud RATE` sets the flash baud rate (default `460800`).
 - `--skip-erase` skips the pre-flash chip erase.
 
+After writing firmware, the installer hard-resets the device into MicroPython,
+waits for it to reboot and its USB serial port to re-enumerate, then resets once
+more over `mpremote` before uploading the application in the same run.
+
 The operator must place the device in ESP32-S3 bootloader mode and connect it
 over USB-C before flashing, because those are physical actions.
 
