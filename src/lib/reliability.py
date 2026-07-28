@@ -170,16 +170,22 @@ class ReconnectManager:
         """Return True when the current WLAN reports a connection."""
         return self.wlan is not None and hasattr(self.wlan, "isconnected") and self.wlan.isconnected()
 
-    def ensure_connected(self):
-        """Reconnect Wi-Fi when needed and return the active WLAN."""
+    def ensure_connected(self, skip_check=None):
+        """Reconnect Wi-Fi when needed and return the active WLAN.
+
+        An optional ``skip_check`` callable is forwarded to the connector so a
+        user gesture can abandon the connection wait.
+        """
         if self.is_connected():
             return self.wlan
         if self.diagnostics is not None:
             self.diagnostics.record("network", "reconnect")
+        kwargs = {}
         if self.stage_func is not None:
-            self.wlan = self.connect_func(self.config, wlan=self.wlan, stage_func=self.stage_func)
-        else:
-            self.wlan = self.connect_func(self.config, wlan=self.wlan)
+            kwargs["stage_func"] = self.stage_func
+        if skip_check is not None:
+            kwargs["skip_check"] = skip_check
+        self.wlan = self.connect_func(self.config, wlan=self.wlan, **kwargs)
         return self.wlan
 
 

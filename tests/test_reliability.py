@@ -172,6 +172,23 @@ class ReliabilityTests(unittest.TestCase):
         self.assertIs(manager.ensure_connected(), replacement)
         self.assertEqual(forwarded, [stage])
 
+    def test_reconnect_manager_forwards_skip_check_when_provided(self):
+        """A skip_check passed to ensure_connected should reach the connector."""
+        forwarded = []
+        dropped = FakeWLAN(connected=False)
+        replacement = FakeWLAN(connected=True)
+
+        def connect(config, wlan=None, skip_check=None):
+            """Record the forwarded skip callback and return a fresh WLAN."""
+            forwarded.append(skip_check)
+            return replacement
+
+        skip = lambda: False
+        manager = self.reliability.ReconnectManager("config", connect, wlan=dropped)
+
+        self.assertIs(manager.ensure_connected(skip_check=skip), replacement)
+        self.assertEqual(forwarded, [skip])
+
     def test_charge_pulse_reader_reports_observation_only(self):
         """ChargePulseReader should read GPIO21 without deriving battery percentage."""
         pin = FakeInputPin(value=1)

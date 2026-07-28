@@ -123,7 +123,7 @@ class FakeReconnectManager:
         """Return the current simulated WLAN state."""
         return self.connected
 
-    def ensure_connected(self):
+    def ensure_connected(self, skip_check=None):
         """Record one reconnect attempt."""
         self.calls += 1
         self.connected = True
@@ -141,7 +141,7 @@ class FailingReconnectManager:
         """Report that the simulated WLAN is not connected."""
         return False
 
-    def ensure_connected(self):
+    def ensure_connected(self, skip_check=None):
         """Raise a simulated Wi-Fi connection failure."""
         self.calls += 1
         raise RuntimeError("Wi-Fi unavailable")
@@ -565,6 +565,62 @@ class PushToTalkFlowTests(unittest.TestCase):
         self.assertIn("assistant: stage service: Checking", messages)
         stage_text = "\n".join(messages)
         self.assertNotIn("secret-password", stage_text)
+
+    def test_skip_during_wifi_check_enters_offline(self):
+        """A skip gesture during the Wi-Fi check should stop waiting and go OFFLINE."""
+        wifi_config = importlib.import_module("wifi_config")
+        config = wifi_config.WiFiConfig("LabNet", "secret-password", "http://192.168.1.10:8080")
+        display = FakeStatusDisplay()
+
+        def connect_wifi(config_arg, wlan=None, stage_func=None, skip_check=None):
+            """Abort like the real connector when the skip gesture is active."""
+            if skip_check is not None and skip_check():
+                raise RuntimeError("Wi-Fi connection skipped")
+            raise AssertionError("connect_wifi should have skipped")
+
+        controller = self.push_to_talk.create_controller(
+            config=config,
+            service_client=FakeServiceClient(),
+            status_display=display,
+            print_func=lambda _line: None,
+            connect_wifi_func=connect_wifi,
+        )
+
+        self.assertEqual(controller.connect(skip_check=lambda: True), "offline")
+        self.assertEqual(display.connectivity_screens[-1], ("offline", False, False, "wifi"))
+
+    def test_skip_during_service_check_enters_offline_with_wifi_online(self):
+        """Skipping the service check should leave Wi-Fi online and service blocked."""
+        wifi_config = importlib.import_module("wifi_config")
+        config = wifi_config.WiFiConfig("LabNet", "secret-password", "http://192.168.1.10:8080")
+        display = FakeStatusDisplay()
+        skip_state = {"active": False}
+
+        class ConnectedWLAN:
+            """Fake WLAN that reports a live connection after Wi-Fi connects."""
+
+            def isconnected(self):
+                """Report the connection as live."""
+                return True
+
+        def connect_wifi(config_arg, wlan=None, stage_func=None, skip_check=None):
+            """Connect Wi-Fi, then arm the skip gesture for the service check."""
+            skip_state["active"] = True
+            return ConnectedWLAN()
+
+        controller = self.push_to_talk.create_controller(
+            config=config,
+            service_client=FakeServiceClient(),
+            status_display=display,
+            print_func=lambda _line: None,
+            connect_wifi_func=connect_wifi,
+        )
+
+        self.assertEqual(
+            controller.connect(skip_check=lambda: skip_state["active"]),
+            "offline",
+        )
+        self.assertEqual(display.connectivity_screens[-1], ("offline", True, False, "service"))
 
     def test_capture_failure_enters_error_state(self):
         """Capture errors should stop the exchange and show an error state."""

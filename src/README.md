@@ -282,6 +282,12 @@ Stage updates that stay on the same screen repaint only the body-text region
 and status dot stay put and the screen does not flicker as stages advance. A
 change to a different status still does a full clear and title redraw.
 
+Both connecting screens show a `Hold to skip` hint. Holding the right function
+button while the `WI-FI` or `SERVICE` screen is up abandons that check
+immediately instead of waiting out the Wi-Fi timeout or the service retries, and
+the controller falls through to the component-aware `OFFLINE` screen where a tap
+retries and a two-second hold bypasses into `LIMITED`.
+
 If Wi-Fi or the local service is unavailable, the controller shows fixed
 `Wi-Fi` and `SERVICE` rows with check/cross icons plus explicit
 `ONLINE`/`OFFLINE` text. A short press retries exactly the first offline

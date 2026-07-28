@@ -111,8 +111,17 @@ def run_push_to_talk_app(
         status_display=status_display,
         print_func=print_func,
     )
-    connection_state = controller.connect()
     button = button_factory()
+
+    def skip_check():
+        """Report a held button so a connection check can be skipped."""
+        try:
+            button.update()
+            return bool(button.is_pressed())
+        except Exception:
+            return False
+
+    connection_state = controller.connect(skip_check=skip_check)
     if connection_state == "ready":
         print_func("main: push-to-talk ready")
     else:

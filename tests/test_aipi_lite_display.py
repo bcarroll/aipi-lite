@@ -299,6 +299,13 @@ class AipiLiteDisplayConfigTests(unittest.TestCase):
             self.assertIn("foreground", definition)
             self.assertIn("background", definition)
 
+    def test_connecting_screens_offer_a_skip_hint(self):
+        """The WI-FI and SERVICE screens should tell the operator how to skip."""
+        display = self.import_display()
+        for status in ("wifi", "service"):
+            with self.subTest(status=status):
+                self.assertIn("Hold to skip", display.screen_definition(status)["lines"])
+
     def test_wrap_text_keeps_lines_within_display_bounds(self):
         """Long status details should wrap and truncate inside the screen width."""
         display = self.import_display()

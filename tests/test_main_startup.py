@@ -42,6 +42,20 @@ class FakeStatusLed:
 class FakeButton:
     """Stand in for the debounced GPIO42 button."""
 
+    def __init__(self, pressed=False):
+        """Create a fake button with an optional held state."""
+        self.pressed = pressed
+        self.update_calls = 0
+
+    def update(self, now_ms=None):
+        """Record a debounce poll."""
+        self.update_calls += 1
+        return None
+
+    def is_pressed(self):
+        """Return the fake held state."""
+        return self.pressed
+
 
 class FakeController:
     """Record push-to-talk controller startup calls."""
@@ -51,10 +65,12 @@ class FakeController:
         self.fail_connect = fail_connect
         self.connect_result = connect_result
         self.connect_calls = 0
+        self.skip_checks = []
 
-    def connect(self):
-        """Record service connection attempts."""
+    def connect(self, skip_check=None):
+        """Record service connection attempts and any provided skip callback."""
         self.connect_calls += 1
+        self.skip_checks.append(skip_check)
         if self.fail_connect:
             raise RuntimeError("local service unavailable")
         return self.connect_result
@@ -119,6 +135,29 @@ class MainStartupTests(unittest.TestCase):
         self.assertIn("main: connecting local push-to-talk service", messages)
         self.assertIn("main: push-to-talk ready", messages)
         self.assertIn("main: polling right function button", messages)
+
+    def test_main_passes_a_working_skip_check_into_connect(self):
+        """connect() should receive a skip_check backed by the polled side button."""
+        button = FakeButton(pressed=True)
+        controller = FakeController()
+
+        self.main.main(
+            print_func=lambda _line: None,
+            idle_polls=1,
+            status_display_factory=lambda: FakeStatusDisplay(),
+            status_led_factory=lambda: FakeStatusLed(),
+            button_factory=lambda: button,
+            controller_factory=lambda **kwargs: controller,
+            poll_button_loop_func=lambda *args, **kwargs: "ready",
+            disable_speaker_func=lambda: None,
+        )
+
+        self.assertEqual(len(controller.skip_checks), 1)
+        skip_check = controller.skip_checks[0]
+        self.assertIsNotNone(skip_check)
+        # The callback polls and reports the held button so a check can be skipped.
+        self.assertTrue(skip_check())
+        self.assertGreaterEqual(button.update_calls, 1)
 
     def test_main_renders_visible_error_when_push_to_talk_startup_fails(self):
         """Startup failures should show an error instead of staying on boot."""

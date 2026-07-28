@@ -63,13 +63,13 @@ STATUS_SCREENS = {
     },
     "wifi": {
         "title": "WI-FI",
-        "lines": ("Connecting", "Local network"),
+        "lines": ("Connecting", "Local network", "Hold to skip"),
         "foreground": CYAN,
         "background": BLACK,
     },
     "service": {
         "title": "SERVICE",
-        "lines": ("Checking", "Local service"),
+        "lines": ("Checking", "Local service", "Hold to skip"),
         "foreground": CYAN,
         "background": BLACK,
     },

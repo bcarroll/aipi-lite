@@ -451,6 +451,33 @@ class WifiPolicyTests(unittest.TestCase):
         self.assertIn("AP not found", stages)
         self.assertEqual(stages[-1], "Timed out")
 
+    def test_connect_wifi_skips_when_skip_check_returns_true(self):
+        """A skip gesture should abort the wait immediately with a 'Skipped' stage."""
+        wifi_config = self.import_module("wifi_config")
+        wifi_probe = self.import_module("wifi_probe")
+        config = wifi_config.WiFiConfig("LabNet", "secret-password", "http://192.168.1.10")
+        wlan = FakeWLAN(connected_after=100, statuses=(1,))
+        network = FakeNetwork(wlan)
+        stages = []
+        sleeps = []
+        ticks = iter((0, 0, 250, 500))
+
+        with self.assertRaises(wifi_probe.WiFiProbeError):
+            wifi_probe.connect_wifi(
+                config,
+                network_module=network,
+                timeout_ms=15000,
+                print_func=lambda _line: None,
+                sleep_ms_func=sleeps.append,
+                ticks_ms_func=lambda: next(ticks),
+                stage_func=stages.append,
+                skip_check=lambda: True,
+            )
+
+        self.assertEqual(stages[-1], "Skipped")
+        # Skip aborts on the first loop iteration, long before the 15s timeout.
+        self.assertEqual(sleeps, [])
+
     def test_connect_wifi_throttles_status_heartbeats_and_reports_timeout(self):
         """Unchanged status should print once per second before the final timeout."""
         wifi_config = self.import_module("wifi_config")

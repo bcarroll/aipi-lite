@@ -307,12 +307,17 @@ def connect_wifi(
     sleep_ms_func=sleep_ms,
     ticks_ms_func=ticks_ms,
     stage_func=None,
+    skip_check=None,
 ):
     """Connect to configured Wi-Fi and return the active WLAN object.
 
     ``stage_func`` is an optional callback that receives short, secret-free stage
     labels (for example "Starting radio", "Associating", "Got IP") so callers can
     show connection progress on a display. It never receives credentials.
+
+    ``skip_check`` is an optional callable polled during the connection wait; when
+    it returns True the wait is abandoned and ``WiFiProbeError`` is raised so the
+    caller can move on instead of waiting out the timeout.
     """
     started = ticks_ms_func()
     _emit_trace(print_func, "start", (("timeout_ms", timeout_ms),))
@@ -389,6 +394,10 @@ def connect_wifi(
     last_status_key = None
     last_status_trace_ms = None
     while True:
+        if skip_check is not None and skip_check():
+            _emit_trace(print_func, "skipped", (("elapsed_ms", ticks_diff(ticks_ms_func(), started)),))
+            _emit_stage(stage_func, "Skipped")
+            raise WiFiProbeError("Wi-Fi connection skipped")
         connected = _is_connected(wlan, print_func)
         elapsed_ms = ticks_diff(ticks_ms_func(), started)
         status_code, status_name, status_enabled = _read_wlan_status(

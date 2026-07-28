@@ -82,8 +82,13 @@ class PushToTalkController:
         self._blocked_hold_consumed = False
         self.last_result = None
 
-    def connect(self):
-        """Attempt Wi-Fi and local-service startup in dependency order."""
+    def connect(self, skip_check=None):
+        """Attempt Wi-Fi and local-service startup in dependency order.
+
+        ``skip_check`` is an optional callable polled during each blocking check;
+        when it returns True the current check is abandoned and the controller
+        falls through to the component-aware OFFLINE screen.
+        """
         self.connectivity = ConnectivityStatus()
         self.state_machine.transition(
             STATE_CONNECTING,
@@ -91,7 +96,7 @@ class PushToTalkController:
             connectivity=self.connectivity,
         )
         try:
-            self._ensure_network()
+            self._ensure_network(skip_check=skip_check)
             self.connectivity = self.connectivity.with_wifi(True)
         except Exception as exc:
             return self._go_connectivity_blocked(STATE_OFFLINE, "wifi_connect", exc)
@@ -102,7 +107,7 @@ class PushToTalkController:
             connectivity=self.connectivity,
         )
         try:
-            self._check_service_health()
+            self._check_service_health(skip_check=skip_check)
             self.connectivity = self.connectivity.with_service(True)
             self.state_machine.transition(STATE_READY, connectivity=self.connectivity)
             return STATE_READY
@@ -247,21 +252,33 @@ class PushToTalkController:
         """Show a local-service connection stage on the display and serial."""
         self.state_machine.render_progress("service", detail)
 
-    def _check_service_health(self):
+    def _check_service_health(self, skip_check=None):
         """Check local service health while showing connection stages."""
+        if skip_check is not None and skip_check():
+            raise PushToTalkError("service check skipped")
         self._service_stage("Checking")
+
+        def service_stage(attempt):
+            """Abort on a skip gesture, otherwise show the retry stage."""
+            if skip_check is not None and skip_check():
+                raise PushToTalkError("service check skipped")
+            self._service_stage("Retry {}".format(attempt))
+
         self._retry(
             lambda: self.service_client.health(),
             "service_health",
-            stage_func=lambda attempt: self._service_stage("Retry {}".format(attempt)),
+            stage_func=service_stage,
         )
 
-    def _ensure_network(self):
+    def _ensure_network(self, skip_check=None):
         """Reconnect Wi-Fi when a reconnect manager is available."""
         if self.configuration_error is not None:
             raise self.configuration_error
         if self.reconnect_manager is not None:
-            self.reconnect_manager.ensure_connected()
+            if skip_check is not None:
+                self.reconnect_manager.ensure_connected(skip_check=skip_check)
+            else:
+                self.reconnect_manager.ensure_connected()
 
     def _network_is_connected(self):
         """Return the reconnect manager's best-effort current WLAN state."""
