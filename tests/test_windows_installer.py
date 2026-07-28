@@ -977,11 +977,93 @@ class WindowsInstallerTests(unittest.TestCase):
         self.assertNotIn("## Redacted Upload Failure Diagnostics", success_body)
         self.assertIn("No high-signal upload diagnostics were captured.", empty_failure_body)
 
-    def test_device_validation_requires_a_com_port(self):
-        """The physical validation command should not run without one COM port."""
-        with mock.patch("sys.stderr", new=io.StringIO()):
-            with self.assertRaises(SystemExit):
-                installer.create_parser().parse_args(["validate", "--yes"])
+    def test_validate_accepts_no_port_and_falls_back_to_conf(self):
+        """validate without --port should parse and reuse the saved .conf port."""
+        args = installer.create_parser().parse_args(["validate", "--yes"])
+        self.assertIsNone(args.port)
+
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            conf_file = Path(temporary_directory) / ".conf"
+            conf_file.write_text("AIPI_SERIAL_PORT=COM7\n", encoding="utf-8")
+            self.assertEqual(
+                installer.resolve_validation_port(None, conf_file=conf_file),
+                "COM7",
+            )
+
+    def test_resolve_validation_port_prefers_explicit_then_saved_then_single(self):
+        """An explicit port wins; otherwise saved .conf; otherwise a sole detected port."""
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            conf_file = Path(temporary_directory) / ".conf"
+            conf_file.write_text("AIPI_SERIAL_PORT=COM7\n", encoding="utf-8")
+
+            self.assertEqual(
+                installer.resolve_validation_port("com9", conf_file=conf_file),
+                "COM9",
+            )
+
+            empty_conf = Path(temporary_directory) / "empty.conf"
+            self.assertEqual(
+                installer.resolve_validation_port(
+                    None, conf_file=empty_conf, detected_ports=["COM5"]
+                ),
+                "COM5",
+            )
+
+    def test_resolve_validation_port_errors_without_a_port(self):
+        """No explicit, saved, or single detected port should raise a clear error."""
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            empty_conf = Path(temporary_directory) / ".conf"
+            with self.assertRaisesRegex(installer.InstallerError, "no serial port"):
+                installer.resolve_validation_port(
+                    None, conf_file=empty_conf, detected_ports=[]
+                )
+            with self.assertRaisesRegex(installer.InstallerError, "multiple Windows COM ports"):
+                installer.resolve_validation_port(
+                    None, conf_file=empty_conf, detected_ports=["COM5", "COM7"]
+                )
+
+    def test_device_validation_uses_saved_port_when_port_omitted(self):
+        """run_device_validation should upload to the saved .conf port when --port is omitted."""
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            conf_file = Path(temporary_directory) / ".conf"
+            conf_file.write_text("AIPI_SERIAL_PORT=COM7\n", encoding="utf-8")
+            capture_dir = Path(temporary_directory) / "capture"
+            args = installer.create_parser().parse_args(
+                ["validate", "--capture-dir", str(capture_dir), "--yes"]
+            )
+            sink = self.make_sink()
+            received_request = None
+
+            def simulated_install(request, install_sink):
+                """Capture the upload request without a physical device."""
+                nonlocal received_request
+                received_request = request
+                return 0
+
+            def simulated_batch(command, probe_sink):
+                """Emit successful results for every probe."""
+                for probe in installer.DEVICE_VALIDATION_PROBES:
+                    probe_sink.write(f"device_validation_result: name={probe.name} status=0")
+                return 0
+
+            responses = iter(["pass"] * len(installer.DEVICE_VALIDATION_OBSERVATIONS))
+            with (
+                mock.patch.object(installer, "CONF_FILE", conf_file),
+                mock.patch.object(installer, "run_install_request", side_effect=simulated_install),
+                mock.patch.object(installer, "ensure_mpremote", return_value=Path("C:/mpremote.exe")),
+                mock.patch.object(installer, "run_streaming", side_effect=simulated_batch),
+                mock.patch.object(
+                    installer, "resolve_device_validation_repository",
+                    side_effect=installer.InstallerError("no repo"),
+                ),
+            ):
+                installer.run_device_validation(
+                    args, sink, input_func=lambda _prompt: next(responses)
+                )
+
+            self.assertIsNotNone(received_request)
+            self.assertEqual(received_request.port, "COM7")
+            self.assertIn("Using Windows serial port COM7 from saved .conf", sink.transcript)
 
     def test_device_validation_batch_uses_one_raw_repl_connection(self):
         """The complete probe sequence should be generated for one mpremote session."""

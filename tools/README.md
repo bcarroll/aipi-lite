@@ -26,9 +26,10 @@ reuse it without `--port`. With no saved value, exactly one detected COM port is
 selected and saved automatically; zero or multiple ports require an explicit
 selection. Invalid or disconnected saved ports also require an explicit
 correction, preventing a silent switch to another device. `--list-ports` does
-not modify `.conf`. This convenience applies only to `install.cmd`;
-`dev_install.cmd --inference-probe` and `validate.cmd` retain explicit-port
-requirements.
+not modify `.conf`. Saving a resolved port to `.conf` applies only to
+`install.cmd`. `dev_install.cmd --inference-probe` still requires an explicit
+port. `validate.cmd` reuses the saved `.conf` port (or a sole detected port)
+when `--port` is omitted, without persisting a new value.
 
 ## Bootstrap Flashing Tools
 

@@ -315,7 +315,10 @@ def create_parser() -> argparse.ArgumentParser:
         "validate",
         help="Run self-contained physical AIPI-Lite validation probes and report them.",
     )
-    validate.add_argument("--port", required=True, help="Windows serial port, for example COM3.")
+    validate.add_argument(
+        "--port",
+        help="Windows serial port, for example COM3. Falls back to the saved .conf port when omitted.",
+    )
     validate.add_argument(
         "-y",
         "--yes",
@@ -1493,6 +1496,41 @@ def write_device_validation_artifacts(
     return issue_body
 
 
+def resolve_validation_port(
+    port: str | None,
+    *,
+    conf_file: Path = CONF_FILE,
+    detected_ports: Sequence[str] | None = None,
+) -> str:
+    """Resolve the validation COM port from an explicit arg, saved .conf, or discovery.
+
+    Unlike the direct-install resolver this does not persist the choice — physical
+    validation reuses the port already saved by ``install.cmd`` without changing it.
+    """
+    if port:
+        return normalize_com_port(port)
+
+    saved = read_saved_serial_port(conf_file)
+    if saved is not None:
+        return saved
+
+    if detected_ports is None:
+        detected_ports = list_windows_serial_ports()
+    detected = sorted({normalize_com_port(candidate) for candidate in detected_ports})
+    if len(detected) == 1:
+        return detected[0]
+    if not detected:
+        raise InstallerError(
+            "no serial port was provided or saved; run validate.cmd --port COMx "
+            "or save one first with install.cmd --port COMx"
+        )
+    raise InstallerError(
+        "multiple Windows COM ports were detected: {}; run validate.cmd --port COMx".format(
+            ", ".join(detected)
+        )
+    )
+
+
 def run_device_validation(
     args: argparse.Namespace,
     sink: OutputSink,
@@ -1506,8 +1544,13 @@ def run_device_validation(
     observations: dict[str, str] = {}
     sink.write(f"Device validation capture directory: {capture_dir}")
     try:
+        resolved_port = resolve_validation_port(args.port, conf_file=CONF_FILE)
+        if args.port:
+            sink.write(f"Using Windows serial port {resolved_port}.")
+        else:
+            sink.write(f"Using Windows serial port {resolved_port} from saved .conf or detection.")
         request = InstallRequest(
-            port=normalize_com_port(args.port),
+            port=resolved_port,
             no_reset=True,
             assume_yes=args.assume_yes,
             preflight_reset=True,

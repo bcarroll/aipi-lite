@@ -66,9 +66,12 @@ dev_install.cmd --device-label bench-a --hardware-note "display readable" -- --p
 It displays installer output and writes raw and redacted transcripts plus
 non-secret metadata under ignored `tools\.local\dev-install\`. Use
 `--prepare-only` to create those local artifacts without uploading to a device.
-Port persistence is intentionally limited to direct `install.cmd` runs;
-developer inference captures and `validate.cmd` continue requiring an explicit
-COM port to identify the device whose evidence is being collected.
+Port persistence (saving to `.conf`) is intentionally limited to direct
+`install.cmd` runs. Developer inference captures still require an explicit COM
+port to identify the device whose evidence is being collected. `validate.cmd`
+accepts an explicit `--port`, but when it is omitted it reuses the port saved by
+`install.cmd` in `.conf` (or a sole detected port), without changing the saved
+value.
 For an offline inference feasibility run that independently publishes its
 redacted report, use the Windows developer wrapper with a locally authenticated
 GitHub CLI:
