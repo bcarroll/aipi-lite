@@ -211,6 +211,105 @@ class WindowsInstallerTests(unittest.TestCase):
                 "AIPI_SERIAL_PORT=COM7\n",
             )
 
+    def test_stale_saved_port_prompts_and_accepts_detected_default(self):
+        """An unavailable saved port should offer the sole detected port on Enter."""
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            conf_file = Path(temporary_directory) / ".conf"
+            conf_file.write_text("AIPI_SERIAL_PORT=COM7\n", encoding="utf-8")
+            prompts = []
+
+            def prompt(message):
+                """Record the prompt and accept the default detected port."""
+                prompts.append(message)
+                return ""
+
+            selection = installer.resolve_direct_install_port(
+                None,
+                conf_file=conf_file,
+                detected_ports=["COM9"],
+                prompt_func=prompt,
+            )
+
+        self.assertEqual(
+            (selection.port, selection.source, selection.persist),
+            ("COM9", "prompted", True),
+        )
+        self.assertEqual(len(prompts), 1)
+        self.assertIn("COM7", prompts[0])
+        self.assertIn("COM9", prompts[0])
+
+    def test_stale_saved_port_prompt_accepts_typed_detected_port(self):
+        """The operator may type another detected port when several are present."""
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            conf_file = Path(temporary_directory) / ".conf"
+            conf_file.write_text("AIPI_SERIAL_PORT=COM7\n", encoding="utf-8")
+
+            selection = installer.resolve_direct_install_port(
+                None,
+                conf_file=conf_file,
+                detected_ports=["COM5", "COM9"],
+                prompt_func=lambda _message: "com9",
+            )
+
+        self.assertEqual(
+            (selection.port, selection.source, selection.persist),
+            ("COM9", "prompted", True),
+        )
+
+    def test_stale_saved_port_reprompts_until_valid_choice(self):
+        """An invalid or undetected typed answer should re-prompt before succeeding."""
+        answers = iter(["not-a-port", "COM4", "COM5"])
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            conf_file = Path(temporary_directory) / ".conf"
+            conf_file.write_text("AIPI_SERIAL_PORT=COM7\n", encoding="utf-8")
+
+            selection = installer.resolve_direct_install_port(
+                None,
+                conf_file=conf_file,
+                detected_ports=["COM5", "COM9"],
+                prompt_func=lambda _message: next(answers),
+            )
+
+        self.assertEqual(selection.port, "COM5")
+        self.assertEqual(selection.source, "prompted")
+
+    def test_stale_saved_port_without_prompt_still_fails_closed(self):
+        """A non-interactive session should not silently switch devices."""
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            conf_file = Path(temporary_directory) / ".conf"
+            conf_file.write_text("AIPI_SERIAL_PORT=COM7\n", encoding="utf-8")
+
+            with mock.patch.object(installer.sys.stdin, "isatty", return_value=False):
+                with self.assertRaisesRegex(installer.InstallerError, "saved port COM7"):
+                    installer.resolve_direct_install_port(
+                        None,
+                        conf_file=conf_file,
+                        detected_ports=["COM9"],
+                    )
+
+            self.assertEqual(conf_file.read_text(encoding="utf-8"), "AIPI_SERIAL_PORT=COM7\n")
+
+    def test_stale_saved_port_prompt_selection_persists_to_conf(self):
+        """An install run should save the prompted replacement port to .conf."""
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            conf_file = Path(temporary_directory) / ".conf"
+            conf_file.write_text("AIPI_SERIAL_PORT=COM7\n", encoding="utf-8")
+            args = installer.create_parser().parse_args(["install", "--yes"])
+            sink = self.make_sink()
+
+            with (
+                mock.patch.object(installer, "CONF_FILE", conf_file),
+                mock.patch.object(installer, "list_windows_serial_ports", return_value=["COM9"]),
+                mock.patch.object(installer.sys.stdin, "isatty", return_value=True),
+                mock.patch.object(installer, "input", create=True, return_value=""),
+                mock.patch.object(installer, "run_install_request", return_value=0) as run_install,
+            ):
+                self.assertEqual(installer.run_install_command(args, sink), 0)
+
+            self.assertEqual(run_install.call_args.args[0].port, "COM9")
+            self.assertIn("AIPI_SERIAL_PORT=COM9", conf_file.read_text(encoding="utf-8"))
+            self.assertIn("saved to .conf", sink.transcript)
+
     def test_direct_install_persists_explicit_port_before_failed_upload(self):
         """A validated explicit selection should survive a later upload failure."""
         with tempfile.TemporaryDirectory() as temporary_directory:

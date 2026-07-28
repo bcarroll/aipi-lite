@@ -27,9 +27,13 @@ in the ignored root `.conf`. An explicit `--port` takes precedence and replaces
 the saved value. When `--port` is omitted, the installer reuses the saved port;
 if none is saved and exactly one COM port is detected, it selects and saves that
 port automatically. Zero or multiple detected ports require one explicit
-`install.cmd --port COMx` run. A stale or invalid saved value also requires an
-explicit port so the installer never silently switches to another serial
-device. `install.cmd --list-ports` remains read-only.
+`install.cmd --port COMx` run. When the saved port is no longer present, the
+installer prompts you to accept a detected port (press Enter for the sole
+detected port) or type another, then saves your choice; it never silently
+switches devices. In a non-interactive session (for example a `dev_install.cmd`
+capture) it still fails closed and asks for an explicit `--port`. A saved value
+with an invalid format also requires an explicit port. `install.cmd
+--list-ports` remains read-only.
 
 See [DEVELOPER.md](DEVELOPER.md) for the concise connected-device test and
 GitHub reporting workflow.

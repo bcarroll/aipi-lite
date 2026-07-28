@@ -428,13 +428,68 @@ def list_windows_serial_ports() -> list[str]:
     return sorted({match.upper() for match in COM_PORT_PATTERN.findall(result.stdout)})
 
 
+def _interactive_prompt(prompt_func: Callable[[str], str] | None) -> Callable[[str], str] | None:
+    """Return an injected prompt, the real input() when interactive, or None."""
+    if prompt_func is not None:
+        return prompt_func
+    if sys.stdin.isatty():
+        return input
+    return None
+
+
+def prompt_for_replacement_port(
+    saved: str,
+    detected: Sequence[str],
+    prompt_func: Callable[[str], str] | None = None,
+) -> str | None:
+    """Ask the operator to accept a detected port or type another when saved is stale.
+
+    Returns the chosen detected COM port, or None when no interactive prompt is
+    available or the operator does not choose a detected port.
+    """
+    if not detected:
+        return None
+    ask = _interactive_prompt(prompt_func)
+    if ask is None:
+        return None
+
+    default = detected[0] if len(detected) == 1 else None
+    for _attempt in range(3):
+        if default is not None:
+            message = (
+                f"Saved port {saved} was not detected. Press Enter to use {default}, "
+                f"or type another COM port (detected: {', '.join(detected)}): "
+            )
+        else:
+            message = (
+                f"Saved port {saved} was not detected. Type a COM port to use "
+                f"(detected: {', '.join(detected)}): "
+            )
+        try:
+            answer = ask(message).strip()
+        except EOFError:
+            return None
+        if not answer:
+            if default is not None:
+                return default
+            continue
+        try:
+            candidate = normalize_com_port(answer)
+        except InstallerError:
+            continue
+        if candidate in detected:
+            return candidate
+    return None
+
+
 def resolve_direct_install_port(
     explicit_port: str | None,
     *,
     conf_file: Path = CONF_FILE,
     detected_ports: Sequence[str] | None = None,
+    prompt_func: Callable[[str], str] | None = None,
 ) -> PortSelection:
-    """Resolve an install.cmd port from explicit, saved, or unambiguous discovery."""
+    """Resolve an install.cmd port from explicit, saved, prompted, or unambiguous discovery."""
     if detected_ports is None:
         detected_ports = list_windows_serial_ports()
     detected = sorted({normalize_com_port(port) for port in detected_ports})
@@ -453,16 +508,19 @@ def resolve_direct_install_port(
 
     saved = read_saved_serial_port(conf_file)
     if saved is not None:
-        if saved not in detected:
-            if not detected:
-                detail = "no Windows COM ports were detected"
-            else:
-                detail = f"available ports: {', '.join(detected)}"
-            raise InstallerError(
-                f"saved port {saved} was not detected; {detail}; "
-                "run install.cmd --port COMx to correct .conf"
-            )
-        return PortSelection(saved, "saved", False)
+        if saved in detected:
+            return PortSelection(saved, "saved", False)
+        replacement = prompt_for_replacement_port(saved, detected, prompt_func)
+        if replacement is not None:
+            return PortSelection(replacement, "prompted", True)
+        if not detected:
+            detail = "no Windows COM ports were detected"
+        else:
+            detail = f"available ports: {', '.join(detected)}"
+        raise InstallerError(
+            f"saved port {saved} was not detected; {detail}; "
+            "run install.cmd --port COMx to correct .conf"
+        )
 
     if len(detected) == 1:
         return PortSelection(detected[0], "detected", True)
