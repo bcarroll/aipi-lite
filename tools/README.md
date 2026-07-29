@@ -133,14 +133,18 @@ through one raw-REPL probe session. It emits a per-probe result, continues after
 a device-side probe failure so the report contains all available evidence, and
 avoids reconnecting between probes. It does not reset into normal startup after
 the upload. After the sequence, answer the prompts with `pass`, `fail`, or
-`not-observed` for each physical observation. Only an all-pass run exits
-successfully.
+`not-observed` for each physical observation. `pass` and `not-observed` are
+accepted evidence, while an explicit `fail` remains fatal. Wi-Fi is an
+informational probe, so its reported failure does not fail the aggregate result;
+required probe failures, upload failures, batch transport failures, and
+incomplete-result failures remain fatal.
 
 The `wifi` probe connects to the operator-configured local network and calls the
-local `/health` endpoint, so a passing run requires an uploaded
-`src/local_wifi_config.py` and a reachable local mock service
-(`python3 -m service.mock_service ...`). Without both, the `wifi` probe fails and
-the aggregate status is non-zero.
+local `/health` endpoint, so an operator who wants the informational Wi-Fi probe
+itself to pass needs an uploaded `src/local_wifi_config.py` and a reachable local
+mock service (`python3 -m service.mock_service ...`). Without both, the Wi-Fi
+probe can report failure without failing the aggregate result. GitHub-ready
+evidence retains secret-free `wifi_trace` lines and excludes configured SSIDs.
 
 Each parsed run writes raw/redacted transcripts, metadata, and a GitHub-ready
 body under ignored `tools\.local\device-validation\`. The target repository is

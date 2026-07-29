@@ -571,6 +571,37 @@ class WifiPolicyTests(unittest.TestCase):
         self.assertNotIn("phase=connect_requested", "\n".join(messages))
         self.assertNotIn("sensitive driver text", "\n".join(messages))
 
+    def test_connect_wifi_omits_arbitrary_non_numeric_exception_detail(self):
+        """Driver inspection traces should retain safe fields without arbitrary detail."""
+        wifi_config = self.import_module("wifi_config")
+        wifi_probe = self.import_module("wifi_probe")
+        config = wifi_config.WiFiConfig("LabNet", "secret-password", "http://192.168.1.10")
+        sensitive_detail = "LabNet_secret-password_http://192.168.1.10"
+        wlan = FakeWLAN(
+            connected_after=0,
+            status_error=RuntimeError(sensitive_detail),
+        )
+        messages = []
+
+        connected = wifi_probe.connect_wifi(
+            config,
+            wlan=wlan,
+            network_module=FakeNetwork(wlan),
+            print_func=messages.append,
+            ticks_ms_func=lambda: 25,
+        )
+
+        self.assertIs(connected, wlan)
+        self.assertIn(
+            "wifi_trace phase=exception operation=status error_type=RuntimeError",
+            messages,
+        )
+        trace_text = "\n".join(messages)
+        self.assertNotIn("detail=", trace_text)
+        self.assertNotIn("LabNet", trace_text)
+        self.assertNotIn("secret-password", trace_text)
+        self.assertNotIn("http://192.168.1.10", trace_text)
+
     def test_connect_wifi_reports_unknown_driver_status(self):
         """An unknown numeric driver status should remain visible without guessing."""
         wifi_config = self.import_module("wifi_config")
@@ -702,6 +733,12 @@ class WifiPolicyTests(unittest.TestCase):
         self.assertEqual(led.states, ["connecting", "ready"])
         self.assertEqual(display.screens[0], ("wifi", "connecting"))
         self.assertEqual(display.screens[-1], ("ready", "health 200"))
+        self.assertIn(
+            "wifi_probe: connecting to configured local network",
+            messages,
+        )
+        self.assertNotIn("LabNet", "\n".join(messages))
+        self.assertNotIn("secret-password", "\n".join(messages))
         self.assertIn("wifi_probe: health ok 200", messages)
         self.assertTrue(any(message.startswith("wifi_trace phase=start") for message in messages))
 

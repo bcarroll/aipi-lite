@@ -1125,13 +1125,57 @@ class WindowsInstallerTests(unittest.TestCase):
             )
         )
 
-        self.assertEqual(statuses["display"], 0)
-        self.assertEqual(statuses["io"], 1)
-        self.assertEqual(statuses["codec"], 1)
-        self.assertEqual(statuses["capture"], 1)
-        self.assertEqual(statuses["playback"], 1)
-        self.assertEqual(statuses["wifi"], 1)
-        self.assertEqual(statuses["inference"], 0)
+        self.assertEqual(
+            statuses,
+            {
+                "display": 0,
+                "io": 1,
+                "inference": 0,
+            },
+        )
+
+    def test_device_validation_probe_status_parser_rejects_malformed_duplicates(self):
+        """A malformed duplicate should invalidate an earlier valid configured result."""
+        probes = (
+            installer.DeviceValidationProbe("display", "pass", "display:"),
+            installer.DeviceValidationProbe("io", "pass", "io:"),
+            installer.DeviceValidationProbe("inference", "pass", "inference:"),
+        )
+        transcript = "\n".join(
+            [
+                "device_validation_result: name=display status=0",
+                "device_validation_result: name=io status=1",
+                "device_validation_result: name=inference status=0",
+                "device_validation_result: name=display status=bogus",
+                "device_validation_result: name=io status=-1",
+                "device_validation_result: name=future-probe status=0",
+            ]
+        )
+
+        statuses = dict(
+            installer.parse_device_validation_probe_statuses(transcript, probes)
+        )
+
+        self.assertEqual(statuses, {"inference": 0})
+
+    def test_device_validation_probe_status_parser_rejects_unattributable_malformed_line(self):
+        """Malformed result syntax should invalidate the result set when no probe is known."""
+        probes = (
+            installer.DeviceValidationProbe("display", "pass", "display:"),
+            installer.DeviceValidationProbe("io", "pass", "io:"),
+        )
+        transcript = "\n".join(
+            [
+                "device_validation_result: name=display status=0",
+                "device_validation_result: name=io status=0",
+                "device_validation_result: status=bogus",
+            ]
+        )
+
+        self.assertEqual(
+            installer.parse_device_validation_probe_statuses(transcript, probes),
+            [],
+        )
 
     def test_device_validation_sweep_includes_the_local_wifi_probe(self):
         """The sweep should run the local Wi-Fi/health probe before inference."""
@@ -1146,10 +1190,123 @@ class WindowsInstallerTests(unittest.TestCase):
         self.assertEqual(wifi_probe.serial_prefix, "wifi_probe:")
         self.assertEqual(wifi_probe.observations, ())
         self.assertIn("wifi_probe.run_probe() == 'ok'", wifi_probe.command)
+        self.assertFalse(wifi_probe.required)
+        self.assertTrue(
+            all(
+                probe.required
+                for probe in installer.DEVICE_VALIDATION_PROBES
+                if probe.name != "wifi"
+            )
+        )
 
         batch_code = installer.device_validation_batch_code(installer.DEVICE_VALIDATION_PROBES)
         compile(batch_code, "<device-validation-batch>", "exec")
         self.assertIn(f"exec({wifi_probe.command!r})", batch_code)
+
+    def test_device_validation_serial_keeps_wifi_trace_and_drops_legacy_ssid_line(self):
+        """Shareable evidence should retain safe Wi-Fi diagnostics without an SSID."""
+        transcript = "\n".join(
+            [
+                "wifi_probe: starting local Wi-Fi probe",
+                "wifi_probe: connecting to GalaxyWifi",
+                "wifi_trace phase=status elapsed_ms=1000 connected=0 "
+                "status=no_ap_found status_code=-2",
+                "wifi_trace phase=exception operation=interface_retry "
+                "error_type=OSError detail=Wifi_Internal_Error attempt=1",
+                "wifi_trace phase=exception operation=status "
+                "error_type=RuntimeError "
+                "detail=LabNet_secret-password_http://192.168.1.10",
+                "unrelated host output",
+            ]
+        )
+
+        lines = installer.device_validation_serial_lines(transcript)
+
+        self.assertIn("wifi_probe: starting local Wi-Fi probe", lines)
+        self.assertIn(
+            "wifi_trace phase=status elapsed_ms=1000 connected=0 "
+            "status=no_ap_found status_code=-2",
+            lines,
+        )
+        self.assertIn(
+            "wifi_trace phase=exception operation=interface_retry "
+            "error_type=OSError detail=Wifi_Internal_Error attempt=1",
+            lines,
+        )
+        self.assertIn(
+            "wifi_trace phase=exception operation=status error_type=RuntimeError",
+            lines,
+        )
+        shareable_text = "\n".join(lines)
+        self.assertNotIn(
+            "detail=LabNet_secret-password_http://192.168.1.10",
+            shareable_text,
+        )
+        self.assertNotIn("GalaxyWifi", shareable_text)
+        self.assertNotIn("LabNet", shareable_text)
+        self.assertNotIn("secret-password", shareable_text)
+        self.assertNotIn("http://192.168.1.10", shareable_text)
+        self.assertNotIn("unrelated host output", lines)
+
+    def test_device_validation_accepts_reported_optional_wifi_failure_only(self):
+        """Wi-Fi may report failure, but its marker and required probes remain mandatory."""
+        observations = {
+            name: "pass" for name in installer.DEVICE_VALIDATION_OBSERVATIONS
+        }
+        wifi_failed = [
+            (probe.name, 1 if probe.name == "wifi" else 0)
+            for probe in installer.DEVICE_VALIDATION_PROBES
+        ]
+
+        self.assertEqual(
+            installer.device_validation_status(0, 0, wifi_failed, observations),
+            0,
+        )
+        self.assertEqual(
+            installer.device_validation_status(
+                0,
+                0,
+                [result for result in wifi_failed if result[0] != "wifi"],
+                observations,
+            ),
+            1,
+        )
+
+        required_failed = [
+            (name, 1 if name == "io" else status)
+            for name, status in wifi_failed
+        ]
+        self.assertEqual(
+            installer.device_validation_status(0, 0, required_failed, observations),
+            1,
+        )
+
+    def test_device_validation_accepts_not_observed_but_rejects_explicit_fail(self):
+        """Unobserved evidence is acceptable, while an explicit failure remains fatal."""
+        probe_statuses = [
+            (probe.name, 0) for probe in installer.DEVICE_VALIDATION_PROBES
+        ]
+        unobserved = {
+            name: "not-observed"
+            for name in installer.DEVICE_VALIDATION_OBSERVATIONS
+        }
+
+        self.assertEqual(
+            installer.device_validation_status(0, 0, probe_statuses, unobserved),
+            0,
+        )
+
+        explicit_failure = dict(unobserved)
+        explicit_failure["speaker"] = "fail"
+        self.assertEqual(
+            installer.device_validation_status(
+                0,
+                0,
+                probe_statuses,
+                explicit_failure,
+            ),
+            1,
+        )
 
     def test_device_validation_uploads_without_reset_and_creates_issue(self):
         """Validation should upload once, run every probe, and publish redacted evidence."""
@@ -1321,7 +1478,7 @@ class WindowsInstallerTests(unittest.TestCase):
             self.assertIn("validation_batch_status=7", metadata)
 
     def test_device_validation_records_unobserved_checks_and_keeps_report_local(self):
-        """Unavailable operator input should be non-passing while retaining a report locally."""
+        """Unavailable operator input should be accepted while retaining a report locally."""
         with tempfile.TemporaryDirectory() as temporary_directory:
             capture_dir = Path(temporary_directory) / "capture"
             args = installer.create_parser().parse_args(
@@ -1335,10 +1492,19 @@ class WindowsInstallerTests(unittest.TestCase):
                 ]
             )
             sink = self.make_sink()
+
+            def successful_batch(_command, probe_sink):
+                """Emit one successful result marker for every configured probe."""
+                for probe in installer.DEVICE_VALIDATION_PROBES:
+                    probe_sink.write(
+                        f"device_validation_result: name={probe.name} status=0"
+                    )
+                return 0
+
             with (
                 mock.patch.object(installer, "run_install_request", return_value=0),
                 mock.patch.object(installer, "ensure_mpremote", return_value=Path("C:/mpremote.exe")),
-                mock.patch.object(installer, "run_streaming", return_value=0),
+                mock.patch.object(installer, "run_streaming", side_effect=successful_batch),
                 mock.patch.object(installer, "resolve_device_validation_repository", return_value="owner/repo"),
                 mock.patch.object(installer.shutil, "which", return_value=None),
             ):
@@ -1348,11 +1514,11 @@ class WindowsInstallerTests(unittest.TestCase):
                         sink,
                         input_func=lambda _prompt: (_ for _ in ()).throw(EOFError()),
                     ),
-                    1,
+                    0,
                 )
 
             issue_body = (capture_dir / "github-issue-body.md").read_text(encoding="utf-8")
-            self.assertIn("Aggregate validation status: `1`", issue_body)
+            self.assertIn("Aggregate validation status: `0`", issue_body)
             self.assertIn("Low-volume speaker playback was audible: `not-observed`", issue_body)
             self.assertFalse((capture_dir / "github-created-issue.txt").exists())
             self.assertIn("gh CLI not available", sink.transcript)
