@@ -15,7 +15,7 @@ Cleanup preserves root `boot.py`, `main.py`, and the ignored operator
 `local_wifi_config.py`.
 
 Normal uploads connect once before copying. A validation or post-flash upload
-that requests a preflight hard reset waits one second and reconnects to the
+that requests a preflight hard reset waits five seconds and reconnects to the
 same validated COM port before the copy, ensuring `mpremote` enters raw REPL
 through a fresh transport.
 
@@ -63,7 +63,7 @@ step:
 install.cmd --port COM3 --flash-micropython --yes
 ```
 
-The post-flash upload uses the same hard reset, one-second wait, and same-port
+The post-flash upload uses the same hard reset, five-second wait, and same-port
 reconnect before copying the application.
 
 Installer prompts are printed explicitly so they remain visible through
@@ -126,7 +126,7 @@ gh auth login
 validate.cmd --port COM8 --yes --device-label bench-a
 ```
 
-The command hard-resets the device, waits one second, reconnects to the same
+The command hard-resets the device, waits five seconds, reconnects to the same
 validated COM port, uploads `src/`, then runs the display, GPIO status/button,
 codec, capture, playback, local Wi-Fi/health, and offline inference probes
 through one raw-REPL probe session. It emits a per-probe result, continues after

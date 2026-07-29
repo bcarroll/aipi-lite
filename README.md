@@ -47,7 +47,7 @@ root-stat-safe `mpremote` device-root destination `:/.`, producing `/boot.py`,
 application modules that were moved under `/lib`.
 A normal application upload establishes its first raw-REPL session when the
 copy begins. Validation and post-flash uploads first hard-reset the device,
-wait one second, and reconnect to the same validated COM port before starting
+wait five seconds, and reconnect to the same validated COM port before starting
 that same copy. The reconnect replaces the transport invalidated by the hard
 reset; it does not select another device or add another upload process.
 When an earlier Windows install created `/src`, the installer removes it only
