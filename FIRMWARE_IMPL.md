@@ -411,9 +411,11 @@ Implementation notes:
   immediate, unchanged status is limited to one line per second, and trace
   fields exclude credentials, SSIDs, service endpoints, MAC/BSSID values,
   nearby networks, and arbitrary exception text.
-- Physical validation still needs to confirm MicroPython `network.WLAN`,
-  `urequests`, local mDNS behavior, exact `WLAN.status()` trace output, and
-  status UI behavior on the target device.
+- GitHub issue #41 physically exercised MicroPython `network.WLAN` and recorded
+  bounded, SSID-free `wifi_trace` output through driver status `no_ap_found`.
+  Validation still needs a reachable configured network and local service to
+  confirm association, `urequests`, local mDNS behavior, `/health`, and the
+  online status UI on the target device.
 
 ### `feat/06-es8311-codec-control`
 
@@ -459,9 +461,11 @@ Implementation notes:
   deriving its internal clock from GPIO14 BCLK, analog microphone input, muted
   DAC output, and GPIO9 speaker-enable held low by default. The physical GPIO6
   MCLK connection remains undriven by standard MicroPython I2S.
-- The shutdown sequence mutes the DAC and powers down the ADC/DAC path. Physical
-  validation still needs to confirm microphone gain, playback volume, output
-  noise, and repeated reset behavior on the target device.
+- The shutdown sequence mutes the DAC and powers down the ADC/DAC path. GitHub
+  issue #41 physically detected the codec at `0x18` and completed codec
+  initialization. Validation still needs to confirm acoustic microphone gain,
+  audible playback volume, output noise, and repeated reset behavior on the
+  target device.
 
 ### `feat/07-audio-capture`
 
@@ -509,9 +513,10 @@ Implementation notes:
 - WAV packaging is available through `wav_bytes()` for REPL extraction or later
   local-service upload work; `capture_probe.py` keeps the speaker amplifier gate
   disabled and reports byte count, sample count, peak level, and clipping count.
-- Physical validation still needs to record microphone gain, noise, clipping,
-  dropped-sample observations, and BCLK-derived codec behavior on the target
-  firmware image.
+- GitHub issue #41 physically completed a 16,000-byte, 8,000-sample capture with
+  no clipping, but reported peak `0` and left the microphone observation as
+  `not-observed`. Acoustic input, gain, noise floor, dropped samples, and
+  BCLK-derived codec behavior therefore remain to be validated.
 
 ### `feat/08-audio-playback`
 
@@ -559,9 +564,10 @@ Implementation notes:
   low-volume test tone, unmutes the DAC only during playback, enables GPIO9
   only while I2S samples are being written, and always disables GPIO9 plus
   mutes the DAC before returning.
-- Physical validation still needs to confirm audible output, safe volume,
-  output noise, underrun behavior, and BCLK-derived codec behavior on the
-  target firmware image.
+- GitHub issue #41 physically completed an 8,000-byte, 4,000-sample playback
+  with four writes and no reported underruns, but the operator observation was
+  `not-observed`. Audible output, safe volume, output noise, and BCLK-derived
+  codec behavior therefore remain to be validated.
 
 ### `feat/09-local-service-contract`
 

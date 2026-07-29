@@ -114,9 +114,13 @@ If the probe cannot observe heap, timing, or button responsiveness, record
 
 Current decision: `defer_inference`
 
-Reason: host-side tests validate the offline policy, fixture behavior, metadata
-checks, and decision logic, but physical AIPI-Lite resource measurements have
-not been captured yet.
+Reason: [GitHub issue
+#41](https://github.com/bcarroll/aipi-lite/issues/41) captured a physical
+AIPI-Lite run with a 1,072 ms simulated workload, heap changing from 8,164,048
+to 8,005,488 bytes, five button polls, the expected offline fixture response,
+and probe decision `candidate_supported`. The aggregate validation passed, but
+the operator recorded inference display, LED, and button responsiveness as
+`not-observed`; those success criteria are therefore still unproven.
 
 Hardware validation still needs:
 
