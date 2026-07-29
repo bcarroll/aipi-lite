@@ -139,6 +139,15 @@ informational probe, so its reported failure does not fail the aggregate result;
 required probe failures, upload failures, batch transport failures, and
 incomplete-result failures remain fatal.
 
+The 2026-07-29 run recorded in [GitHub issue
+#41](https://github.com/bcarroll/aipi-lite/issues/41) returned aggregate,
+upload, and batch status `0`, with all required probes passing. Display, status
+LED, and button observations passed. Wi-Fi reported the informational
+`no_ap_found` result, while microphone, speaker, and inference UI observations
+were `not-observed`. The run validates the Windows command and aggregate policy;
+the Wi-Fi service, acoustic audio, and inference UI paths still need explicit
+physical observation.
+
 The `wifi` probe connects to the operator-configured local network and calls the
 local `/health` endpoint, so an operator who wants the informational Wi-Fi probe
 itself to pass needs an uploaded `src/local_wifi_config.py` and a reachable local
