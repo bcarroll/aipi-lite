@@ -79,13 +79,18 @@ hardware or changing power-control behavior.
 
 Current firmware initializes the ST7735-compatible LCD as a 128 x 128 display
 on SPI bus 1 at 20 MHz, uses rotation `1`, enables RGB color order in the
-driver, and drives GPIO3 as a PWM backlight. Confirm orientation, color order,
-and backlight brightness on physical hardware with `display_probe.run_probe()`.
+driver, and drives GPIO3 as a PWM backlight. The 2026-07-29 physical run in
+[GitHub issue #41](https://github.com/bcarroll/aipi-lite/issues/41) completed
+the display probe and recorded the status screens as visible and readable.
+Photo evidence is still needed to preserve exact orientation, color-order, and
+readability details.
 
 Current firmware expects the ES8311 control interface to scan at 7-bit I2C
-address `0x18`, with `0x19` accepted as the alternate CE-state address. Confirm
-the observed address on this unit with `audio_probe.run_probe()` before treating
-the register settings as hardware-validated.
+address `0x18`, with `0x19` accepted as the alternate CE-state address. GitHub
+issue #41 observed `0x18` and completed codec initialization. That run did not
+observe acoustic microphone input or speaker output, so the address is confirmed
+for this unit while the full register settings and audio paths remain only
+partially hardware-validated.
 
 Known unconfirmed or indirect controls:
 

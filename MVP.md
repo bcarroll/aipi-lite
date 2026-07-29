@@ -74,6 +74,21 @@ python3 -m service.mock_service --host 192.168.1.10 --port 8080
 Bind only to an operator-controlled LAN interface. The mock service has no
 production authentication or hardening.
 
+## Recorded Validation Evidence
+
+The 2026-07-29 physical run in [GitHub issue
+#41](https://github.com/bcarroll/aipi-lite/issues/41) completed the Windows
+upload and validation batch with aggregate status `0`. Display, status LED, and
+button observations passed; codec, capture, playback, and offline inference
+probes completed. The informational Wi-Fi probe reported `no_ap_found`,
+microphone and speaker observations were `not-observed`, and inference UI
+responsiveness was `not-observed`.
+
+This is evidence for the validation workflow and several component paths, not a
+completed MVP validation report. The checklist below still requires a reachable
+local service, observed acoustic input/output, normal-boot push-to-talk, recovery
+behavior, no-cloud network inspection, and the remaining safety observations.
+
 ## MVP Validation Checklist
 
 - Stock firmware backup is skipped by default, or the opt-in backup exists, has
