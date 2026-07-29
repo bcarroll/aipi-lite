@@ -2,7 +2,15 @@
 
 **Date:** 2026-07-28
 **Issue:** #35
-**Status:** Approved for specification review
+**Status:** Superseded by the issue #36 preflight-reconnect design
+
+> **Superseded 2026-07-29:** A later physical comparison established that
+> `install.cmd` copies the same staged source successfully and only
+> `validate.cmd` reports `mpremote: cp: destination does not exist`. Inspection
+> of `mpremote` 1.28.0 then isolated stale transport state after the
+> validation-only hard reset. The narrower reconnect design in
+> `2026-07-29-windows-validation-preflight-reconnect-design.md` preserves the
+> working upload strategy and replaces this proposed explicit-file rewrite.
 
 ## Goal
 

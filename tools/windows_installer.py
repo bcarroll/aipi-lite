@@ -782,14 +782,22 @@ def application_upload_command(
     *,
     preflight_reset: bool = False,
 ) -> list[str]:
-    """Return one recursive copy command with an optional preflight hard reset."""
+    """Return one recursive copy command with an optional reset and reconnect."""
     command = [
         str(executable),
         "connect",
         port,
     ]
     if preflight_reset:
-        command.extend(["reset", "sleep", VALIDATION_PREFLIGHT_RESET_DELAY_SECONDS])
+        command.extend(
+            [
+                "reset",
+                "sleep",
+                VALIDATION_PREFLIGHT_RESET_DELAY_SECONDS,
+                "connect",
+                port,
+            ]
+        )
     command.extend(
         [
             "fs",

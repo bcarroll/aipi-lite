@@ -45,6 +45,11 @@ The upload stages a cache-free copy of `src\` and copies its children to the
 root-stat-safe `mpremote` device-root destination `:/.`, producing `/boot.py`,
 `/main.py`, and `/lib` rather than `/src`. It removes the known legacy root-level
 application modules that were moved under `/lib`.
+A normal application upload establishes its first raw-REPL session when the
+copy begins. Validation and post-flash uploads first hard-reset the device,
+wait one second, and reconnect to the same validated COM port before starting
+that same copy. The reconnect replaces the transport invalidated by the hard
+reset; it does not select another device or add another upload process.
 When an earlier Windows install created `/src`, the installer removes it only
 when its files match the AIPI-Lite application manifest; unknown `/src` content
 is preserved with a warning. This cleanup prevents old root modules from

@@ -415,6 +415,7 @@ class WindowsInstallerTests(unittest.TestCase):
         self.assertEqual(run_streaming.call_count, 2)
         upload_command = run_streaming.call_args_list[0].args[0]
         self.assertEqual(upload_command[:6], [str(executable), "connect", "COM7", "fs", "cp", "-r"])
+        self.assertEqual(upload_command.count("connect"), 1)
         self.assertEqual(upload_command[-1], ":/.")
         uploaded_names = {Path(path).name for path in upload_command[6:-1]}
         self.assertTrue({"boot.py", "main.py", "lib"}.issubset(uploaded_names))
@@ -460,7 +461,7 @@ class WindowsInstallerTests(unittest.TestCase):
         self.assertEqual(run_streaming.call_count, 1)
         upload_command = run_streaming.call_args.args[0]
         self.assertEqual(
-            upload_command[:9],
+            upload_command[:11],
             [
                 str(executable),
                 "connect",
@@ -468,11 +469,14 @@ class WindowsInstallerTests(unittest.TestCase):
                 "reset",
                 "sleep",
                 installer.VALIDATION_PREFLIGHT_RESET_DELAY_SECONDS,
+                "connect",
+                "COM7",
                 "fs",
                 "cp",
                 "-r",
             ],
         )
+        self.assertEqual(upload_command.count("connect"), 2)
         self.assertIn("Hard-resetting COM7", sink.transcript)
         self.assertIn("Application upload failed with status 9.", sink.transcript)
         self.assertNotIn("Cleaning legacy and misplaced application files", sink.transcript)
@@ -1481,9 +1485,19 @@ class WindowsFirmwareFlashTests(unittest.TestCase):
         self.assertIn("write_flash", commands[1])
         # The upload connection resets and settles the freshly booted device first.
         self.assertEqual(
-            commands[2][3:6],
-            ["reset", "sleep", installer.VALIDATION_PREFLIGHT_RESET_DELAY_SECONDS],
+            commands[2][3:11],
+            [
+                "reset",
+                "sleep",
+                installer.VALIDATION_PREFLIGHT_RESET_DELAY_SECONDS,
+                "connect",
+                "COM7",
+                "fs",
+                "cp",
+                "-r",
+            ],
         )
+        self.assertEqual(commands[2].count("connect"), 2)
         self.assertIn("fs", commands[2])
         self.assertIn("cp", commands[2])
         self.assertIn("device hard-reset into MicroPython", sink.transcript)
