@@ -2,7 +2,7 @@
 
 **Date:** 2026-07-29
 **Issue:** #36
-**Status:** Approved for specification review
+**Status:** Approved for implementation
 
 ## Goal
 
