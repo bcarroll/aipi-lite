@@ -12,11 +12,9 @@ STATUS_ERROR = "error"
 TRACE_HEARTBEAT_MS = 1000
 INTERFACE_ACTIVATION_ATTEMPTS = 3
 INTERFACE_RETRY_DELAY_MS = 500
-_DETAIL_MAX_LENGTH = 48
-_DETAIL_SAFE_CHARS = (
-    "abcdefghijklmnopqrstuvwxyz"
-    "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
-    "0123456789._-/:"
+_SAFE_ERROR_DETAILS = (
+    ("Wifi Internal Error", "Wifi_Internal_Error"),
+    ("Wifi Out of Memory", "Wifi_Out_of_Memory"),
 )
 
 WIFI_STATUS_NAMES = (
@@ -177,11 +175,11 @@ def _config_secrets(config):
 
 
 def _error_detail(error, redact=()):
-    """Return a bounded, secret-scrubbed token from an exception message.
+    """Return a constant label only for an allowlisted driver exception.
 
-    Driver errors like "Wifi Internal Error" carry no numeric ``errno``, so the
-    message is the only clue. It is scrubbed of any configured secrets, reduced
-    to a safe single-token charset, and length-bounded before it is traced.
+    Driver errors like "Wifi Internal Error" carry no numeric ``errno``. Known
+    constant messages retain a useful label, while arbitrary exception text is
+    omitted so credentials and local service details cannot enter trace output.
     """
     arguments = getattr(error, "args", ())
     text = str(arguments[0]) if arguments else str(error)
@@ -191,11 +189,10 @@ def _error_detail(error, redact=()):
         secret_text = str(secret)
         if secret_text:
             text = text.replace(secret_text, "***")
-    token = "".join(char if char in _DETAIL_SAFE_CHARS else "_" for char in text)
-    token = token.strip("_")
-    if not token:
-        return None
-    return token[:_DETAIL_MAX_LENGTH]
+    for known_message, detail_label in _SAFE_ERROR_DETAILS:
+        if text == known_message:
+            return detail_label
+    return None
 
 
 def _emit_exception_trace(print_func, operation, error, redact=(), extra_fields=()):

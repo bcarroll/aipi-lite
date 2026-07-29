@@ -1134,6 +1134,49 @@ class WindowsInstallerTests(unittest.TestCase):
             },
         )
 
+    def test_device_validation_probe_status_parser_rejects_malformed_duplicates(self):
+        """A malformed duplicate should invalidate an earlier valid configured result."""
+        probes = (
+            installer.DeviceValidationProbe("display", "pass", "display:"),
+            installer.DeviceValidationProbe("io", "pass", "io:"),
+            installer.DeviceValidationProbe("inference", "pass", "inference:"),
+        )
+        transcript = "\n".join(
+            [
+                "device_validation_result: name=display status=0",
+                "device_validation_result: name=io status=1",
+                "device_validation_result: name=inference status=0",
+                "device_validation_result: name=display status=bogus",
+                "device_validation_result: name=io status=-1",
+                "device_validation_result: name=future-probe status=0",
+            ]
+        )
+
+        statuses = dict(
+            installer.parse_device_validation_probe_statuses(transcript, probes)
+        )
+
+        self.assertEqual(statuses, {"inference": 0})
+
+    def test_device_validation_probe_status_parser_rejects_unattributable_malformed_line(self):
+        """Malformed result syntax should invalidate the result set when no probe is known."""
+        probes = (
+            installer.DeviceValidationProbe("display", "pass", "display:"),
+            installer.DeviceValidationProbe("io", "pass", "io:"),
+        )
+        transcript = "\n".join(
+            [
+                "device_validation_result: name=display status=0",
+                "device_validation_result: name=io status=0",
+                "device_validation_result: status=bogus",
+            ]
+        )
+
+        self.assertEqual(
+            installer.parse_device_validation_probe_statuses(transcript, probes),
+            [],
+        )
+
     def test_device_validation_sweep_includes_the_local_wifi_probe(self):
         """The sweep should run the local Wi-Fi/health probe before inference."""
         names = [probe.name for probe in installer.DEVICE_VALIDATION_PROBES]
@@ -1168,6 +1211,11 @@ class WindowsInstallerTests(unittest.TestCase):
                 "wifi_probe: connecting to GalaxyWifi",
                 "wifi_trace phase=status elapsed_ms=1000 connected=0 "
                 "status=no_ap_found status_code=-2",
+                "wifi_trace phase=exception operation=interface_retry "
+                "error_type=OSError detail=Wifi_Internal_Error attempt=1",
+                "wifi_trace phase=exception operation=status "
+                "error_type=RuntimeError "
+                "detail=LabNet_secret-password_http://192.168.1.10",
                 "unrelated host output",
             ]
         )
@@ -1180,7 +1228,24 @@ class WindowsInstallerTests(unittest.TestCase):
             "status=no_ap_found status_code=-2",
             lines,
         )
-        self.assertNotIn("GalaxyWifi", "\n".join(lines))
+        self.assertIn(
+            "wifi_trace phase=exception operation=interface_retry "
+            "error_type=OSError detail=Wifi_Internal_Error attempt=1",
+            lines,
+        )
+        self.assertIn(
+            "wifi_trace phase=exception operation=status error_type=RuntimeError",
+            lines,
+        )
+        shareable_text = "\n".join(lines)
+        self.assertNotIn(
+            "detail=LabNet_secret-password_http://192.168.1.10",
+            shareable_text,
+        )
+        self.assertNotIn("GalaxyWifi", shareable_text)
+        self.assertNotIn("LabNet", shareable_text)
+        self.assertNotIn("secret-password", shareable_text)
+        self.assertNotIn("http://192.168.1.10", shareable_text)
         self.assertNotIn("unrelated host output", lines)
 
     def test_device_validation_accepts_reported_optional_wifi_failure_only(self):

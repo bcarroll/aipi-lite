@@ -99,9 +99,11 @@ DEVICE_VALIDATION_OBSERVATION_LABELS = {
     "inference-ui": "Display, LED, and button remained responsive during inference",
 }
 DEVICE_VALIDATION_OBSERVATION_STATUSES = {"pass", "fail", "not-observed"}
+DEVICE_VALIDATION_RESULT_PREFIX = "device_validation_result:"
 DEVICE_VALIDATION_RESULT_PATTERN = re.compile(
-    r"^device_validation_result: name=([a-z][a-z0-9-]*) status=([0-9]+)$"
+    r"^device_validation_result: name=([a-z][a-z0-9-]*) status=(\S+)$"
 )
+SAFE_WIFI_TRACE_DETAILS = {"Wifi_Internal_Error", "Wifi_Out_of_Memory"}
 
 
 class InstallerError(RuntimeError):
@@ -1071,17 +1073,26 @@ def parse_device_validation_probe_statuses(
     expected_names = {probe.name for probe in probes}
     parsed_statuses: dict[str, int] = {}
     malformed_names: set[str] = set()
+    malformed_result_set = False
     for line in transcript.splitlines():
-        match = DEVICE_VALIDATION_RESULT_PATTERN.fullmatch(line.strip())
+        stripped_line = line.strip()
+        if not stripped_line.startswith(DEVICE_VALIDATION_RESULT_PREFIX):
+            continue
+        match = DEVICE_VALIDATION_RESULT_PATTERN.fullmatch(stripped_line)
         if match is None:
+            malformed_result_set = True
             continue
         name, status_text = match.groups()
         if name not in expected_names:
+            if status_text not in {"0", "1"}:
+                malformed_result_set = True
             continue
         if name in parsed_statuses or status_text not in {"0", "1"}:
             malformed_names.add(name)
             continue
         parsed_statuses[name] = int(status_text)
+    if malformed_result_set:
+        return []
     return [
         (probe.name, parsed_statuses[probe.name])
         for probe in probes
@@ -1398,12 +1409,29 @@ def device_validation_serial_lines(transcript: str) -> list[str]:
     prefixes = tuple(probe.serial_prefix for probe in DEVICE_VALIDATION_PROBES)
     safe_prefixes = prefixes + ("wifi_trace ",)
     legacy_sensitive_prefixes = ("wifi_probe: connecting to ",)
-    return [
-        line
-        for line in redact_text(transcript).splitlines()
-        if line.startswith(safe_prefixes)
-        and not line.startswith(legacy_sensitive_prefixes)
-    ]
+    lines: list[str] = []
+    for line in redact_text(transcript).splitlines():
+        if not line.startswith(safe_prefixes):
+            continue
+        if line.startswith(legacy_sensitive_prefixes):
+            continue
+        if line.startswith("wifi_trace "):
+            line = shareable_wifi_trace_line(line)
+        lines.append(line)
+    return lines
+
+
+def shareable_wifi_trace_line(line: str) -> str:
+    """Remove arbitrary legacy detail values while retaining safe trace fields."""
+    fields = line.split()
+    sanitized_fields = []
+    for field in fields:
+        if not field.startswith("detail="):
+            sanitized_fields.append(field)
+            continue
+        if field.partition("=")[2] in SAFE_WIFI_TRACE_DETAILS:
+            sanitized_fields.append(field)
+    return " ".join(sanitized_fields)
 
 
 def device_validation_upload_failure_lines(transcript: str) -> list[str]:
