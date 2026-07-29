@@ -1160,6 +1160,29 @@ class WindowsInstallerTests(unittest.TestCase):
         compile(batch_code, "<device-validation-batch>", "exec")
         self.assertIn(f"exec({wifi_probe.command!r})", batch_code)
 
+    def test_device_validation_serial_keeps_wifi_trace_and_drops_legacy_ssid_line(self):
+        """Shareable evidence should retain safe Wi-Fi diagnostics without an SSID."""
+        transcript = "\n".join(
+            [
+                "wifi_probe: starting local Wi-Fi probe",
+                "wifi_probe: connecting to GalaxyWifi",
+                "wifi_trace phase=status elapsed_ms=1000 connected=0 "
+                "status=no_ap_found status_code=-2",
+                "unrelated host output",
+            ]
+        )
+
+        lines = installer.device_validation_serial_lines(transcript)
+
+        self.assertIn("wifi_probe: starting local Wi-Fi probe", lines)
+        self.assertIn(
+            "wifi_trace phase=status elapsed_ms=1000 connected=0 "
+            "status=no_ap_found status_code=-2",
+            lines,
+        )
+        self.assertNotIn("GalaxyWifi", "\n".join(lines))
+        self.assertNotIn("unrelated host output", lines)
+
     def test_device_validation_accepts_reported_optional_wifi_failure_only(self):
         """Wi-Fi may report failure, but its marker and required probes remain mandatory."""
         observations = {

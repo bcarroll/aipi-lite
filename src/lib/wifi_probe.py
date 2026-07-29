@@ -558,7 +558,7 @@ def run_probe(
     _set_led_state(status_led, "connecting")
     _render_display(status_display, "wifi", "connecting")
     print_func("wifi_probe: endpoint accepted {}".format(health_url))
-    print_func("wifi_probe: connecting to {}".format(config.ssid))
+    print_func("wifi_probe: connecting to configured local network")
 
     try:
         wlan = connect_wifi(

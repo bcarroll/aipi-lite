@@ -1396,10 +1396,13 @@ def device_validation_status(
 def device_validation_serial_lines(transcript: str) -> list[str]:
     """Return stable redacted device serial lines safe to include in an issue."""
     prefixes = tuple(probe.serial_prefix for probe in DEVICE_VALIDATION_PROBES)
+    safe_prefixes = prefixes + ("wifi_trace ",)
+    legacy_sensitive_prefixes = ("wifi_probe: connecting to ",)
     return [
         line
         for line in redact_text(transcript).splitlines()
-        if line.startswith(prefixes)
+        if line.startswith(safe_prefixes)
+        and not line.startswith(legacy_sensitive_prefixes)
     ]
 
 

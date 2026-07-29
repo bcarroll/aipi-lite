@@ -702,6 +702,12 @@ class WifiPolicyTests(unittest.TestCase):
         self.assertEqual(led.states, ["connecting", "ready"])
         self.assertEqual(display.screens[0], ("wifi", "connecting"))
         self.assertEqual(display.screens[-1], ("ready", "health 200"))
+        self.assertIn(
+            "wifi_probe: connecting to configured local network",
+            messages,
+        )
+        self.assertNotIn("LabNet", "\n".join(messages))
+        self.assertNotIn("secret-password", "\n".join(messages))
         self.assertIn("wifi_probe: health ok 200", messages)
         self.assertTrue(any(message.startswith("wifi_trace phase=start") for message in messages))
 
