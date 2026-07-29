@@ -1369,7 +1369,7 @@ def device_validation_status(
     probe_statuses: Sequence[tuple[str, int]],
     observations: dict[str, str],
 ) -> int:
-    """Return success only when every device probe and observation passed."""
+    """Return success when required probes pass and observations do not explicitly fail."""
     if upload_status != 0 or batch_status != 0:
         return 1
     expected_probes = {probe.name: probe for probe in DEVICE_VALIDATION_PROBES}
@@ -1385,7 +1385,10 @@ def device_validation_status(
         if probe.required
     ):
         return 1
-    if any(observation_status(observations, name) != "pass" for name in DEVICE_VALIDATION_OBSERVATIONS):
+    if any(
+        observation_status(observations, name) == "fail"
+        for name in DEVICE_VALIDATION_OBSERVATIONS
+    ):
         return 1
     return 0
 

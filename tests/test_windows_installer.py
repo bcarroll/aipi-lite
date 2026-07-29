@@ -1193,6 +1193,33 @@ class WindowsInstallerTests(unittest.TestCase):
             1,
         )
 
+    def test_device_validation_accepts_not_observed_but_rejects_explicit_fail(self):
+        """Unobserved evidence is acceptable, while an explicit failure remains fatal."""
+        probe_statuses = [
+            (probe.name, 0) for probe in installer.DEVICE_VALIDATION_PROBES
+        ]
+        unobserved = {
+            name: "not-observed"
+            for name in installer.DEVICE_VALIDATION_OBSERVATIONS
+        }
+
+        self.assertEqual(
+            installer.device_validation_status(0, 0, probe_statuses, unobserved),
+            0,
+        )
+
+        explicit_failure = dict(unobserved)
+        explicit_failure["speaker"] = "fail"
+        self.assertEqual(
+            installer.device_validation_status(
+                0,
+                0,
+                probe_statuses,
+                explicit_failure,
+            ),
+            1,
+        )
+
     def test_device_validation_uploads_without_reset_and_creates_issue(self):
         """Validation should upload once, run every probe, and publish redacted evidence."""
         with tempfile.TemporaryDirectory() as temporary_directory:
@@ -1363,7 +1390,7 @@ class WindowsInstallerTests(unittest.TestCase):
             self.assertIn("validation_batch_status=7", metadata)
 
     def test_device_validation_records_unobserved_checks_and_keeps_report_local(self):
-        """Unavailable operator input should be non-passing while retaining a report locally."""
+        """Unavailable operator input should be accepted while retaining a report locally."""
         with tempfile.TemporaryDirectory() as temporary_directory:
             capture_dir = Path(temporary_directory) / "capture"
             args = installer.create_parser().parse_args(
@@ -1377,10 +1404,19 @@ class WindowsInstallerTests(unittest.TestCase):
                 ]
             )
             sink = self.make_sink()
+
+            def successful_batch(_command, probe_sink):
+                """Emit one successful result marker for every configured probe."""
+                for probe in installer.DEVICE_VALIDATION_PROBES:
+                    probe_sink.write(
+                        f"device_validation_result: name={probe.name} status=0"
+                    )
+                return 0
+
             with (
                 mock.patch.object(installer, "run_install_request", return_value=0),
                 mock.patch.object(installer, "ensure_mpremote", return_value=Path("C:/mpremote.exe")),
-                mock.patch.object(installer, "run_streaming", return_value=0),
+                mock.patch.object(installer, "run_streaming", side_effect=successful_batch),
                 mock.patch.object(installer, "resolve_device_validation_repository", return_value="owner/repo"),
                 mock.patch.object(installer.shutil, "which", return_value=None),
             ):
@@ -1390,11 +1426,11 @@ class WindowsInstallerTests(unittest.TestCase):
                         sink,
                         input_func=lambda _prompt: (_ for _ in ()).throw(EOFError()),
                     ),
-                    1,
+                    0,
                 )
 
             issue_body = (capture_dir / "github-issue-body.md").read_text(encoding="utf-8")
-            self.assertIn("Aggregate validation status: `1`", issue_body)
+            self.assertIn("Aggregate validation status: `0`", issue_body)
             self.assertIn("Low-volume speaker playback was audible: `not-observed`", issue_body)
             self.assertFalse((capture_dir / "github-created-issue.txt").exists())
             self.assertIn("gh CLI not available", sink.transcript)
