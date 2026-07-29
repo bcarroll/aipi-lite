@@ -139,6 +139,16 @@ informational probe, so its reported failure does not fail the aggregate result;
 required probe failures, upload failures, batch transport failures, and
 incomplete-result failures remain fatal.
 
+The 2026-07-29 physical run recorded in [GitHub issue
+#41](https://github.com/bcarroll/aipi-lite/issues/41) returned aggregate,
+application-upload, and validation-batch status `0`, with status `0` for every
+required probe. The informational Wi-Fi probe returned `1` with
+`no_ap_found`. Display, status LED, and button observations were `pass`;
+microphone, speaker, and inference UI observations were `not-observed`.
+Accordingly, the Windows validation and redacted-reporting workflow is
+physically exercised, while acoustic input/output, inference UI responsiveness,
+and reachable local Wi-Fi/service behavior remain to be observed.
+
 The `wifi` probe connects to the operator-configured local network and calls the
 local `/health` endpoint, so an operator who wants the informational Wi-Fi probe
 itself to pass needs an uploaded `src/local_wifi_config.py` and a reachable local
