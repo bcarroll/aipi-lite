@@ -304,8 +304,8 @@ installer or probe status.
 
 ### Windows Physical Device Validation
 
-Use `validate.cmd` on a Windows bench host to hard-reset the device, wait one
-second, upload the current application, run the self-contained device probes,
+Use `validate.cmd` on a Windows bench host to hard-reset the device, wait five
+seconds, upload the current application, run the self-contained device probes,
 collect operator observations, and create a new redacted GitHub issue for that
 run:
 
@@ -315,24 +315,27 @@ validate.cmd --port COM8 --yes --device-label bench-a
 ```
 
 The command runs display, GPIO status/button, ES8311 codec, microphone capture,
-low-volume speaker playback, and offline inference probes in one raw-REPL
-session. It reports each probe result, continues to later probes after a
-device-side probe failure, and avoids reconnecting between probes. After the
-sequence, it prompts for `pass`, `fail`, or `not-observed` for display, status
-LED, button, microphone, speaker, and inference UI behavior. Any failed or
-unobserved check makes the validation result non-passing; the GitHub report
-records that evidence rather than inferring a successful physical result.
+low-volume speaker playback, local Wi-Fi/health, and offline inference probes
+in one raw-REPL session. It reports each probe result, continues to later
+probes after a device-side probe failure, and avoids reconnecting between
+probes. After the sequence, it prompts for `pass`, `fail`, or `not-observed`
+for display, status LED, button, microphone, speaker, and inference UI
+behavior. `pass` and `not-observed` are accepted evidence; an explicit `fail`
+remains fatal. The Wi-Fi probe is informational, so its reported failure does
+not fail the aggregate result. Required probe failures, upload failures, batch
+transport failures, and incomplete-result failures remain fatal.
 
 The validation command performs only that pre-upload hard reset; after upload,
 it does not reset the device into normal startup, flash or erase firmware,
 configure Wi-Fi, call a local service, run push-to-talk, or drive GPIO10. Raw
 and redacted transcripts, metadata, and the GitHub-ready body are retained
-under ignored `tools\.local\device-validation\`. When upload fails, the GitHub
-body includes up to 12 redacted high-signal upload diagnostics; complete
-evidence remains local. It resolves the issue repository from `AIPI_GITHUB_REPO`
-when valid, otherwise from `origin`. If `gh` cannot create the issue, the local
-report remains available and the console reports the publishing failure
-separately from the validation result.
+under ignored `tools\.local\device-validation\`. GitHub-ready evidence retains
+secret-free `wifi_trace` lines and excludes configured SSIDs. When upload
+fails, the GitHub body includes up to 12 redacted high-signal upload
+diagnostics; complete evidence remains local. It resolves the issue repository
+from `AIPI_GITHUB_REPO` when valid, otherwise from `origin`. If `gh` cannot
+create the issue, the local report remains available and the console reports
+the publishing failure separately from the validation result.
 
 See [INFERENCE_FEASIBILITY.md](INFERENCE_FEASIBILITY.md) for the scope,
 candidate runtime inventory, decision states, and validation report template.
