@@ -325,15 +325,17 @@ remains fatal. The Wi-Fi probe is informational, so its reported failure does
 not fail the aggregate result. Required probe failures, upload failures, batch
 transport failures, and incomplete-result failures remain fatal.
 
-The latest recorded bench run, [GitHub issue
-#41](https://github.com/bcarroll/aipi-lite/issues/41), completed on 2026-07-29
-with aggregate, upload, and batch status `0`; every required probe passed.
-Display, status LED, and button observations passed. The informational Wi-Fi
-probe reported `no_ap_found`, and microphone, speaker, and inference UI
-observations were `not-observed`. This confirms the Windows validation workflow
-and aggregate-status policy, but it does not yet validate a reachable Wi-Fi
-service, acoustic microphone input, audible speaker output, or inference UI
-behavior.
+The latest recorded physical run, [GitHub issue
+#41](https://github.com/bcarroll/aipi-lite/issues/41) from 2026-07-29, completed
+with aggregate, application-upload, and validation-batch status `0`. Every
+required probe returned `0`. The informational Wi-Fi probe returned `1` after
+reporting `no_ap_found`, without failing the aggregate result. The operator
+observed the display, status LED, and button checks as `pass`; microphone,
+speaker, and inference UI observations were `not-observed`. This confirms the
+Windows upload, batch execution, result aggregation, operator-observation, and
+redacted-reporting workflow. It does not yet establish microphone acoustic
+input, speaker audibility, inference UI responsiveness, or connectivity to a
+reachable local Wi-Fi network and service.
 
 The validation command performs only that pre-upload hard reset; after upload,
 it does not reset the device into normal startup, flash or erase firmware,
