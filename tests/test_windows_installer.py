@@ -468,7 +468,7 @@ class WindowsInstallerTests(unittest.TestCase):
                 "COM7",
                 "reset",
                 "sleep",
-                installer.VALIDATION_PREFLIGHT_RESET_DELAY_SECONDS,
+                "5.0",
                 "connect",
                 "COM7",
                 "fs",
@@ -477,7 +477,10 @@ class WindowsInstallerTests(unittest.TestCase):
             ],
         )
         self.assertEqual(upload_command.count("connect"), 2)
-        self.assertIn("Hard-resetting COM7", sink.transcript)
+        self.assertIn(
+            "Hard-resetting COM7 and waiting 5.0 seconds before validation upload...",
+            sink.transcript,
+        )
         self.assertIn("Application upload failed with status 9.", sink.transcript)
         self.assertNotIn("Cleaning legacy and misplaced application files", sink.transcript)
         self.assertEqual(upload_command[-1], ":/.")
@@ -895,7 +898,7 @@ class WindowsInstallerTests(unittest.TestCase):
     def test_upload_failure_diagnostics_are_redacted_and_bounded(self):
         """Upload issue diagnostics should keep only bounded, redacted signal lines."""
         transcript_lines = [
-            "Hard-resetting COM8 and waiting 1.0 seconds before validation upload...",
+            "Hard-resetting COM8 and waiting 5.0 seconds before validation upload...",
             "Uploading application source to COM8...",
             "cp C:\\Users\\Brett\\AppData\\Local\\Temp\\application\\README.md :",
             "Traceback (most recent call last):",
@@ -914,7 +917,7 @@ class WindowsInstallerTests(unittest.TestCase):
         self.assertEqual(
             diagnostics[:5],
             [
-                "Hard-resetting <redacted-serial-port> and waiting 1.0 seconds before validation upload...",
+                "Hard-resetting <redacted-serial-port> and waiting 5.0 seconds before validation upload...",
                 "Uploading application source to <redacted-serial-port>...",
                 "mpremote: cp: destination does not exist",
                 "mpremote.transport.TransportError: token=<redacted> "
@@ -929,7 +932,7 @@ class WindowsInstallerTests(unittest.TestCase):
     def test_upload_failure_issue_includes_diagnostics_but_success_does_not(self):
         """Only nonzero upload reports should contain redacted failure diagnostics."""
         failure_sink = self.make_sink()
-        failure_sink.write("Hard-resetting COM8 and waiting 1.0 seconds before validation upload...")
+        failure_sink.write("Hard-resetting COM8 and waiting 5.0 seconds before validation upload...")
         failure_sink.write("mpremote: cp: destination does not exist")
         failure_sink.write("Application upload failed with status 1.")
         success_sink = self.make_sink()
@@ -1489,7 +1492,7 @@ class WindowsFirmwareFlashTests(unittest.TestCase):
             [
                 "reset",
                 "sleep",
-                installer.VALIDATION_PREFLIGHT_RESET_DELAY_SECONDS,
+                "5.0",
                 "connect",
                 "COM7",
                 "fs",
