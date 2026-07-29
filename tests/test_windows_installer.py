@@ -1125,13 +1125,14 @@ class WindowsInstallerTests(unittest.TestCase):
             )
         )
 
-        self.assertEqual(statuses["display"], 0)
-        self.assertEqual(statuses["io"], 1)
-        self.assertEqual(statuses["codec"], 1)
-        self.assertEqual(statuses["capture"], 1)
-        self.assertEqual(statuses["playback"], 1)
-        self.assertEqual(statuses["wifi"], 1)
-        self.assertEqual(statuses["inference"], 0)
+        self.assertEqual(
+            statuses,
+            {
+                "display": 0,
+                "io": 1,
+                "inference": 0,
+            },
+        )
 
     def test_device_validation_sweep_includes_the_local_wifi_probe(self):
         """The sweep should run the local Wi-Fi/health probe before inference."""
@@ -1146,10 +1147,51 @@ class WindowsInstallerTests(unittest.TestCase):
         self.assertEqual(wifi_probe.serial_prefix, "wifi_probe:")
         self.assertEqual(wifi_probe.observations, ())
         self.assertIn("wifi_probe.run_probe() == 'ok'", wifi_probe.command)
+        self.assertFalse(wifi_probe.required)
+        self.assertTrue(
+            all(
+                probe.required
+                for probe in installer.DEVICE_VALIDATION_PROBES
+                if probe.name != "wifi"
+            )
+        )
 
         batch_code = installer.device_validation_batch_code(installer.DEVICE_VALIDATION_PROBES)
         compile(batch_code, "<device-validation-batch>", "exec")
         self.assertIn(f"exec({wifi_probe.command!r})", batch_code)
+
+    def test_device_validation_accepts_reported_optional_wifi_failure_only(self):
+        """Wi-Fi may report failure, but its marker and required probes remain mandatory."""
+        observations = {
+            name: "pass" for name in installer.DEVICE_VALIDATION_OBSERVATIONS
+        }
+        wifi_failed = [
+            (probe.name, 1 if probe.name == "wifi" else 0)
+            for probe in installer.DEVICE_VALIDATION_PROBES
+        ]
+
+        self.assertEqual(
+            installer.device_validation_status(0, 0, wifi_failed, observations),
+            0,
+        )
+        self.assertEqual(
+            installer.device_validation_status(
+                0,
+                0,
+                [result for result in wifi_failed if result[0] != "wifi"],
+                observations,
+            ),
+            1,
+        )
+
+        required_failed = [
+            (name, 1 if name == "io" else status)
+            for name, status in wifi_failed
+        ]
+        self.assertEqual(
+            installer.device_validation_status(0, 0, required_failed, observations),
+            1,
+        )
 
     def test_device_validation_uploads_without_reset_and_creates_issue(self):
         """Validation should upload once, run every probe, and publish redacted evidence."""

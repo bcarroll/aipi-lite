@@ -139,6 +139,7 @@ class DeviceValidationProbe:
     command: str
     serial_prefix: str
     observations: tuple[str, ...] = ()
+    required: bool = True
 
 
 DEVICE_VALIDATION_PROBES = (
@@ -175,6 +176,7 @@ DEVICE_VALIDATION_PROBES = (
         name="wifi",
         command="import wifi_probe; assert wifi_probe.run_probe() == 'ok'",
         serial_prefix="wifi_probe:",
+        required=False,
     ),
     DeviceValidationProbe(
         name="inference",
@@ -1081,8 +1083,9 @@ def parse_device_validation_probe_statuses(
             continue
         parsed_statuses[name] = int(status_text)
     return [
-        (probe.name, 1 if probe.name in malformed_names else parsed_statuses.get(probe.name, 1))
+        (probe.name, parsed_statuses[probe.name])
         for probe in probes
+        if probe.name in parsed_statuses and probe.name not in malformed_names
     ]
 
 
@@ -1367,13 +1370,20 @@ def device_validation_status(
     observations: dict[str, str],
 ) -> int:
     """Return success only when every device probe and observation passed."""
+    if upload_status != 0 or batch_status != 0:
+        return 1
+    expected_probes = {probe.name: probe for probe in DEVICE_VALIDATION_PROBES}
+    status_by_probe = dict(probe_statuses)
     if (
-        upload_status != 0
-        or batch_status != 0
-        or len(probe_statuses) != len(DEVICE_VALIDATION_PROBES)
+        len(probe_statuses) != len(DEVICE_VALIDATION_PROBES)
+        or set(status_by_probe) != set(expected_probes)
     ):
         return 1
-    if any(status != 0 for _, status in probe_statuses):
+    if any(
+        status_by_probe[probe.name] != 0
+        for probe in DEVICE_VALIDATION_PROBES
+        if probe.required
+    ):
         return 1
     if any(observation_status(observations, name) != "pass" for name in DEVICE_VALIDATION_OBSERVATIONS):
         return 1
