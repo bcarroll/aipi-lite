@@ -14,6 +14,11 @@ application manifest. Unknown `/src` content is preserved with a warning.
 Cleanup preserves root `boot.py`, `main.py`, and the ignored operator
 `local_wifi_config.py`.
 
+Normal uploads connect once before copying. A validation or post-flash upload
+that requests a preflight hard reset waits one second and reconnects to the
+same validated COM port before the copy, ensuring `mpremote` enters raw REPL
+through a fresh transport.
+
 Direct Windows uploads persist a validated COM port in the ignored root `.conf`:
 
 ```cmd
@@ -57,6 +62,9 @@ step:
 ```cmd
 install.cmd --port COM3 --flash-micropython --yes
 ```
+
+The post-flash upload uses the same hard reset, one-second wait, and same-port
+reconnect before copying the application.
 
 Installer prompts are printed explicitly so they remain visible through
 `dev_install.cmd` captures. In noninteractive runs, optional prompts use safe
@@ -118,14 +126,15 @@ gh auth login
 validate.cmd --port COM8 --yes --device-label bench-a
 ```
 
-The command hard-resets the device, waits one second, uploads `src/`, then runs
-the display, GPIO status/button, codec, capture, playback, local Wi-Fi/health,
-and offline inference probes through one raw-REPL session. It emits a per-probe
-result, continues after a device-side probe failure so the report contains all
-available evidence, and avoids reconnecting between probes. It does not reset
-into normal startup after the upload. After the sequence, answer the prompts with
-`pass`, `fail`, or `not-observed` for each physical observation. Only an all-pass
-run exits successfully.
+The command hard-resets the device, waits one second, reconnects to the same
+validated COM port, uploads `src/`, then runs the display, GPIO status/button,
+codec, capture, playback, local Wi-Fi/health, and offline inference probes
+through one raw-REPL probe session. It emits a per-probe result, continues after
+a device-side probe failure so the report contains all available evidence, and
+avoids reconnecting between probes. It does not reset into normal startup after
+the upload. After the sequence, answer the prompts with `pass`, `fail`, or
+`not-observed` for each physical observation. Only an all-pass run exits
+successfully.
 
 The `wifi` probe connects to the operator-configured local network and calls the
 local `/health` endpoint, so a passing run requires an uploaded
