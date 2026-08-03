@@ -60,13 +60,6 @@ Conditional runtime fallback branch:
 
 ## Current Implementation Status
 
-The repository now includes an earlier implementation from
-`https://github.com/bcarroll/aipi-lite` at remote commit `b06b569`. That imported
-code should be treated as the current source baseline for implementation work.
-Legacy checked-in firmware binaries are intentionally excluded from the current
-workflow; firmware images should be downloaded or generated into ignored
-tooling directories.
-
 | Branch / component | Status | Evidence | Remaining work |
 | --- | --- | --- | --- |
 | `feat/01-backup-recovery` | Retired Unix workflow (historical) | The now-removed `install.sh` once implemented this: it skipped Git self-update by default, exposes explicit `--self-update`, can write sanitized debug artifacts for GitHub issues, can list and probe serial ports with `--list-ports`, can discover and use one responsive MicroPython port when upload runs omit `--port`, can clean downloaded prerequisite artifacts while preserving backups/debug/captures, uploads application source by default to an already-flashed ESP32_GENERIC_S3 MicroPython device, stores answers in `.conf`, prompts for bootloader readiness only during explicit flash/restore flows, locks a successful esptool auto-detected port for later backup/flash commands, verifies the ESP32-S3 ROM bootloader responds to `esptool chip-id` without auto-reset before backup, erase, write, or restore operations, skips stock backup, erase, and MicroPython flashing by default for application-first uploads, can opt in to MicroPython flashing with `--flash-micropython` / `AIPI_FLASH_MICROPYTHON=1`, can opt in to stock flash backup with `--flash-micropython --backup-stock` / `AIPI_FLASH_MICROPYTHON=1` plus `AIPI_BACKUP_STOCK_FIRMWARE=1`, keeps exact-size validation, no-reset chunked reads, smaller-chunk retries, compatibility with `--skip-backup` / `AIPI_SKIP_STOCK_BACKUP=1`, and a structured `stock_backup_blocked` trace event when an opt-in backup cannot read flash, restores saved stock backups, and `RECOVERY.md` documents backup, restore, expected recovery output, blocked-backup handling, and the flashing safety checklist. `RECOVERY.md` now describes stock backup/restore as manual `esptool` recovery steps rather than automated commands. | Retired. MicroPython firmware flashing is now `install.cmd --flash-micropython` (SPIRAM_OCT build); automated stock backup and restore are no longer provided by repository scripts. |
